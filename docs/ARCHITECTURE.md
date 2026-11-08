@@ -175,7 +175,7 @@ Prefetch(base, type, prio)            PrefetchWithFallback(base, altBase, ...)
                         T3 disk?     → promote to T2 + learn + decode
                         source fetch → T2 + async T3 + learn + decode
          every candidate 404 + learned was used → invalidate + one full-list retry
-       still nothing → remember the exhausted CHAIN for the session (missSet)
+       still nothing → remember the exhausted CHAIN (media Missing)
                        → Warning{base, formats tried} → UI banner (12 s,
                                                         courtroom + char select)
        chain already exhausted → warn, submit nothing  ← the gate, above the pool
@@ -238,8 +238,7 @@ server does not have can never become resident. A roster whose characters
 ship no `char_icon` and no `emotions/button<N>_off` art therefore re-asked
 for every one of them every 2 s for as long as the grid was on screen.
 
-`Manager.conclusiveMiss` (`assets/missSet`, cap `conclusiveMissCap` = 8192)
-records the resolution chain — base + type + the alt spellings probed after
+The media system's `Missing` state records the resolution chain — base + type + the alt spellings probed after
 it — the first time every candidate 404s. Every `Prefetch*` entry point
 consults it before submitting; a hit warns and returns without a pool job.
 `demandAsset` consults it too and reports "this can never arrive", which is
@@ -251,19 +250,16 @@ and it sits at the BOTTOM of the pipeline — a hit there still costs the pool
 job, the resolver walk and two failed disk reads above it. That overhead,
 not the requests, is what took the framerate down.
 
-The memory has no clock, because it is a fact about work already done rather
-than a guess with an expiry (contrast `LocalFetcher.missMemo`, which is the
-guess). What invalidates it is a change to either input of that fact — the
-byte source, or the candidate list it was measured against — so the flushes
-live inside the setters that make those changes and no call site can forget
-them:
+A missing asset is asked again once `MissingTTL` passes. Before that, a change
+to either input of the finding — the byte source, or the candidate list it was
+measured against — forgets it, and the flushes live inside the setters that make
+those changes so no call site can forget them:
 
 | Event | Scope |
 |---|---|
 | `config.FormatGeneration` moves (format order, fallback toggles) | all |
 | `installAssetOrigin` (connect / reconnect / mounts change) | that origin |
-| `SetMountLayer` (pack rescan) | all |
-| `SetLocalOverlay` with a **different** mount set | all |
+| `SetFolders` with a **different** mount set, `RecheckFolders` (focus gain, Check folders now) | all |
 | Settings > Cache > **Retry missing assets** | all |
 
 The first row is not a call at all: every entry carries the format generation
@@ -308,70 +304,45 @@ the joined URL). Writes: copy-on-write + CAS retry loop; a successful learn
 marks preferences dirty for the debounced saver. Learned entries persist
 per `<host>|<type>` and survive restarts (warm start = N probes for N assets).
 
-### Local pack layer (`MountIndex` / `MountLayer`, v1.89.0)
+### The player's folders (`media.Folders`, v2.1.0)
 
-Local mount folders and `.zip` packs answer asset fetches **before the network,
-under the server's own URL**. The server's URL stays the asset's identity
-everywhere (T1 key, warnings, scene layers); `local://m-<hash>/<rel>` is only a
-transport label, so nothing downstream ever learns a second spelling.
+Local mount folders and `.zip` packs are one source in the media chain, asked
+in the order **memory → disk cache → folders → web**, under the server's own
+URL. Folders save traffic; they do not override a copy the server already sent
+and the disk cache holds. `local://m-<hash>/<rel>` is the origin for recordings,
+evidence images and Local-only mode; with layering on, the same folders also
+answer for each open tab's asset origin (the URL builder's, so a missing
+trailing slash still matches).
 
-**Six invariants.** Check each commit against them:
+**Read lazily.** `Mount` reads nothing, so it runs on the render thread. A
+folder is listed the first time a file in it is needed, and the listing (a
+*page*) answers after that. A miss re-checks a page once it is older than
+`folderTrust` (30 s), and one stat of the folder's modified time decides whether
+to list it again. `Stale` ends every page's trust: the UI calls it on window
+focus gain (rate limited by `localRecheckMinInterval`) and from **Check folders
+now**. A `.zip` pack is opened and indexed the first time it is needed and never
+changes under a page afterwards. No mounts: nothing is read.
 
-1. **Identity is the server's base.** Pack bytes are delivered under
-   `deliverBase`, never under the pack's own URL.
-2. **A pack hit never teaches the learned table.** Pack formats have nothing to
-   do with the server's, and `RecordSuccess` → `RecordLearned` *persists*.
-   Teaching it from pack bytes is the v1.61.0 / v1.87.2 regression class.
-3. **A pack hit never writes T3 or ThumbCache, and never writes T2 under the
-   server's URL.** It *may* write T2 under its own `local://` key — that
-   keyspace is disjoint, and T1 evicts long before T2, so without it every
-   evicted pack background would be re-read and re-allocated from disk.
-   ThumbCache is a *persistent* disk cache keyed by base, so a pack sprite
-   there would outlive the pack under the server's identity.
-4. **A pack failure is never a server failure.** (4a) `serveFromMount` has **no
-   error return**, so a read error cannot reach `walkCandidates`' pass-aborting
-   default arm. (4b) A *decode* error quarantines the pack entry and never calls
-   `MarkFailed`, whose key is the SERVER's base. (4c) The asymmetry is
-   deliberate: a read error is environmental and usually transient, a decode
-   error is a deterministic property of the bytes.
-5. **The layer is inert during archive replay and in Local-only mode.** A
-   bundled scene must stay hermetic; Local-only's source already *is* the
-   mounts, so layering would double-serve.
-6. **No mounts costs nothing.** `activeMountLayer` loads the layer pointer
-   *first* and returns on nil, so the default path is one atomic load
-   (benchmarked at ~0.9 ns/op, 0 allocs). No index, no goroutine, no disk.
-   Benchmark the hook *and* the call that rides it: `BenchmarkFetchRawNoMounts`
-   vs `BenchmarkFetchRawLayeredNoMounts` is the pair for the text lane (~3 ns on
-   a ~50 ns read, 0 extra allocs), because timing the hook alone cannot answer
-   what a real reader pays.
+**Invariants.**
 
-**The text lane (issue #72).** A mounted base answers `char.ini` and
-`effects.ini`, not only the art beside them. `FetchRawLayered` is the text
-sibling of `ResolveRawLayered`: pack first, server second, and named apart from
-`FetchRaw` so the callers that must NOT see a pack keep the unlayered method by
-default. Those are `extensions.json` (it seeds the server host's learned
-formats — invariant 2) and the autoindex listings, both already refused by
-`mountLayerExcluded`. The pack is consulted **before T2**, like the exact decode
-path, so a server copy cached earlier in the session cannot shadow the file the
-user just edited. Pack bytes are returned **uncached**: a couple of KiB read once
-per character per session, where a cache would only add a way to serve a stale
-ini back after a rescan. `PrefetchRaw` has the matching early-out — a file the
-pack holds has no RTT to hide, so warming it would spend a real probe, and a
-remembered miss, on a URL the server need not have at all.
+1. **Identity is the server's base.** Folder bytes are delivered under the
+   server's URL everywhere downstream (T1 key, warnings, scene layers).
+2. **A folder hit never teaches the learned table**, never answers
+   `extensions.json`, and never writes T3, ThumbCache or T2 under the server's
+   URL: those would outlive the folder as the server's own content.
+3. **A folder failure is never a server failure.** A decode error sets the file
+   aside (`QuarantinePack`, cap `folderBadCap`) so the server's copy is fetched,
+   and never marks the server's base failed. Mounting a different set clears
+   the set-aside files.
+4. **A folder change asks again for missing assets**, keeping the web's 404
+   memory (hard rule 6).
 
-Art from one base and metadata from another is not half a feature; it is a
-character that looks right and behaves like somebody else's. A new raw-text
-fetch therefore fails a census gate by default and its author has to name which
-side it means, because a call site reaching for the server-only lane is
-invisible: `FetchRaw` returns perfectly good bytes, just the wrong side's.
-
-**A source change invalidates parsed inis, not only textures.** An ini is parsed
-into UI state keyed by URL, in maps no texture invalidation touches, so
-`rescanLocalPacks` calls `forgetParsedINIs` *ahead of* the texture-store guard —
-parsed inis are not textures, and gating them on a store existing leaves the
-headless path silently half-invalidated. It reloads the active character's ini
-in place rather than rebuilding the room, because `buildRoom` re-arms the roster
-poll whose OOC `/gas` is the known flood-kick vector.
+**Text too (issue #72).** `char.ini` and `effects.ini` come from the folders
+like the art beside them, so a character's emotes and metadata match its
+sprites. A parsed ini is UI state no texture invalidation touches, so
+**Check folders now** calls `forgetParsedINIs` and reloads the active
+character's ini in place rather than rebuilding the room, because `buildRoom`
+re-arms the roster poll whose OOC `/gas` is the known flood-kick vector.
 
 **Setup surface.** `internal/ui/basescan.go` reads a candidate folder (counts, a
 bounded `char.ini` sample, the standard subfolders, and the two off-by-one-level
@@ -382,39 +353,15 @@ what the user is currently running. The scan runs off the render thread behind a
 single-flight latch (hard rule 2), and its result carries the path it scanned so
 a superseded pick is reconciled on landing rather than queued.
 
-**One key space.** Every map and set is keyed by the *folded rel including its
-extension* (`foldRel`: per-segment percent-decode, then lowercase, returning the
-input unchanged when a byte scan finds nothing to fold). A pack transport URL is
-`LocalOrigin() + <that key>`, so URL→key is a `CutPrefix` and key→URL a
-concatenation. Two earlier drafts shipped a quarantine that was dead code
-because it was written with a URL and read with a rel.
+**Name order, not source order.** Each spelling is asked of every source
+before the next spelling (`Get(key, urgency, flags, alts...)`), so a legacy
+bare-named pack cannot serve one file as both `(a)` idle and `(b)` talk over a
+server that ships proper `(a)`/`(b)` art.
 
-**Ladder order, not provider-major.** The pack is consulted first *within each
-spelling*, not swept across every spelling first. `EmoteBare` takes no
-`EmoteKind`, so the `(a)` and `(b)` chains share a byte-identical bare alt —
-provider-major ordering would let a legacy bare-named pack serve one file as
-both idle and talk, shadowing a server that ships proper `(a)`/`(b)` art. Do
-not "fix" this back to AO-SDL's ordering.
-
-**Named caps:** `mountIndexMaxDepth`, `mountBadCap`
-(quarantine; eviction is **oldest-first**, inverting `MarkMissing`'s
-stop-when-full policy, because an unquarantined corrupt file wins forever and
-its asset is permanently missingno), `mountArchiveCap`,
-`mountZipEntryMaxBytes`, `LocalMountCap`, `mountLayerOriginCap`.
-There is **no entry-count or byte cap** on the index (v1.97.0): local mounts
-are the user's own content and must never be silently truncated, so a pack is
-indexed in full and index memory grows with the pack (~180 bytes/file). The
-remaining caps are all *safety* bounds (depth, per-entry size, symlinks) —
-not limits on legitimate content.
-
-**Zip lifetime.** Archive handles are refcounted and closed when the last
-reader releases, **not** when the layer pointer swaps — a Rescan during a read
-would otherwise close the file mid-`ReadAt`. Symlinks are never indexed (a pack
-could otherwise ship a link at a plausible asset path pointing at a private
-file); zip entry names get the same escape guard, and the uncompressed size in
-the header is treated as the attacker-controlled hint it is.
-
-No new module dependency: `archive/zip` is stdlib.
+`safepath` guards both kinds of mount: symlinks are never followed, zip entry
+names get the same escape guard, and a zip header's uncompressed size is treated
+as the attacker-controlled hint it is. No new module dependency: `archive/zip`
+is stdlib.
 
 ## Network (§7)
 

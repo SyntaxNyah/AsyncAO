@@ -211,14 +211,14 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 
 	if haveMounts {
 		y += 4
-		y = a.drawMountIndexStatus(y)
-		if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Rescan folders") {
-			a.RescanLocalPacks()
-			settings.statusLine = "Rescanning your folders…"
+		y = a.drawFolderStatus(y)
+		if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Check folders now") {
+			a.CheckFoldersNow()
+			settings.statusLine = "Checking your folders again as files are needed."
 		}
-		a.noteSearchRow("Rescan folders", y)
+		a.noteSearchRow("Check folders now", y)
 		y += btnH + 4
-		y = a.settingsDesc(pad, y, "Rescan after adding or changing files. Art your folders cover reloads right away; everything else updates as it reloads. Rescan also re-tries files that failed to load last time.", ColTextDim)
+		y = a.settingsDesc(pad, y, "Files you add are found by themselves, the next time they're needed, and again whenever you come back to this window. Press this after changing a file the game is already showing: art drawn from your folders reloads. A copy of a file already downloaded from the server still wins over yours.", ColTextDim)
 	}
 
 	// The nudge: folders configured but unused is a silent dead end. The headline states it too, but it has scrolled
@@ -230,34 +230,26 @@ func (a *App) drawAssetSourceAdvanced(pad, y int32, mounts []string) int32 {
 	return y + 10
 }
 
-// drawMountIndexStatus reports what the index holds plus anything that went wrong. Every number is real state.
-func (a *App) drawMountIndexStatus(y int32) int32 {
+// drawFolderStatus reports what the folders have answered plus anything that went wrong. Every number is real state.
+func (a *App) drawFolderStatus(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
 
-	switch {
-	case a.mountIndexing:
-		c.Label(pad, y+4, "Indexing your folders…", ColTextDim)
-	case a.mountIndex != nil:
-		files, mounts := a.mountIndex.Stats()
-		line := fmt.Sprintf("Indexed %d file(s) in %d mount(s).", files, mounts)
-		// Served-this-session, not a "shadow count": the client never enumerates the server's files, so how many of
-		// these
-		// replace a server asset is unknowable.
-		if n := a.d.Manager.Stats().MountFetches; n > 0 {
-			line += fmt.Sprintf(" %d asset(s) served from your folders this session.", n)
-		}
-		c.Label(pad, y+4, line, ColTextDim)
-	default:
-		c.Label(pad, y+4, "Not indexed yet.", ColTextDim)
+	mounts, read, errs := a.d.Manager.FolderStatus()
+	line := fmt.Sprintf("%d mount(s), %d folder(s) read so far.", len(mounts), read)
+	// Served-this-session, not a "shadow count": the client never enumerates the server's files, so how many of these
+	// replace a server asset is unknowable.
+	if n := a.d.Manager.Stats().MountFetches; n > 0 {
+		line += fmt.Sprintf(" %d asset(s) served from your folders this session.", n)
 	}
+	c.Label(pad, y+4, line, ColTextDim)
 	y += 22
 
 	if n := a.d.Manager.Stats().PackQuarantined; n > 0 {
-		c.Label(pad, y+4, fmt.Sprintf("%d file(s) in your folders couldn't be read — those are streaming from the server instead. Fix them and press Rescan folders.", n), ColTierYellow)
+		c.Label(pad, y+4, fmt.Sprintf("%d file(s) in your folders couldn't be read — those are streaming from the server instead. Fix them and press Check folders now.", n), ColTierYellow)
 		y += 22
 	}
-	for _, err := range a.mountIndexErrs {
+	for _, err := range errs {
 		c.LabelClipped(pad, y+4, a.formW, "Mount unusable: "+err.Error(), ColDanger)
 		y += 22
 	}

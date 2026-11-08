@@ -2,7 +2,7 @@ package ui
 
 // The UI half of "a mounted base answers char.ini too" (issue #72).
 //
-// internal/assets proves FetchRawLayered reads the pack. These prove the two
+// internal/assets proves FetchRaw reads the pack. These prove the two
 // things only this package can answer: that the ini readers actually CALL it —
 // the whole defect was a working pack layer nothing on this side reached — and
 // that a source change drops the PARSED copies, which no texture invalidation
@@ -26,8 +26,7 @@ import (
 // reaches the network fails by timing out rather than by quietly succeeding.
 const packAppOrigin = "http://pack.invalid.test/base/"
 
-// packApp is testTabApp plus a STREAMING-shaped Manager (LocalMode false, which
-// is what leaves the mount layer live) over a folder holding files.
+// packApp is testTabApp plus a streaming Manager with a folder holding files layered over packAppOrigin.
 func packApp(t *testing.T, files map[string]string) *App {
 	t.Helper()
 	a := testTabApp(t)
@@ -41,8 +40,6 @@ func packApp(t *testing.T, files map[string]string) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 
@@ -52,18 +49,13 @@ func packApp(t *testing.T, files map[string]string) *App {
 		T2:       t2,
 		Disk:     disk,
 		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()),
-		Pool:     pool,
 		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
 
 	dir := t.TempDir()
 	writePackFiles(t, dir, files)
-	idx, errs := assets.BuildMountIndex([]string{dir})
-	if len(errs) != 0 {
-		t.Fatalf("index build: %v", errs)
-	}
-	t.Cleanup(idx.Retire)
-	a.d.Manager.SetMountLayer(assets.NewMountLayer(idx, []string{dir}, []string{packAppOrigin}))
+	a.d.Manager.SetFolders([]string{dir}, []string{packAppOrigin})
 
 	a.urls = courtroom.NewURLBuilder(packAppOrigin)
 	a.sess = &courtroom.Session{}
@@ -71,9 +63,7 @@ func packApp(t *testing.T, files map[string]string) *App {
 	return a
 }
 
-// writePackFiles lays out a mount folder for these gates. The sibling helper in
-// mountlayer_test.go writes ONE placeholder file; these gates need real content,
-// since the content is the thing under test.
+// writePackFiles lays out a folder holding files, keyed by slash path.
 func writePackFiles(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for rel, body := range files {
@@ -157,11 +147,9 @@ func TestPackCharMetaComesFromTheMount(t *testing.T) {
 	}
 }
 
-// TestRescanForgetsEveryParsedINI pins the invalidation. An ini is parsed into UI
-// state the texture caches know nothing about, so without this a sprite maker's
-// edit-rescan-look loop shows the answer from before the edit for the rest of the
-// session — the feature reads as broken even though the fetch is now correct.
-func TestRescanForgetsEveryParsedINI(t *testing.T) {
+// TestCheckFoldersNowForgetsEveryParsedINI: a parsed ini is UI state no texture cache knows about, so without this
+// an edited char.ini keeps its old answer for the rest of the session.
+func TestCheckFoldersNowForgetsEveryParsedINI(t *testing.T) {
 	a := packApp(t, map[string]string{"characters/witch/char.ini": "[Options]\nshowname = X\n"})
 	a.charMetaCache = map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
 	a.previewChar = "witch"
@@ -170,7 +158,7 @@ func TestRescanForgetsEveryParsedINI(t *testing.T) {
 	a.previewEmoteIdx = 3
 	a.iniWarmed = "witch"
 
-	a.rescanLocalPacks(nil)
+	a.CheckFoldersNow()
 
 	if len(a.charMetaCache) != 0 {
 		t.Errorf("charMetaCache survived a source change (%v) — every speaker keeps their pre-edit ini", a.charMetaCache)

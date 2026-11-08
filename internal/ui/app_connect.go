@@ -347,12 +347,9 @@ func (a *App) Disconnect() {
 	case <-a.bgPick.res:
 	default:
 	}
-	a.cancelDownload()   // a download targets this server's assets; stop it
-	if a.d.Pool != nil { // nil in headless tests
-		a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
-		a.d.Manager.CancelRoomWork()
-	}
-	a.updatePresence() // sess is nil now → clears the Discord activity
+	a.cancelDownload()           // a download targets this server's assets; stop it
+	a.d.Manager.CancelRoomWork() // nil-safe; cancels queued work for the old server
+	a.updatePresence()           // sess is nil now → clears the Discord activity
 	// A bound theme leaves with its server; the global pick returns.
 	a.ensureThemeForSession()
 	a.screen = ScreenLobby
@@ -989,12 +986,11 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 }
 
 // installAssetOrigin points this session's URL builder at origin, the one place rebuildAssetOrigin mints one. It also
-// clears that origin's remembered misses: the manager keeps every exhausted chain for the whole session
-// (assets.missSet), so reconnecting is the moment a repacked server gets a clean slate. Scoped to this origin because
+// clears that origin's remembered misses, so reconnecting is the moment a repacked server gets a clean slate. Scoped to this origin because
 // one Manager serves every open tab. Both jobs live here so an origin can't be installed without the flush.
 func (a *App) installAssetOrigin(origin string) {
 	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.charCasingFor(origin))
-	a.d.Manager.ForgetConclusiveMissesUnder(origin) // nil-safe: a headless App has no Manager and nothing to forget
+	a.d.Manager.ForgetMissingUnder(origin) // nil-safe: a headless App has no Manager and nothing to forget
 }
 
 // applyAssetHosts hands the connected server's extra asset hosts to the media system.
@@ -1028,18 +1024,8 @@ func (a *App) logHostLists() {
 // asset URL, in that priority (the no-streaming checkbox wins).
 func (a *App) rebuildAssetOrigin() {
 	// Deferred and first: this function has four exits (local-mode, no-asset-URL error, rehearsal, normal tail), and
-	// the mount layer needs the origin the body installs.
-	defer a.applyMountLayer()
-	// Push the configured mounts into the Manager's local:// overlay on every mounts/pref change (the one funnel
-	// settings.go routes through), regardless of the legacy enabled flag: mounts are the recording-resolution base even
-	// mid-streaming (the content report's "Local base"). A local-mode Manager ignores the overlay.
-	if a.d.Manager != nil {
-		if _, mounts := a.localAssets(); len(mounts) > 0 {
-			a.d.Manager.SetLocalOverlay(assets.NewLocalFetcher(mounts))
-		} else {
-			a.d.Manager.SetLocalOverlay(nil)
-		}
-	}
+	// the folders need the origin the body installs. This is the one funnel settings.go routes mount changes through.
+	defer a.applyFolders()
 	// Cache the local:// origin the evidence panel's "stream from server" toggle reads local images from ("" when no
 	// mounts, so it falls back to streaming).
 	if _, mounts := a.localAssets(); len(mounts) > 0 {
@@ -1048,8 +1034,7 @@ func (a *App) rebuildAssetOrigin() {
 		a.evidLocalOrigin = ""
 	}
 	if enabled, mounts := a.localAssets(); enabled && len(mounts) > 0 {
-		// The origin helper, not a fetcher: this branch only read BaseURL, and the fetcher that serves these URLs is
-		// already built (SetLocalOverlay or boot).
+		// The folders answer for this origin (applyFolders, deferred above).
 		localOrigin := assets.LocalOriginFor(mounts)
 		a.installAssetOrigin(localOrigin)
 		log.Printf("ui: local asset mode over %d mounts", len(mounts))

@@ -1104,21 +1104,21 @@ func headlessProbeApp(t *testing.T, source assets.Fetcher, localMode bool) *App 
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	a.d.Resolver = resolver
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    source,
-		LocalMode: localMode,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   source,
+		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
+	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
+		a.d.Manager.SetFolders(lf.Mounts(), nil)
+	}
 	return a
 }
 
@@ -1138,21 +1138,20 @@ func localMgr(t *testing.T, mount string) (*assets.Manager, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(1)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(1)
 	t.Cleanup(decoder.Close)
 	local := assets.NewLocalFetcher([]string{mount})
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    local,
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   local,
+		Decoder:  decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	t.Cleanup(mgr.CloseMedia)
+	mgr.SetFolders(local.Mounts(), nil)
 	return mgr, local.BaseURL()
 }
 

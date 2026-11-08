@@ -8,7 +8,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -31,15 +30,15 @@ func newRoomForTest(t testing.TB) *courtroom.Courtroom {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	local := assets.NewLocalFetcher([]string{t.TempDir()})
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: assets.NewResolver(prefs), Prefs: prefs, T2: t2, Disk: disk,
-		Source: local, LocalMode: true, Pool: pool, Decoder: decoder,
+		Source: local, Decoder: decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	mgr.SetFolders(local.Mounts(), nil)
 	return courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), mgr, nil, courtroom.NopAudio{})
 }
 

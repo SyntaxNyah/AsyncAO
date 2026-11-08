@@ -283,7 +283,7 @@ func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 	}
 
 	// An origin but no Manager: nil-checked everywhere else in this package
-	// (mountlayer.go:37,75; scenemaker.go:276) and a nil-Manager PrefetchChain would
+	// (localfolders.go, scenemaker.go) and a nil-Manager PrefetchChain would
 	// panic on the render thread.
 	noMgr := &App{}
 	noMgr.urls = courtroom.NewURLBuilder("https://one.test/base")

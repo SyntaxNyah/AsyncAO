@@ -93,7 +93,7 @@ in **Status**. Update Status in the same commit that completes a step.
     - [x] core: `Manager` on its own goroutine, `Get` over a concurrent map, `Pool`, `Chain`, `Source`. Not used by the client yet
     - [x] sources: memory, disk index, remote index with host limits (1 worker until a host answers, then 16); candidates,
           format learning and `extensions.json`; withdrawing and raising requests. Not used by the client yet
-    - [ ] sources still to build: packs on shadow paging, saving the disk index and learned formats, character mapping
+    - [ ] sources still to build: saving the disk index and learned formats, character mapping
     - [x] extra asset hosts per server: the user adds them in a fixed order with no speed ranking, the ASS packet's host is always
           first; Settings → Assets edits them. Raw fetch paths not on the media system yet don't ask them
     - [x] the client runs on it: `assets.Manager`'s requests go through `internal/media`, so callers and `Pump` are unchanged, and
@@ -113,9 +113,15 @@ in **Status**. Update Status in the same commit that completes a step.
           the filter, and a panorama panned to the position's `origin`. Without an SD list the Pos dropdown offers AO2's
           positions for the background (legacy ones, design.ini `positions`) that have art of their own, and a move
           between two court positions with `slide_ms_<pos>` pans the stage with the last speaker held (do_transition)
+    - [x] the player's folders (2026-11-08): `media.Folders`, one source for folders and `.zip` packs, read a folder at a time
+          when first needed and re-checked by modified time; order memory → disk cache → folders → web, so a cached server
+          copy wins over a folder file (reverses #72's "edited char.ini beats the cached server copy"). Focus gain and
+          Settings → Check folders now end every folder check's trust. The old pipeline (network pool, mount index and
+          layer, conclusive-miss set, Local-only mode in the Manager) and `-old-media` are deleted, and with them the wait
+          gate's refusal re-ask: high-priority requests are never refused
     - [ ] known problems from the benchmark: on a host with no `extensions.json`, 200 missing sprites cost 2,400 requests against the
           old 1,600 until character mapping exists; peak heap with files asked for every frame is 384-617 MiB, unexplained
-    - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming; then delete the old pipeline
+    - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still

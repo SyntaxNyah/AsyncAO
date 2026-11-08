@@ -10,7 +10,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -78,15 +77,15 @@ func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioR
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	local := assets.NewLocalFetcher([]string{t.TempDir()})
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
-		Source: local, LocalMode: true, Pool: pool, Decoder: decoder,
+		Source: local, Decoder: decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	mgr.SetFolders(local.Mounts(), nil)
 
 	rec := &sentRecorder{}
 	sess := NewSession(rec.send, "test-hdid")

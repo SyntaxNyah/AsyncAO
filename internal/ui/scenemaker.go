@@ -628,24 +628,36 @@ func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
 		return
 	}
 	// A bundle is handed to someone else, so bundling art that exists only in the user's own folders must be said
-	// first. Counting is a pure index lookup (no reads or fetches), so asking is free when there is nothing to ask.
-	if n := a.packContribution(scene); n > 0 && !a.makerExportPackOK {
-		a.makerExportPack = n
-		a.makerExportScene, a.makerExportName = scene, name
-		return
-	}
+	// first. Counting reads the folders, so the goroutine does it and hands the count back for the dialog.
+	asked := a.makerExportPackOK
 	a.makerExportPackOK = false // one confirmation covers one export
-	snap := cloneScene(scene)   // the goroutine must not race the edit buffer
+	a.makerExportScene, a.makerExportName = scene, name
+	snap := cloneScene(scene) // the goroutine must not race the edit buffer
 	stem := sanitizeStem(name) + "-archive-" + time.Now().Format("20060102-150405")
 	if a.makerExportCh == nil {
-		a.makerExportCh = make(chan string, 1)
+		a.makerExportCh = make(chan makerExportOutcome, 1)
 	}
 	a.makerExporting = true
 	a.warnLine = "Exporting self-contained archive… downloading assets (this can take a moment)."
 	a.warnAt = time.Now()
 	mgr := a.d.Manager
 	ch := a.makerExportCh
-	go func() { ch <- runArchiveExport(mgr, snap, stem) }()
+	go func() {
+		if !asked {
+			if n := packContribution(mgr, snap); n > 0 {
+				ch <- makerExportOutcome{packFiles: n}
+				return
+			}
+		}
+		ch <- makerExportOutcome{msg: runArchiveExport(mgr, snap, stem)}
+	}()
+}
+
+// makerExportOutcome is the export goroutine's answer: a result line, or how many assets come from the player's own
+// folders, which must be agreed to first.
+type makerExportOutcome struct {
+	msg       string
+	packFiles int
 }
 
 // runArchiveExport (off-thread) writes every asset the scene needs into recordings\<stem>\ plus a bundled
@@ -684,9 +696,14 @@ func (a *App) pollMakerExport() {
 		return
 	}
 	select {
-	case msg := <-a.makerExportCh:
+	case out := <-a.makerExportCh:
 		a.makerExporting = false
-		a.warnLine = msg
+		if out.packFiles > 0 {
+			a.makerExportPack = out.packFiles // opens the "include your own files?" dialog
+			a.warnLine = ""
+			return
+		}
+		a.warnLine = out.msg
 		a.warnAt = time.Now()
 	default:
 	}
@@ -1220,9 +1237,12 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 }
 
 // packContribution counts how many of the scene's assets would be bundled from the user's own local folders
-// rather than the server (a pure index lookup, no reads or fetches).
-func (a *App) packContribution(scene *sceneRecording) int {
-	if a.d.Manager == nil || scene == nil || a.d.Manager.MountLayer() == nil {
+// rather than the server. It reads the folders, so the export goroutine calls it.
+func packContribution(mgr *assets.Manager, scene *sceneRecording) int {
+	if mgr == nil || scene == nil {
+		return 0
+	}
+	if mounts, _, _ := mgr.FolderStatus(); len(mounts) == 0 {
 		return 0
 	}
 	events := make([]courtroom.Event, len(scene.Events))
@@ -1232,12 +1252,12 @@ func (a *App) packContribution(scene *sceneRecording) int {
 	urls := courtroom.NewURLBuilder(scene.Origin)
 	n := 0
 	for _, ref := range courtroom.SceneAssets(urls, scene.StartBg, events) {
-		if a.d.Manager.PackCovers(ref.Base) {
+		if mgr.PackCovers(ref.Base) {
 			n++
 			continue
 		}
 		for _, alt := range ref.Alts {
-			if alt != "" && a.d.Manager.PackCovers(alt) {
+			if alt != "" && mgr.PackCovers(alt) {
 				n++
 				break
 			}

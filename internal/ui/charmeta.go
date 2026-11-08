@@ -116,7 +116,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 		defer cancel()
 		res := charMetaFetch{url: url, showname: char} // no ini ⇒ get_showname's unreadable-ini answer
 		// Layered: a user testing their own character from a mounted folder must see the ini they are editing.
-		if data, err := mgr.FetchRawLayered(ctx, url); err == nil {
+		if data, err := mgr.FetchRaw(ctx, url); err == nil {
 			if ini, err := courtroom.ParseCharINI(data); err == nil && ini != nil {
 				res.blips = strings.TrimSpace(ini.Blips)
 				res.chat = strings.TrimSpace(ini.Chat)
@@ -129,7 +129,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 				// (courtroom_fonts.ini showname_color), each tried down its casing chain.
 				if res.chat != "" {
 					for _, u := range ub.ChatboxChatConfigIni(res.chat) {
-						if data, err := mgr.FetchRawLayered(ctx, u); err == nil {
+						if data, err := mgr.FetchRaw(ctx, u); err == nil {
 							if rgb, ok := courtroom.ParseChatboxDefaultColor(data); ok {
 								res.chatMsgRGB, res.chatMsgHas = rgb, true
 							}
@@ -137,7 +137,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 						}
 					}
 					for _, u := range ub.ChatboxFontsIni(res.chat) {
-						if data, err := mgr.FetchRawLayered(ctx, u); err == nil {
+						if data, err := mgr.FetchRaw(ctx, u); err == nil {
 							showname, nameOK, message, msgOK := courtroom.ParseChatboxFontsIni(data)
 							if nameOK {
 								res.chatNameRGB, res.chatNameHas = showname, true

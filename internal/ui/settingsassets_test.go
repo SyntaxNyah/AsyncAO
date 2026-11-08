@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 // TestAssetSourceModeIsExclusive pins that the three-way control can never
@@ -26,45 +27,35 @@ func TestAssetSourceModeIsExclusive(t *testing.T) {
 	}
 }
 
-// TestAssetSourceLayeredPublishesALayer is the end-to-end gesture GitHub #19 is
-// actually about: the user adds a folder and picks the layered mode, and the pack
-// must become live without a restart.
-func TestAssetSourceLayeredPublishesALayer(t *testing.T) {
+// TestAssetSourceLayeredCoversTheServer: picking the layered mode puts the folder over the server without a restart
+// (GitHub #19).
+func TestAssetSourceLayeredCoversTheServer(t *testing.T) {
+	const origin = "http://h/base/"
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
+	a.urls = courtroom.NewURLBuilder(origin)
 
 	dir := t.TempDir()
 	writeUIPack(t, dir, "characters/witch/(a)normal.png")
-	if !a.d.Prefs.SetLocalAssets(false, []string{dir}) {
-		t.Fatal("mount rejected")
-	}
 	a.setAssetSourceMode(assetSrcLayered, []string{dir})
 
-	layer := waitForIndex(t, a)
-	if layer.Index() == nil {
-		t.Fatal("no index behind the published layer")
-	}
-	if files, _ := layer.Index().Stats(); files != 1 {
-		t.Errorf("indexed %d files, want the 1 in the pack", files)
+	if !a.d.Manager.PackCovers(origin + "characters/witch/(a)normal") {
+		t.Error("the layered folder does not answer for the server's asset")
 	}
 }
 
-// TestAssetSourceStreamModeNeverLayers pins the default: mounts may be configured
-// and remembered, but in Stream mode nothing is layered. This is the state the
-// #19 reporter was in — which is why the panel shows an explicit nudge.
+// TestAssetSourceStreamModeNeverLayers: in Stream mode the folders are remembered but never answer for a server.
 func TestAssetSourceStreamModeNeverLayers(t *testing.T) {
+	const origin = "http://h/base/"
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
+	a.urls = courtroom.NewURLBuilder(origin)
 
 	dir := t.TempDir()
 	writeUIPack(t, dir, "characters/witch/(a)normal.png")
 	a.setAssetSourceMode(assetSrcStream, []string{dir})
 
-	if got := a.wantMountLayer(); len(got) != 0 {
-		t.Errorf("Stream mode wants a layer over %v", got)
+	if a.d.Manager.PackCovers(origin + "characters/witch/(a)normal") {
+		t.Error("Stream mode layered the folder over the server")
 	}
-	if a.d.Manager.MountLayer() != nil {
-		t.Error("Stream mode published a layer")
-	}
-	// ...but the folders are REMEMBERED, so switching modes needs no re-typing.
 	if _, mounts := a.d.Prefs.LocalAssets(); len(mounts) != 1 {
 		t.Errorf("Stream mode dropped the configured mounts: %v", mounts)
 	}

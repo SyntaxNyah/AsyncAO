@@ -13,16 +13,14 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // wireLocalManager builds a real streaming-shaped Manager over a LocalFetcher
 // rooted at dir, plus a headless TextureStore, and installs both on the App —
 // enough to drive keepSceneAssetsWarm + drainWarnings against on-disk fixtures.
-// LocalMode is true (assets already on disk); resolution is synchronous file I/O
-// so the pipeline settles deterministically (poll with a deadline like the
-// manager tests). Returns the LocalFetcher for building bases and a settle helper.
+// dir is mounted as the player's folder (assets already on disk); poll with a
+// deadline like the manager tests. Returns the LocalFetcher for building bases and a settle helper.
 func wireLocalManager(t *testing.T, a *App, dir string) (*assets.LocalFetcher, func()) {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)
@@ -45,22 +43,20 @@ func wireLocalManager(t *testing.T, a *App, dir string) (*assets.LocalFetcher, f
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 
 	local := assets.NewLocalFetcher([]string{dir})
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    local,
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   local,
+		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
+	a.d.Manager.SetFolders(local.Mounts(), nil)
 	return local, cleanup
 }
 
@@ -224,7 +220,7 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	// The live speaker's idle base is the PREFIXED spelling (the sprite's identity),
 	// which does not exist on disk — only its bare twin does.
 	prefixed := local.BaseURL() + "characters/hobo/(a)normal"
-	// Seed the format learn to .png for this host so LocalMode resolves the bare
+	// Seed the format learn to .png for this host so the folder resolves the bare
 	// PNG (the default probe list is webp-only; a real server would have learned or
 	// the manifest seeded it — see TestResolveRawFromLocalArchive).
 	seedPNGFormat(t, a)
@@ -313,7 +309,7 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 	}
 }
 
-// seedPNGFormat forces the char-sprite probe list to .png so the LocalMode
+// seedPNGFormat forces the char-sprite probe list to .png so the
 // resolver finds the on-disk PNG fixtures (the default candidate list is
 // webp-only). Mirrors what a real server learns / the archive manifest seeds.
 func seedPNGFormat(t *testing.T, a *App) {

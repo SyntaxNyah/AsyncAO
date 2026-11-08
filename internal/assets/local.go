@@ -31,7 +31,7 @@ const (
 	localFoldMaxDepth  = safepath.MaxDepth
 )
 
-// LocalFetcher serves bytes from mount folders in order, first hit wins (AO2-Client mount path semantics).
+// LocalFetcher serves a bundled replay archive's folder; the player's own folders are the media chain's Folders.
 type LocalFetcher struct {
 	mounts []string
 	origin string

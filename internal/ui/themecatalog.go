@@ -351,8 +351,12 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// NoteFocusGained only records the event; the stat happens off-thread, and only while the screen that cares is visible.
-func (a *App) NoteFocusGained() { a.themeCatFocusStat = true }
+// NoteFocusGained records the event for the theme catalog, whose stat happens off-thread, and re-checks the player's
+// folders, as they may have just added files to them.
+func (a *App) NoteFocusGained() {
+	a.themeCatFocusStat = true
+	a.recheckLocalFiles()
+}
 
 func (a *App) consumeThemeFocusStat() bool {
 	if !a.themeCatFocusStat {

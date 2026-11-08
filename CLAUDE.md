@@ -142,9 +142,9 @@ heap corruption.
 | `internal/netproxy` | the socket factory: opens every outbound connection (direct or through an HTTP proxy) by the one configuration | no |
 | `internal/config` | preferences + debounced atomic saver; favorites; local mounts | no |
 | `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
-| `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), priority worker pool with epoch cancellation, master list + tiers + direct connect | no |
-| `internal/assets` | AssetType enum, lock-free resolver (learned formats), tier-walking manager, decode pool (magic-byte sniffing), WebP CGO binding + fallback, local mounts, Markov prefetcher | no (decoder is SDL-free by rule) |
-| `internal/media` | the new media system, replacing `assets` in slices: `Manager` owns every table on one goroutine, `Get` is safe from any thread, pools run single steps. Not used by the client yet | no |
+| `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), request priority, master list + tiers + direct connect | no |
+| `internal/assets` | AssetType enum, lock-free resolver (learned formats), `Manager` over `internal/media` (the bridge), the player's folders as a media source, decode pool (magic-byte sniffing), WebP/AVIF CGO binding + fallback, Markov prefetcher | no (decoder is SDL-free by rule) |
+| `internal/media` | the media system every asset request goes through: `Manager` owns every table on one goroutine, `Get` is safe from any thread, pools run single steps; sources memory → disk cache → `Folders` (the player's folders and .zip packs) → web | no |
 | `internal/protocol` | AO wire (delegated to aolib-go: FantaCode + JSON), MS 2.6/2.8 parse/build, pairing semantics, FeatureSet, WebSocket conn | no |
 | `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, MS both-wire codec | no |
 | `internal/courtroom` | session handshake reducer, message lifecycle state machine, typewriter pacing, URL conventions, char.ini | no |

@@ -35,7 +35,7 @@ func mkCharPack(t *testing.T, names ...string) string {
 //
 // It also pins the three rules the scan is built on — files are not characters,
 // mounts are first-hit-wins (so an earlier pack shadows a later one, exactly as
-// BuildMountIndex resolves asset reads), and the result is name-sorted so the grid
+// the player's folders answer asset reads), and the result is name-sorted so the grid
 // does not reshuffle between scans.
 func TestScanLocalCharFoldersListsMountedCharacters(t *testing.T) {
 	first := mkCharPack(t, "Phoenix", "edgeworth")

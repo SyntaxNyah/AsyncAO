@@ -73,8 +73,6 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(4)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
@@ -83,9 +81,9 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		T2:       t2,
 		Disk:     disk,
 		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()), // stream over HTTP: every request 404s (the all-404 origin)
-		Pool:     pool,
 		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Pump = render.NewPump(store, a.d.Manager, nil)
 
 	// Channel ownership during the drive is split to avoid two consumers on one

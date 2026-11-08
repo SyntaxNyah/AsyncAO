@@ -117,13 +117,10 @@ const (
 	// progressing warm is not cut early.
 	gifWarmHardCap = 20 * time.Second
 
-	// Incremental warm submission: startSceneExport must not loop PrefetchChain(PriorityHigh) over every scene ref. The
-	// high lane holds only highLaneCap jobs and Submit refuses more (network/pool.go), so thousands of refs from an
-	// all-day .demo would be lost, and take the live scene's requests with them. Refs are stored on the job and
-	// submitted a bounded batch per warm tick. warmInFlightWindow bounds submitted-but-not-resident refs, well under
-	// highLaneCap. warmPrefetchPerTick is the per-tick burst cap (the pool's worker count, DefaultWorkers).
-	warmInFlightWindow  = 32 // well under highLaneCap: outstanding high-lane jobs stay below the cap
-	warmPrefetchPerTick = 16 // = network.DefaultWorkers: a frame's-worth of submissions
+	// startSceneExport must not ask for every scene ref at once: thousands of high-priority refs from an all-day .demo
+	// would crowd out the live scene's requests. Refs are stored on the job and asked for a bounded batch per warm tick.
+	warmInFlightWindow  = 32 // asked-for refs not yet resident
+	warmPrefetchPerTick = 16 // refs asked for per warm tick
 
 	// gifLoadBuf is the buffer of the disk-load result channel (hard rule 4). One is enough: a single loader sends once
 	// and tickGifExport drains it every frame, and the buffer always accepts, even after a Cancel.
@@ -668,11 +665,8 @@ func nextWarmBatch(pending []courtroom.AssetRef, batch int, resident func(base s
 	return submit, nil // drained the whole pending list
 }
 
-// warmRoom is how many more refs the pre-warm may submit this tick without filling the high lane, given the outstanding
-// count (submitted bases not yet resident, warmInFlight). outstanding counts only refs this phase submitted. A ref can
-// be resident without being submitted (warm cache, assets already in T1), and counting it would deflate the window and
-// push in-flight past highLaneCap until Submit refuses. So warmRoom is window - outstanding, capped at
-// the per-tick burst and floored at 0. Pure.
+// warmRoom is how many more refs the pre-warm may ask for this tick, given outstanding (refs this phase asked for that
+// are not yet resident): window - outstanding, capped at the per-tick burst and floored at 0.
 func warmRoom(outstanding int) int {
 	room := warmInFlightWindow - outstanding
 	room = value.Clamp(room, 0, warmPrefetchPerTick)

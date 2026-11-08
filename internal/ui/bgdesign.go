@@ -43,7 +43,7 @@ func (a *App) backgroundDesign(url string) (*theme.INI, bool) {
 		defer cancel()
 		var design *theme.INI
 		// Layered: a pack in the user's own folders ships its design.ini beside its art.
-		if data, err := mgr.FetchRawLayered(ctx, url); err == nil {
+		if data, err := mgr.FetchRaw(ctx, url); err == nil {
 			design, _ = theme.ParseINI(bytes.NewReader(data))
 		}
 		res <- bgDesignRead{url, design}

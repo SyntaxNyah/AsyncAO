@@ -53,7 +53,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -69,9 +68,8 @@ const (
 	// frameHarnessDt is the per-frame delta handed to App.Frame — one 60 Hz tick.
 	// FIXED rather than wall-clock so a slow machine cannot change what a gate sees.
 	frameHarnessDt = 16 * time.Millisecond
-	// frameHarnessPoolWorkers is the network pool the harness's Manager owns. Two:
-	// the manager refuses to be built without a pool, and no gate here fetches
-	// anything (LocalMode, a t.TempDir source, autodetect off).
+	// frameHarnessPoolWorkers is the harness Manager's decode workers; no gate here fetches anything (a t.TempDir
+	// folder, autodetect off).
 	frameHarnessPoolWorkers = 2
 	// frameHarnessApplyFrames bounds how many frames driveUntilThemeApplied spends
 	// waiting for an apply goroutine. At 16 ms of simulated time each this is a
@@ -103,20 +101,18 @@ func stageFrameDrivenApp(t testing.TB) (*App, func()) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(frameHarnessPoolWorkers)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(frameHarnessPoolWorkers)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    assets.NewLocalFetcher([]string{t.TempDir()}),
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   assets.NewLocalFetcher([]string{t.TempDir()}),
+		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
+	a.d.Manager.SetFolders([]string{t.TempDir()}, nil)
 	a.d.Pump = render.NewPump(a.d.Store, a.d.Manager, nil)
 	// The REAL audio sink, built exactly as cmd/asyncao builds it. A nil mixer gives
 	// a disabled-but-functional device (which is the headless case), and Frame drains the manager's audio channel through it

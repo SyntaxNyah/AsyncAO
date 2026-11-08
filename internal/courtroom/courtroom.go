@@ -327,9 +327,7 @@ type Courtroom struct {
 	// waitLeft counts down an armed hold; waitFor is its message by pointer, so a new head re-arms.
 	waitLeft time.Duration
 	waitFor  *protocol.ChatMessage
-	// waitRefused is the manager's refusal count when the gate last asked, waitBlocker the need holding the message,
-	// and needs is messageNeeds' reused list.
-	waitRefused int64
+	// waitBlocker is the need holding the message, needs messageNeeds' reused list.
 	waitBlocker messageNeed
 	needs       []messageNeed
 	// missingSprites holds 404'd bases of every kind, not just sprites, so a miss releases the wait gate's hold.
@@ -596,8 +594,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	// This runs every frame of a hold: the need that stopped the last check is one lookup, the full list 174 allocations.
 	// A release is always decided on a fresh list.
 	armed := c.waitFor == msg
-	refused := armed && c.mgr.RefusedRequests() != c.waitRefused
-	if !armed || refused || c.needSettled(c.waitBlocker) {
+	if !armed || c.needSettled(c.waitBlocker) {
 		needs := c.messageNeeds(msg)
 		blocker, blocked := c.firstUnsettled(needs)
 		if !blocked {
@@ -611,9 +608,6 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 			if c.SequentialWait {
 				c.waitLeft = sequentialWaitLimit
 			}
-		}
-		// A full lane may have lost a request, and nothing else re-requests an asset that isn't on stage yet.
-		if !armed || refused {
 			c.requestNeeds(needs)
 		}
 	}

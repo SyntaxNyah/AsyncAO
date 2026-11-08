@@ -11,7 +11,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -32,14 +31,16 @@ func buildManager(t *testing.T, source assets.Fetcher, localMode bool) (*assets.
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
-		Source: source, LocalMode: localMode, Pool: pool, Decoder: decoder,
+		Source: source, Decoder: decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
+		mgr.SetFolders(lf.Mounts(), nil)
+	}
 	return mgr, resolver
 }
 

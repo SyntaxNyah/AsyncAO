@@ -174,7 +174,7 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 		if manifestURL != "" && mgr != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), overlayFetchTimeout)
 			// Layered: a pack in the user's own folders ships its effects.ini beside its art.
-			if data, ferr := mgr.FetchRawLayered(ctx, manifestURL); ferr == nil {
+			if data, ferr := mgr.FetchRaw(ctx, manifestURL); ferr == nil {
 				if remote, perr := theme.ParseOverlayFX(bytes.NewReader(data)); perr == nil {
 					remoteNames = theme.OverlayFXNames(remote)
 					// Last in the property pass: a manifest beside the art is the most specific file in the ladder.

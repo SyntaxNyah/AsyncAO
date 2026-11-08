@@ -290,7 +290,6 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.logHostLists()
 	a.maybeProbeCasing() // OFF unless the user picked Auto casing (cheap no-op otherwise)
 	a.pollCasingProbe()
-	a.pollMountIndex() // lands a finished local-pack index (no-op when no mounts)
 	a.pollFontChain()
 	a.pollLogBrowser()
 	a.pollEmojiFont()

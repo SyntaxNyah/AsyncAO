@@ -588,8 +588,7 @@ func TestDetachedPreviewSurvivesSessionReset(t *testing.T) {
 // --- "closed = free": the real per-frame call site --------------------------
 
 // TestSyncPreviewWindowClosedIsZeroAlloc is the phase brief's own explicit
-// bar, modeled on internal/assets/mountserve_test.go's
-// TestNoMountsIsExactlyOneAtomicLoad: with nothing ever detached, the REAL
+// bar: with nothing ever detached, the REAL
 // per-frame touch point handlePreviewInput calls unconditionally
 // (syncPreviewWindow) must resolve to nil checks and stop — no allocation,
 // no SDL call. Deliberately built with a.d.Preview as a freshly-constructed
@@ -613,9 +612,7 @@ func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
 }
 
 // BenchmarkSyncPreviewWindowClosed / BenchmarkSyncPreviewWindowOpen are the
-// closed-vs-open comparison pair the phase brief asks for, modeled directly
-// on internal/assets/mountserve_test.go's BenchmarkActiveMountLayerNoMounts /
-// BenchmarkActiveMountLayerConfigured — run together so the RATIO is the
+// closed-vs-open comparison pair the phase brief asks for, run together so the RATIO is the
 // meaningful number:
 //
 //	go test ./internal/ui/... -run NONE -bench SyncPreviewWindow -benchmem

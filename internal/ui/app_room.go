@@ -1616,7 +1616,7 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 	if idx < 0 || idx >= n {
 		return false
 	}
-	if a.d.Manager.IsConclusiveMiss(base, t) {
+	if a.d.Manager.IsMissing(base, t) {
 		return false
 	}
 	if a.iconAskBudget <= 0 {
@@ -1682,7 +1682,7 @@ func (a *App) ensurePreviewEmotes(name string, cycle bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
 		// Layered: a character from the user's own pack must cycle their emotes, not the server's.
-		data, err := mgr.FetchRawLayered(ctx, url)
+		data, err := mgr.FetchRaw(ctx, url)
 		if err != nil {
 			return
 		}
@@ -1797,7 +1797,7 @@ func (a *App) loadCharINI() {
 	ch := a.charINIres
 	go func() {
 		// Layered: a character from the user's own folders must bring its own emote list.
-		data, err := mgr.FetchRawLayered(context.Background(), url)
+		data, err := mgr.FetchRaw(context.Background(), url)
 		if err != nil {
 			ch <- charINIFetch{key: key, err: err}
 			PushWake() // wake the event-driven loop so Background drains this at idle=0

@@ -1,7 +1,7 @@
 package ui
 
 // The evidence editor's image picker: a synthetic filesystem over the local asset sources, each directory the union of
-// the mounts, an earlier mount shadowing a later one, the same first-hit-wins order BuildMountIndex resolves a fetch
+// the mounts, an earlier mount shadowing a later one, the same first-hit-wins order the player's folders answer a fetch
 // with. It cannot leave the mounts: ".." clamps at the root and there are no drives or quick jumps, and the field's
 // value comes from the virtual path (evidenceRelFromMerged), so it is always an asset path. No mount is special; there
 // is no "base folder".

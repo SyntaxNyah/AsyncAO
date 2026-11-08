@@ -1055,12 +1055,10 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 			settings.statusLine = "Disk cache cleared."
 		}
 	}
-	// Retry-missing: the client stops asking for an asset once every format 404ed; this clears that memory manually.
-	missCount := a.d.Manager.ConclusiveMissCount()
+	// Retry-missing: the client stops asking for an asset found nowhere; this clears that memory, the web's included.
 	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, "Retry missing assets") {
-		a.d.Manager.ForgetConclusiveMisses()
-		a.d.Manager.ForgetNotFound() // the network 404 LRU + local miss memo
-		if a.d.Store != nil {        // nil only in headless tests
+		missCount := a.d.Manager.ForgetMissing()
+		if a.d.Store != nil { // nil only in headless tests
 			a.d.Store.ForgetMissing() // the render side's copy, or the viewport keeps drawing placeholders
 		}
 		settings.statusLine = "Will look for " + strconv.Itoa(missCount) + " missing asset(s) again."
@@ -1069,7 +1067,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	y += 30
 	c.Label(pad, y, "\"Clear disk cache\" wipes the on-disk asset cache (T3); assets re-download fresh on next use.", ColTextDim)
 	y += 18
-	c.Label(pad, y, "\"Retry missing assets\" asks again for the "+strconv.Itoa(missCount)+" asset(s) this session found the server doesn't have.", ColTextDim)
+	c.Label(pad, y, "\"Retry missing assets\" asks again for every asset this session found nowhere.", ColTextDim)
 	y += 18
 	c.Label(pad, y, "Recommended after a server that's behind Cloudflare / a CDN updates its assets: otherwise the CDN —", ColTextDim)
 	y += 18

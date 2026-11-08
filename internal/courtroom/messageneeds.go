@@ -160,9 +160,8 @@ func (c *Courtroom) firstUnsettled(needs []messageNeed) (messageNeed, bool) {
 	return messageNeed{}, false
 }
 
-// requestNeeds asks for needs at high priority so the gate can end, and notes the refusals its own requests will cause.
+// requestNeeds asks for needs at high priority, which the media system never refuses, so the gate can end.
 func (c *Courtroom) requestNeeds(needs []messageNeed) {
-	c.waitRefused = c.mgr.RefusedRequests()
 	for _, n := range needs {
 		if n.gate != gateOverlay {
 			c.mgr.PrefetchChain(n.base, n.alts, n.typ, network.PriorityHigh) // AssetType: from the need

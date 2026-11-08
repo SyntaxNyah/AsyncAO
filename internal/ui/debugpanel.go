@@ -368,15 +368,13 @@ func (a *App) drawDebugWorkers(r sdl.Rect) {
 		y += debugLineH
 	}
 	s := a.d.Manager.WorkStats()
-	line(fmt.Sprintf("Fetch: %d/%d busy · high lane %d/%d · low lane %d/%d · shed %d · repeat asks merged %d",
-		s.Pool.Busy, s.Pool.Workers, s.Pool.HighQueued, s.Pool.HighCap, s.Pool.LowQueued, s.Pool.LowCap, s.Pool.Shed, s.Coalesced), ColText)
 	line(fmt.Sprintf("Decode: %d/%d busy · queue %d/%d", len(s.Decoding), s.DecodeWorkers, s.DecodeQueued, s.DecodeCap), ColText)
 	line(fmt.Sprintf("Waiting for the frame loop: images %d/%d · audio %d/%d", s.DecodedQueued, s.DecodedCap, s.AudioQueued, s.AudioCap), ColText)
 	col := ColText
 	if s.Refused > 0 {
 		col = ColDanger
 	}
-	line(fmt.Sprintf("Requests refused by a full high lane: %d", s.Refused), col)
+	line(fmt.Sprintf("Requests refused by a full queue: %d", s.Refused), col)
 	if a.d.Audio != nil {
 		line(fmt.Sprintf("Audio load on the main thread: longest %v", a.d.Audio.LongestLoad().Round(time.Millisecond)), ColText)
 	}
@@ -391,14 +389,7 @@ func (a *App) drawDebugWorkers(r sdl.Rect) {
 			line(fmt.Sprintf("  %v  %s  %s", now.Sub(it.Since).Round(time.Millisecond), it.Kind, it.Name), ColTextDim)
 		}
 	}
-	work("Fetching", s.Fetching)
 	work("Decoding", s.Decoding)
-	y += debugLineH / 2
-	line("By type: queued · started · decoded · average wait · longest wait", ColAccent)
-	for _, t := range s.PerType {
-		line(fmt.Sprintf("  %s: %d · %d · %d · %v · %v", t.Type, t.Queued, t.Started, t.Decoded,
-			t.AverageWait.Round(time.Millisecond), t.LongestWait.Round(time.Millisecond)), ColText)
-	}
 }
 
 // memTierLine formats a byte-budgeted memory tier (T1/T2) for the cache

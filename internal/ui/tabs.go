@@ -210,7 +210,7 @@ func (a *App) activateTab(i int) {
 	}
 	// The URL builder is per-tab and rebuildAssetOrigin doesn't run on a switch, so the local-pack layer must
 	// re-register this tab's origin here. Deferred because the dead-tab arms return early.
-	defer a.applyMountLayer()
+	defer a.applyFolders()
 	if a.tabs[i] == a.splitTab {
 		a.clearSplit() // the pinned tab is becoming the primary
 	}

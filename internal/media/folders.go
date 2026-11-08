@@ -3,8 +3,9 @@ package media
 // Folders is the player's folders and .zip packs as one source, read a folder at a time. A folder's listing is a page;
 // readers find pages with no lock, and the one writer replaces a page whole, never changes it. A miss re-checks a
 // folder once its check is no longer trusted: a create, delete or rename in a folder changes its modified time, so one
-// stat per mount says whether to list it again. Stale ends every check's trust, for when the player may have changed
-// the folders. .zip packs are indexed when mounted and never change under a page.
+// stat per mount says whether to list it again. Stale makes the next check list each folder again, whatever its
+// modified time, for when the player may have changed the folders. Mount reads nothing, so it is safe on the render thread: a folder is looked at when first needed, and a
+// .zip pack is opened and indexed then, never changing under a page afterwards.
 
 import (
 	"archive/zip"
@@ -73,11 +74,12 @@ type folderSet struct {
 	pages   *pageTable
 }
 
-// mountList is an opened mount set, closed with its last reader, so a swap never closes a .zip mid-read.
+// mountList is a mount set, closed with its last reader, so a swap never closes a .zip mid-read. refused holds the
+// mounts turned away when mounting, for exceeding a cap.
 type mountList struct {
 	paths   []string
 	mounts  []folderMount
-	errs    []error
+	refused []error
 	refs    atomic.Int32
 	closeUp sync.Once
 }
@@ -104,37 +106,34 @@ type pageFile struct {
 	name  string
 }
 
-// folderMount is a folder or a .zip pack.
+// folderMount is a folder or a .zip pack; failure is what went wrong the last time it was used, nil if nothing.
 type folderMount interface {
 	close() error
+	failure() error
+	name() string
 }
 
 // Mount replaces the mount set and the URL prefixes that map into it; an unchanged mount set keeps its pages and
-// open packs. It returns the mounts that could not be opened. Call it off the render thread: it opens .zip packs.
-func (fs *Folders) Mount(paths, origins []string) []error {
+// open packs. It reads nothing, so it is safe on any thread.
+func (fs *Folders) Mount(paths, origins []string) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	cur := fs.state.Load()
 	if cur != nil && slices.Equal(cur.mounts.paths, paths) {
 		fs.state.Store(&folderSet{mounts: cur.mounts, origins: origins, pages: cur.pages})
-		return cur.mounts.errs
+		return
 	}
 	var next *folderSet
 	if len(paths) > 0 {
-		list := openMounts(paths)
-		next = &folderSet{mounts: list, origins: origins, pages: &pageTable{}}
+		next = &folderSet{mounts: newMountList(paths), origins: origins, pages: &pageTable{}}
 	}
 	fs.state.Store(next)
 	if cur != nil {
 		cur.mounts.release() // the publishing reference; readers keep theirs until done
 	}
-	if next == nil {
-		return nil
-	}
-	return next.mounts.errs
 }
 
-// Stale ends every folder check's trust, so the next miss in each folder looks at the disk again.
+// Stale ends every folder check's trust, so the next miss in each folder lists it again.
 func (fs *Folders) Stale() {
 	if s := fs.state.Load(); s != nil {
 		s.pages.gen.Add(1)
@@ -149,12 +148,19 @@ func (fs *Folders) Mounts() []string {
 	return nil
 }
 
-// Errors returns the mounts that could not be opened.
+// Errors returns the mounts turned away or found unusable when last used.
 func (fs *Folders) Errors() []error {
-	if s := fs.state.Load(); s != nil {
-		return s.mounts.errs
+	s := fs.state.Load()
+	if s == nil {
+		return nil
 	}
-	return nil
+	errs := append([]error(nil), s.mounts.refused...)
+	for _, m := range s.mounts.mounts {
+		if err := m.failure(); err != nil {
+			errs = append(errs, &MountError{Mount: m.name(), Err: err})
+		}
+	}
+	return errs
 }
 
 // Has answers from the pages with no I/O: Unknown for a folder not checked lately, so only a worker looks.
@@ -212,9 +218,46 @@ func (fs *Folders) Read(rel string) ([]byte, error) {
 	return s.read(dir, name, fs.now())
 }
 
-// Covers reports whether a URL maps into the mounts and a trusted page holds it, with no I/O, so on any thread.
-func (fs *Folders) Covers(rawURL string) bool {
-	return fs.Has(File(rawURL)) == Yes
+// FindStem reports whether the folders hold any format of a URL without extension, checking its folder like Data;
+// workers only.
+func (fs *Folders) FindStem(rawURL string) bool {
+	s := fs.state.Load()
+	if s == nil {
+		return false
+	}
+	dir, stem, ok := s.locate(rawURL)
+	if !ok || !s.mounts.acquire() {
+		return false
+	}
+	defer s.mounts.release()
+	return s.refresh(dir, fs.now()).holdsStem(stem)
+}
+
+// HeldStem is FindStem from the pages already read, trusted or not, with no I/O, so on any thread.
+func (fs *Folders) HeldStem(rawURL string) bool {
+	s := fs.state.Load()
+	if s == nil {
+		return false
+	}
+	dir, stem, ok := s.locate(rawURL)
+	if !ok {
+		return false
+	}
+	p := s.pages.load(dir)
+	return p != nil && p.holdsStem(stem)
+}
+
+// holdsStem reports whether the page has stem itself or stem with any extension.
+func (p *page) holdsStem(stem string) bool {
+	if _, ok := p.files[stem]; ok {
+		return true
+	}
+	for name := range p.files {
+		if len(name) > len(stem) && name[len(stem)] == '.' && strings.HasPrefix(name, stem) {
+			return true
+		}
+	}
+	return false
 }
 
 // RelOf strips the longest mapped prefix from a URL, or reports that the URL is not under the mounts.
@@ -277,7 +320,8 @@ func (s *folderSet) refresh(dir string, now time.Time) *page {
 	}
 	mounts := s.mounts.mounts
 	next := &page{gen: s.pages.gen.Load(), at: now, real: make([]string, len(mounts)), mod: make([]time.Time, len(mounts))}
-	changed := prev == nil
+	// After Stale, list again whatever the modified time says: a coarse timestamp can miss a new file.
+	changed := prev == nil || prev.gen != s.pages.gen.Load()
 	for i, m := range mounts {
 		d, ok := m.(*dirMount)
 		if !ok {
@@ -310,7 +354,7 @@ func (s *folderSet) list(dir string, real []string) map[string]pageFile {
 				names = m.list(real[i])
 			}
 		case *zipMount:
-			names = m.dirs[dir]
+			names = m.namesIn(dir)
 		}
 		for _, n := range names {
 			key := foldSegment(path.Base(n))
@@ -343,7 +387,8 @@ func (t *pageTable) fresh(p *page, now time.Time) bool {
 	return p.gen == t.gen.Load() && now.Sub(p.at) < folderTrust
 }
 
-func openMounts(paths []string) *mountList {
+// newMountList builds a mount set without touching the disk; paths keeps the configured list, as Mount compares it.
+func newMountList(paths []string) *mountList {
 	list := &mountList{paths: append([]string(nil), paths...)}
 	list.refs.Store(1) // the publishing reference, dropped when a later Mount replaces it
 	zips := 0
@@ -351,22 +396,16 @@ func openMounts(paths []string) *mountList {
 		if p == "" || len(list.mounts) >= folderMountCap {
 			continue
 		}
-		var m folderMount
-		var err error
-		if strings.EqualFold(filepath.Ext(p), ".zip") {
-			if zips >= zipMountCap {
-				err = errTooManyZips
-			} else if m, err = openZip(p); err == nil {
-				zips++
-			}
-		} else {
-			m, err = openDir(p)
-		}
-		if err != nil {
-			list.errs = append(list.errs, &MountError{Mount: p, Err: err})
+		if !strings.EqualFold(filepath.Ext(p), ".zip") {
+			list.mounts = append(list.mounts, &dirMount{root: filepath.Clean(p)})
 			continue
 		}
-		list.mounts = append(list.mounts, m)
+		if zips >= zipMountCap {
+			list.refused = append(list.refused, &MountError{Mount: p, Err: errTooManyZips})
+			continue
+		}
+		zips++
+		list.mounts = append(list.mounts, &zipMount{path: p})
 	}
 	return list
 }
@@ -393,21 +432,21 @@ func (l *mountList) release() {
 	}
 }
 
-// dirMount is a folder.
-type dirMount struct{ root string }
-
-func openDir(p string) (*dirMount, error) {
-	st, err := os.Stat(p) // Stat, so a mount folder that is itself a link is accepted
-	if err != nil {
-		return nil, err
-	}
-	if !st.IsDir() {
-		return nil, errNotAMount
-	}
-	return &dirMount{root: filepath.Clean(p)}, nil
+// dirMount is a folder; failed holds why it was unusable the last time it was looked at.
+type dirMount struct {
+	root   string
+	failed atomic.Pointer[error]
 }
 
 func (d *dirMount) close() error { return nil }
+func (d *dirMount) name() string { return d.root }
+
+func (d *dirMount) failure() error {
+	if p := d.failed.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
 
 func (d *dirMount) read(rel string) ([]byte, error) {
 	p, err := safepath.Join(d.root, rel)
@@ -424,10 +463,15 @@ func (d *dirMount) read(rel string) ([]byte, error) {
 // resolve finds the on-disk folder for a folded path, segment by segment so case may differ and no link is followed,
 // as no walk of user folders follows one.
 func (d *dirMount) resolve(folded string) (real string, mod time.Time, ok bool) {
-	st, err := os.Stat(d.root)
-	if err != nil || !st.IsDir() {
+	st, err := os.Stat(d.root) // Stat, so a mount folder that is itself a link is accepted
+	if err == nil && !st.IsDir() {
+		err = errNotAMount
+	}
+	if err != nil {
+		d.failed.Store(&err)
 		return "", time.Time{}, false
 	}
+	d.failed.Store(nil)
 	mod = st.ModTime()
 	if folded == "" {
 		return "", mod, true
@@ -491,20 +535,52 @@ func (d *dirMount) list(real string) []string {
 	return names
 }
 
-// zipMount is a .zip pack, indexed by folded folder when mounted.
+// zipMount is a .zip pack, opened and indexed by folded folder the first time a worker needs it.
 type zipMount struct {
+	path   string
+	once   sync.Once
+	err    error
+	failed atomic.Pointer[error] // err, readable from any thread once open has run
 	rc     *zip.ReadCloser
 	byName map[string]*zip.File
 	dirs   map[string][]string // folded folder to the entry names directly in it
 }
 
-func openZip(p string) (*zipMount, error) {
-	rc, err := zip.OpenReader(p)
-	if err != nil {
-		return nil, err
+func (z *zipMount) name() string { return z.path }
+
+func (z *zipMount) failure() error {
+	if p := z.failed.Load(); p != nil {
+		return *p
 	}
-	z := &zipMount{rc: rc, byName: make(map[string]*zip.File, len(rc.File)), dirs: map[string][]string{}}
-	for _, f := range rc.File {
+	return nil
+}
+
+// open indexes the pack once; workers only.
+func (z *zipMount) open() error {
+	z.once.Do(func() {
+		rc, err := zip.OpenReader(z.path)
+		if err != nil {
+			z.err = err
+			z.failed.Store(&err)
+			return
+		}
+		z.rc = rc
+		z.index()
+	})
+	return z.err
+}
+
+func (z *zipMount) namesIn(dir string) []string {
+	if z.open() != nil {
+		return nil
+	}
+	return z.dirs[dir]
+}
+
+func (z *zipMount) index() {
+	z.byName = make(map[string]*zip.File, len(z.rc.File))
+	z.dirs = map[string][]string{}
+	for _, f := range z.rc.File {
 		if f.FileInfo().IsDir() || safepath.UnsafeRel(f.Name) || safepath.TooDeep(f.Name, folderMaxDepth) {
 			continue // folder entries hold nothing; a name escaping the pack is refused outright
 		}
@@ -517,12 +593,20 @@ func openZip(p string) (*zipMount, error) {
 			z.dirs[dir] = append(z.dirs[dir], f.Name)
 		}
 	}
-	return z, nil
 }
 
-func (z *zipMount) close() error { return z.rc.Close() }
+func (z *zipMount) close() error {
+	z.once.Do(func() {}) // a pack never opened stays closed
+	if z.rc == nil {
+		return nil
+	}
+	return z.rc.Close()
+}
 
 func (z *zipMount) read(name string) ([]byte, error) {
+	if err := z.open(); err != nil {
+		return nil, ErrAbsent
+	}
 	f, ok := z.byName[name]
 	if !ok {
 		return nil, ErrAbsent

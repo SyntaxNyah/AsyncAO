@@ -118,7 +118,6 @@ type Deps struct {
 	Prefs    *config.AssetPreferences
 	Resolver *assets.Resolver
 	Manager  *assets.Manager
-	Pool     *network.Pool
 	Client   *network.Client
 	Store    *render.TextureStore
 	Viewport *render.Viewport
@@ -364,12 +363,6 @@ type App struct {
 	casingProbedHost string           // host already probed this session (probe once per host)
 	casingRes        chan casingProbeResult
 
-	// Local-pack layer (mountlayer.go).
-	mountIndex     *assets.MountIndex // the live index (nil = none built); its own Mounts() is the identity, so no separate key can drift
-	mountIndexing  bool               // a walk is in flight (single-flight latch)
-	mountIndexRes  chan mountIndexResult
-	mountIndexErrs []error // per-mount build failures, for the Settings status line
-
 	// Font override pipeline; file bytes are read off-thread.
 	fontRes chan fontLoad
 	// themeFontFile is the active theme's bundled font path, used when no manual font or dyslexia toggle is set.
@@ -587,7 +580,7 @@ type App struct {
 	// stream from that folder (Manager archive-source override) instead of the origin.
 	replayBundled  bool
 	makerExporting bool
-	makerExportCh  chan string // archive-export goroutine → UI (result line)
+	makerExportCh  chan makerExportOutcome // archive-export goroutine → UI
 	// Scene GIF export: renders offscreen across several frame-loop ticks, then encodes off-thread.
 	gifExporting bool
 	// exportSavedDevScale holds the live text device scale while an export forces ctx.textDevPct to 100, since the UI
@@ -630,6 +623,8 @@ type App struct {
 	// themeCatFocusStat records a window focus-gain for Settings to rescan on; render and event thread only, so a plain
 	// bool.
 	themeCatFocusStat bool
+	// lastLocalRecheck rate-limits the focus-gain re-check of the player's folders; render and event thread only.
+	lastLocalRecheck time.Time
 	// themeReport is the last apply's import report: every degrade, missing family and unbound key.
 	// Bounded by themeReportCap and replaced at each landing, never appended to.
 	themeReport []string
@@ -1164,7 +1159,6 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		iniRes:              make(chan iniswapFetch, 1),
 		manifestRes:         make(chan manifestFetch, 1),
 		casingRes:           make(chan casingProbeResult, 1),
-		mountIndexRes:       make(chan mountIndexResult, 1),
 		fontRes:             make(chan fontLoad, 1),
 		logBrowserRes:       make(chan logbrowser.Result, 1),
 		emojiFontRes:        make(chan []byte, 1),
@@ -1263,7 +1257,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	}
 	// Warm the local-pack index now: starting on connect would race the character-icon prefetch and lose to the
 	// resident-texture short-circuit. Starts no goroutine when no mounts are configured.
-	a.applyMountLayer()
+	a.applyFolders()
 	return a
 }
 

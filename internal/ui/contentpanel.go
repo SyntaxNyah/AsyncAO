@@ -326,13 +326,12 @@ func cpStatusTag(st AssetStatus) string {
 }
 
 // drawContentSourcePicker draws the "Resolve from" control and returns the y past it.
-// "This server" needs a streaming Manager: a local-mode one has no network source, so probes would give false rows.
+// "This server" is off in "only use my folders" mode, which never streams, so probes would give false rows.
 // "Local base" works in any mode once a base exists; with none, clicking in streaming mode expands the inline setup
 // row.
 func (a *App) drawContentSourcePicker(s *contentPanelState, inX, y int32) int32 {
 	c := a.ctx
-	// A local-mode Manager has no network client; nil-guarded for draws with no Manager.
-	localModeMgr := a.d.Manager != nil && a.d.Manager.LocalMode()
+	localModeMgr, _ := a.localAssets()
 	c.Label(inX, y+4, "Resolve from:", ColTextDim)
 	bx := inX + cpSourceLabelW
 	// A disabled segment draws dim and never fires.

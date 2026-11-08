@@ -8,8 +8,7 @@ import (
 
 // TestICLogDrawAllocationIsUnaffectedByTheFontDebugReadout is the "zero cost
 // when the panel is closed" gate CLAUDE.md rule 11 calls for on this
-// diagnostic, modeled on internal/assets/mountserve_test.go's
-// TestNoMountsIsExactlyOneAtomicLoad: measure the REAL per-frame call site
+// diagnostic: measure the REAL per-frame call site
 // directly (drawICLogList — the function screens.go's courtroom draw calls
 // every frame) and assert the Fonts-tab readout added nothing to it.
 //

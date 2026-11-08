@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	folderOrigin   = "http://host/base/"
+	folderOrigin = "http://host/base/"
 	testFileMode = 0o644
 	testDirMode  = 0o755
 	// testLater moves a folder's modified time past any file system's timestamp precision.
@@ -39,9 +39,7 @@ func newTestFolders(t *testing.T, mounts ...string) (*Folders, *testClock) {
 	t.Helper()
 	clock := &testClock{t: time.Unix(0, 0)}
 	fs := NewFolders(clock.now)
-	if errs := fs.Mount(mounts, []string{folderOrigin}); len(errs) > 0 {
-		t.Fatalf("Mount: %v", errs)
-	}
+	fs.Mount(mounts, []string{folderOrigin})
 	t.Cleanup(func() { fs.Mount(nil, nil) })
 	return fs, clock
 }
@@ -133,6 +131,28 @@ func TestStaleMakesTheNextMissLookAgain(t *testing.T) {
 
 	writeFile(t, root, "characters/edgeworth/char.ini", "[Options]")
 	touchLater(t, filepath.Join(root, "characters", "edgeworth"))
+	fs.Stale()
+	if got, ok := dataOf(t, fs, "characters/edgeworth/char.ini"); !ok || got != "[Options]" {
+		t.Fatalf("after Stale: %q, %v", got, ok)
+	}
+}
+
+// A disk with coarse timestamps can leave a folder's modified time unchanged by a new file, so Stale lists it again.
+func TestStaleListsAgainWhenTheModifiedTimeDidNotChange(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "characters/edgeworth/(a)normal.png", "x")
+	dir := filepath.Join(root, "characters", "edgeworth")
+	st, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs, _ := newTestFolders(t, root)
+	dataOf(t, fs, "characters/edgeworth/char.ini")
+
+	writeFile(t, root, "characters/edgeworth/char.ini", "[Options]")
+	if err := os.Chtimes(dir, st.ModTime(), st.ModTime()); err != nil {
+		t.Fatal(err)
+	}
 	fs.Stale()
 	if got, ok := dataOf(t, fs, "characters/edgeworth/char.ini"); !ok || got != "[Options]" {
 		t.Fatalf("after Stale: %q, %v", got, ok)
@@ -240,14 +260,16 @@ func TestRemountingTheSameFoldersKeepsWhatWasChecked(t *testing.T) {
 	}
 }
 
-func TestAnUnopenableMountIsReported(t *testing.T) {
+func TestAnUnusableMountIsReportedOnceUsed(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "gone")
-	fs := NewFolders(time.Now)
-	errs := fs.Mount([]string{missing}, []string{folderOrigin})
-	if len(errs) != 1 {
-		t.Fatalf("errors %v, want one for the missing folder", errs)
+	fs, _ := newTestFolders(t, missing)
+	if errs := fs.Errors(); len(errs) != 0 {
+		t.Fatalf("mounting read the disk: %v", errs)
 	}
-	if fs.Has(File(folderOrigin+"x.png")) == Yes {
-		t.Fatal("an unopenable mount answered")
+	if _, ok := dataOf(t, fs, "x.png"); ok {
+		t.Fatal("an unusable mount answered")
+	}
+	if errs := fs.Errors(); len(errs) != 1 {
+		t.Fatalf("errors %v, want one for the missing folder", errs)
 	}
 }

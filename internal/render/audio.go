@@ -176,7 +176,7 @@ func newAudio(mgr *assets.Manager, m *mix.Mixer) *Audio {
 	}
 	a.loopFetchCtx, a.cancelLoopFetch = context.WithCancel(context.Background())
 	if mgr != nil {
-		a.fetchSidecar = mgr.FetchRawLayered
+		a.fetchSidecar = mgr.FetchRaw
 		a.wake = mgr.NotifyDelivery
 	}
 	if m == nil {

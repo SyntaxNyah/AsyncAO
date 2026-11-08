@@ -23,6 +23,10 @@ Switching them off afterwards keeps you on this build until v2.1.0 is out.
   the proxy set in Windows or macOS.
 - **Packed-room catch-up is now off by default**, and turned off once if it was
   on, so the courtroom plays every message in order like the original client.
+- **Your asset folders no longer win over the server's cached copy.** A file
+  AsyncAO already downloaded and keeps in its cache is used before the same
+  file in your folders; clear the cache to make yours show for it. Files the
+  cache doesn't hold still come from your folders first.
 - **Clients from v1.95.1 or older can't update themselves to this.** They open
   the release page instead; download the bundle from there.
 - The Windows download is larger, because it ships a software renderer for PCs
@@ -56,6 +60,11 @@ Switching them off afterwards keeps you on this build until v2.1.0 is out.
   list was read.
 - Connecting runs in the background, so the window never freezes while a server
   answers.
+- Your asset folders and .zip packs are read a folder at a time, when a file in
+  them is first needed, instead of all at once. New files are found by
+  themselves, and again whenever you come back to the AsyncAO window. **Rescan
+  folders** is now **Check folders now**: press it after changing a file the
+  game is already showing.
 
 ### Desktop notifications
 - On Windows, notifications come from AsyncAO with its own name and icon, not

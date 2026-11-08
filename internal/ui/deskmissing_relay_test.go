@@ -59,7 +59,7 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	dir := t.TempDir() // empty pack: background/gs4/defensedesk exists in no format
 	local, cleanup := wireLocalManager(t, a, dir)
 	defer cleanup()
-	// The LocalMode resolver walks the configured formats; point the desk type at
+	// The resolver walks the configured formats; point the desk type at
 	// .png so the probe list is a real (and short) chain over the on-disk root.
 	a.d.Prefs.SetFormatOrder(assets.AssetTypeDeskOverlay.Name(), []string{config.ExtPNG})
 

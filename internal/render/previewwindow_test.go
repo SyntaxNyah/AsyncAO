@@ -22,9 +22,7 @@ func previewFixtureImage(w, h int) *image.RGBA {
 // --- the "closed = free" contract -------------------------------------------
 
 // TestPreviewWindowClosedPresentIsZeroAlloc is the structural half of the
-// "closed = free" rule for the preview window — the SAME pattern as
-// internal/assets/mountserve_test.go's TestNoMountsIsExactlyOneAtomicLoad for
-// local mounts: with no window open, the per-frame touch point the main loop
+// "closed = free" rule for the preview window: with no window open, the per-frame touch point the main loop
 // calls (Present) must resolve to a nil check and stop, touching no SDL call
 // and allocating nothing. Deliberately needs no sdl.Init at all — that is
 // the point: a closed PreviewWindow never touches SDL.
@@ -43,9 +41,7 @@ func TestPreviewWindowClosedPresentIsZeroAlloc(t *testing.T) {
 }
 
 // BenchmarkPreviewWindowPresentClosed / BenchmarkPreviewWindowPresentOpen are
-// the closed-vs-open comparison pair, modeled directly on
-// internal/assets/mountserve_test.go's BenchmarkActiveMountLayerNoMounts /
-// BenchmarkActiveMountLayerConfigured. Run together (same process, same
+// the closed-vs-open comparison pair. Run together (same process, same
 // machine) so the ratio is the meaningful number, not either absolute:
 func BenchmarkPreviewWindowPresentClosed(b *testing.B) {
 	pw := NewPreviewWindow(host.OpenExtraWindow)

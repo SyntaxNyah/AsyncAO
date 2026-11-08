@@ -74,13 +74,11 @@ func newBridgeRig(t *testing.T, host *bridgeFakeHost) *testRig {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(bridgeTestWorkers)
-	t.Cleanup(pool.Close)
 	decoder := NewDecoderPool(bridgeTestWorkers)
 	t.Cleanup(decoder.Close)
-	m := NewManager(ManagerDeps{Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk, Source: host, Pool: pool, Decoder: decoder, MediaSystem: true})
+	m := NewManager(ManagerDeps{Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk, Source: host, Decoder: decoder})
 	t.Cleanup(m.CloseMedia)
-	return &testRig{prefs: prefs, resolver: resolver, manager: m, pool: pool, decoder: decoder, disk: disk, t2: t2}
+	return &testRig{prefs: prefs, resolver: resolver, manager: m, decoder: decoder, disk: disk, t2: t2}
 }
 
 // nextDecoded waits for the final page of base, releasing partial ones as the upload pump does.
@@ -158,7 +156,7 @@ func TestBridgeMissingWarnsAndDoesNotAskAgain(t *testing.T) {
 	case <-time.After(bridgeTestTimeout):
 		t.Fatal("no missing warning")
 	}
-	if !r.manager.IsConclusiveMiss(base, AssetTypeCharSprite) {
+	if !r.manager.IsMissing(base, AssetTypeCharSprite) {
 		t.Fatal("not remembered as missing")
 	}
 	asked := len(host.askedFor())
@@ -171,8 +169,8 @@ func TestBridgeMissingWarnsAndDoesNotAskAgain(t *testing.T) {
 	if got := len(host.askedFor()); got != asked {
 		t.Fatalf("a repeat ask cost %d requests", got-asked)
 	}
-	r.manager.ForgetConclusiveMissesUnder(bridgeTestOrigin)
-	if r.manager.IsConclusiveMiss(base, AssetTypeCharSprite) {
+	r.manager.ForgetMissingUnder(bridgeTestOrigin)
+	if r.manager.IsMissing(base, AssetTypeCharSprite) {
 		t.Fatal("forgetting left the miss")
 	}
 }
@@ -283,7 +281,7 @@ func TestBridgeExtraHostServesWhatTheServerLacks(t *testing.T) {
 		t.Fatal("no missing warning without the mirror")
 	}
 	r.manager.SetAssetHosts(bridgeTestOrigin, []string{mirror})
-	waitUntil(t, "the miss to be forgotten", func() bool { return !r.manager.IsConclusiveMiss(base, AssetTypeCharSprite) })
+	waitUntil(t, "the miss to be forgotten", func() bool { return !r.manager.IsMissing(base, AssetTypeCharSprite) })
 	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
 	d := nextDecoded(t, r.manager, base)
 	if d.Err != nil || d.Asset == nil || d.URL != mirror+"c/e.webp" {

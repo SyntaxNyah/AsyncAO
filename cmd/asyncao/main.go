@@ -46,7 +46,6 @@ func main() {
 		flagServer      = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
 		flagMaster      = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
 		flagDebug       = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr)
-		flagOldMedia    = flag.Bool("old-media", false, "use the old media pipeline, to compare it with the new one")
 		flagVsync       = flag.Bool("vsync", true, "use vsync presentation")
 		flagSoftGPU     = flag.Bool("software-gpu", false, "draw with the bundled software GPU driver (for broken GPU drivers)")
 		flagGPURecovery = flag.Int("gpu-recovery", 0, "set by the client when it restarts after a GPU device loss: losses so far")
@@ -73,7 +72,7 @@ func main() {
 	}
 	app := host.App{Name: windowTitle, Version: update.Version, ID: appID}
 	err := host.Main(app, platform.SystemProbe{}, func(rt *host.Runtime) error {
-		return run(rt, *flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagDebug, *flagOldMedia)
+		return run(rt, *flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagDebug)
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -94,7 +93,7 @@ func logSamples(p *metrics.Profiler) {
 	}
 }
 
-func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOptions, gpuRecoveries int, debugMode, oldMedia bool) error {
+func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOptions, gpuRecoveries int, debugMode bool) error {
 	vsync := gpuOpts.VSync
 	// --- engine singletons (SDL-free) ---
 	prefsPath, err := config.DefaultPath()
@@ -145,8 +144,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal)*time.Second, sockets)
 	client.SetAssetOrigin(prefs.Load().AssetOrigin) // power-user Origin/CORS override for asset streaming
 	client.SetAdaptiveLatencyMultiple(prefs.Load().AdaptiveLatMultipleVal)
-	pool := network.NewPool(network.DefaultWorkers)
-	defer pool.Close()
 	decoder := assets.NewDecoderPool(assets.DecodeWorkers())
 	defer decoder.Close()
 	decoder.SetAnimatedBudgetMiB(prefs.Load().AnimatedBudgetMiB())
@@ -242,36 +239,20 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	defer store.Purge()
 
 	// --- asset pipeline ---
-	// Appended after the manual mounts so an explicit folder wins.
-	enabled, manualMounts := prefs.LocalAssets()
+	// Packages beside the executable; the UI appends them after the manual mounts, so an explicit folder wins.
 	autoMounts := config.DiscoverPackages(config.ExecutableDir())
-	allMounts := config.CombineMounts(manualMounts, autoMounts)
-	var localMode bool
-	var source assets.Fetcher = client
-	if enabled && len(allMounts) > 0 {
-		source = assets.NewLocalFetcher(allMounts)
-		localMode = true
-	}
 	manager := assets.NewManager(assets.ManagerDeps{
 		Resolver:   resolver,
 		Prefs:      prefs,
 		T2:         t2,
 		Disk:       disk,
-		Source:     source,
-		LocalMode:  localMode,
-		Pool:       pool,
+		Source:     client,
 		Decoder:    decoder,
 		Thumbs:     thumbs, // opt-in low-q sprite thumbnails (nil when unavailable)
 		T1Contains: store.ContainsAnimated,
 		T1Failed:   store.FailedRecently,
-
-		MediaSystem: !oldMedia,
 	})
 	defer manager.CloseMedia()
-	// Mounts also resolve recordings, so seed the overlay regardless of the local-folders flag.
-	if len(allMounts) > 0 {
-		manager.SetLocalOverlay(assets.NewLocalFetcher(allMounts))
-	}
 	manager.SetDiskCompression(prefs.Load().DiskZstd)
 	// 0 = unlimited.
 	manager.SetDiskBudget(int64(prefs.Load().DiskCacheBudgetMiBVal) << 20)
@@ -328,7 +309,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Prefs:            prefs,
 		Resolver:         resolver,
 		Manager:          manager,
-		Pool:             pool,
 		Client:           client,
 		Store:            store,
 		Viewport:         viewport,

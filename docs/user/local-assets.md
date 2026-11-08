@@ -15,6 +15,10 @@ The middle mode is the one most people want. Add a folder (or a `.zip`), pick
 it, and your files are used **instead of the server's copies at the same
 paths** — while everything you *don't* have keeps streaming normally.
 
+One exception: a file AsyncAO already downloaded from the server and keeps in
+its cache wins over yours. Clear the cache (Settings → Cache) to make your copy
+show for a file the server has already sent you.
+
 That makes it useful for two different things:
 
 - **Adding** content the server lacks — a private pack of characters, a few
@@ -41,22 +45,23 @@ over a `.webp` server — but the folder and file *name* must.
   `phoenix wright/(a)normal.png` are the same file to AsyncAO.
 - Up to 16 mounts.
 
-## Rescan
+## Adding and changing files
 
-Press **Rescan folders** after adding or changing files on disk. AsyncAO
-indexes your mounts once and then answers from memory, so it does not notice
-edits by itself.
+AsyncAO looks in a folder the first time it needs a file from it, and notices
+new, removed and renamed files by itself: it looks again when a file is missing
+and its last look is more than 30 seconds old, and every time you come back to
+the AsyncAO window.
 
-A rescan reloads the art your folders cover right away; everything else updates
-as it reloads normally. It also re-tries any file that failed to load last
-time.
+Press **Check folders now** after changing a file the game is already showing:
+the art drawn from your folders reloads, and anything that failed to load is
+tried again.
 
 ## When a file in your pack is damaged
 
 If a file in your folders can't be read or decoded, AsyncAO **uses the server's
 copy for that one asset instead** and tells you how many files that happened
 to. Your pack is not disabled, and the server's copy is not penalised for your
-file being broken. Fix the file and press Rescan.
+file being broken. Fix the file and press Check folders now.
 
 One exception: a damaged music or sound file is only re-tried the next time
 that track plays.
@@ -91,14 +96,12 @@ which is worse than no bundle.
 
 ## Performance
 
-If you have no folders configured, layering costs nothing at all — no index is
-built, no folder is scanned, and the asset pipeline is byte-for-byte the one
-that shipped before it. This is gated by a benchmark, not just asserted.
+With no folders configured, nothing is read and no folder is looked at.
 
-With folders configured, a lookup is an in-memory map hit against an index
-built once in the background. A file your pack provides costs **no network
-request at all**. There is no size limit on the index: every file in your
-folders is indexed (memory grows with the pack, roughly 180 bytes per file).
+With folders configured, AsyncAO lists a folder once, when a file in it is
+first needed, and answers from that listing after. A `.zip` pack is indexed the
+first time it is needed. A file your pack provides costs **no network request
+at all**.
 
 ## Legacy: never stream
 

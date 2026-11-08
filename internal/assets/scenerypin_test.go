@@ -56,7 +56,7 @@ func TestAFetchedBackgroundIsServedFromThePinAfterTheSharedCacheDropsIt(t *testi
 	r.manager.PrefetchChain(base, nil, AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	nextDecoded(t, r.manager, base)
 	r.t2.Purge()
-	if (bridgeMemory{r.t2, r.manager.bridge.pin}).Has(media.File(base+".webp")) != media.Yes {
+	if (bridgeMemory{r.t2, r.manager.bridge.pin, r.manager}).Has(media.File(base+".webp")) != media.Yes {
 		t.Fatal("the room's background left memory with the shared cache")
 	}
 }
