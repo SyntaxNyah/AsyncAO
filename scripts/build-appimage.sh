@@ -68,7 +68,8 @@ fetch() {  # fetch <url> <sha256> <dest>
 	local url="$1" sha256="$2" dest="$3"
 	if [[ ! -f "$dest" ]]; then
 		echo ">> downloading $(basename "$dest")"
-		curl -fsSL "$url" -o "$dest.download"
+		# GitHub's release downloads answer 504 for minutes at a time; the checksum below still guards the file.
+		curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors "$url" -o "$dest.download"
 		echo "$sha256  $dest.download" | sha256sum -c -
 		mv "$dest.download" "$dest"
 		chmod +x "$dest"
