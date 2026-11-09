@@ -2,13 +2,13 @@
 
 ## What runs when
 
-Contributor CI and releases are separate pipelines that share only `checks.yml` and `build.yml`.
+Contributor CI and releases are separate pipelines that share only `lint.yml`, `checks.yml` and `build.yml`.
 
 | Event | What runs |
 |---|---|
-| Push to a branch with no open PR | Package on Windows, Linux and macOS, with no smoke test. Test builds appear under Actions, the run, Artifacts, for 14 days, one bundle file per platform with no extra zip around it, and report version `dev`, so they never self-update. Run the local checks in `CLAUDE.md` yourself. |
-| Draft PR commit | The same packaging. |
-| Commit on a PR that is ready for review, manual CI run | gofmt, vet, staticcheck, golangci-lint, race tests on all three OSes, benchmark alloc gates, packaging and a smoke test on all three OSes. |
+| Push to a branch with no open PR | Lint, then, only when it passes, package on Windows, Linux and macOS, with no smoke test. Test builds appear under Actions, the run, Artifacts, for 14 days, one bundle file per platform with no extra zip around it, and report version `dev`, so they never self-update. Run the local checks in `CLAUDE.md` yourself. |
+| Draft PR commit | The same lint and packaging. |
+| Commit on a PR that is ready for review, manual CI run | gofmt, vet, staticcheck and golangci-lint first; only when they pass, race tests on all three OSes, benchmark alloc gates, packaging and a smoke test on all three OSes. |
 | Merge or push to `main` | Nothing, unless it releases (below). |
 | Only docs changed (`docs/`, root `*.md`, `LICENSE`) | Nothing. |
 | A release starts (below) | All the checks again, then packaging, then publishing. |
@@ -21,7 +21,9 @@ already pushed builds that commit a second time; later pushes build once.
 ## Layout
 
 - `.github/workflows/ci.yml` chooses the checks for PRs; `branch-build.yml` packages branches with no open PR.
-- `.github/workflows/checks.yml` holds lint and tests, `build.yml` holds packaging. CI and releases share both.
+- `.github/workflows/lint.yml` holds lint, `checks.yml` runs it and then the tests, `build.yml` holds packaging. Every
+  build waits for lint: PR CI and branch builds run it on their own first, so a lint failure starts no tests and no
+  builds, and releases run `checks.yml` before building.
 - `.github/workflows/release.yml` publishes; `security.yml` runs `govulncheck` weekly, outside `ci-ok`.
 - `.github/actions/setup-build` installs Go and the C libraries. It is the one place the Go and SDL versions are set for CI.
 - `scripts/package.sh build|pack|smoke` is the one build path, and also runs locally.

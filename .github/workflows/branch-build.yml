@@ -36,8 +36,14 @@ jobs:
           count="$(gh pr list --head "$BRANCH" --state open --json number --jq length)"
           echo "has-pr=$([ "$count" != 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
-  build:
+  # The builds wait for lint, so a lint failure starts none of them.
+  lint:
     needs: scope
+    if: needs.scope.outputs.has-pr == 'false'
+    uses: ./.github/workflows/lint.yml
+
+  build:
+    needs: [scope, lint]
     if: needs.scope.outputs.has-pr == 'false'
     uses: ./.github/workflows/build.yml
     with:

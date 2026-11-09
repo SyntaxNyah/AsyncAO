@@ -45,13 +45,22 @@ jobs:
           fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
 
-  checks:
+  # Lint runs alone first, drafts included: the race tests and the three platform builds wait for it, so a lint
+  # failure starts none of them.
+  lint:
     needs: scope
+    if: needs.scope.outputs.mode != 'none'
+    uses: ./.github/workflows/lint.yml
+
+  checks:
+    needs: [scope, lint]
     if: needs.scope.outputs.mode == 'full'
     uses: ./.github/workflows/checks.yml
+    with:
+      lint: false
 
   build:
-    needs: scope
+    needs: [scope, lint]
     if: needs.scope.outputs.mode != 'none'
     uses: ./.github/workflows/build.yml
     with:
@@ -61,10 +70,11 @@ jobs:
   # would make the jobs it skipped look unused.
   clean-caches:
     name: Remove unused caches
-    needs: [scope, checks, build]
+    needs: [scope, lint, checks, build]
     # !cancelled(): without a status function, the skipped checks job would skip this too.
     if: >-
       !cancelled() && github.run_attempt == 1 && needs.build.result == 'success' &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
       (needs.checks.result == 'success' || needs.checks.result == 'skipped') &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
@@ -81,7 +91,7 @@ jobs:
 
   ci-ok:
     name: ci-ok
-    needs: [scope, checks, build]
+    needs: [scope, lint, checks, build]
     if: always()
     runs-on: ubuntu-24.04
     steps:
