@@ -283,6 +283,13 @@ that in rehearsal mode, where the offline gate manufactures the 404s.
 | T2 | raw fetched bytes | 128 MiB | full URL | byte-budget LRU |
 | T3 | disk blobs | unbounded, user-clearable | `xxhash64(full URL)`, sharded `assets/<xx>/<hash>` | manual / Clear button |
 
+T3's root is an atomic pointer, so `DiskCache.Relocate` moves the cache while
+the client runs: reads and writes switch to the new root at once, then the old
+blobs are renamed over (copied across drives) or deleted, and the old root is
+removed. A blob not moved yet reads as a miss and is fetched again. The
+player's folder is never the root itself: `DiskRootIn(dir)` nests
+`<dir>/AsyncAO/assets`, and nested old/new roots are refused.
+
 Full-URL keys make per-server separation structural: two servers (or two
 local mount sets — their origin embeds a mount-list hash) can never collide.
 

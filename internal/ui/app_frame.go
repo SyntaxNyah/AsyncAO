@@ -309,6 +309,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollWardrobe()
+	a.pollCacheFolder()
 	a.pollJukeBind()
 	a.pollMacroBind()
 	a.pollShownameBind()

@@ -144,7 +144,17 @@ type settingsState struct {
 	cacheSizes      cacheSizes
 	cacheMeasuredAt time.Time
 	cacheMeasuring  bool
-	cacheSizeRes    chan cacheSizes
+	// The disk cache's folder: a pick in flight, a picked folder (or the default) awaiting the move question, a
+	// move under way, and the last result.
+	cachePickBusy  bool
+	cachePickRes   chan dialogPick
+	cacheNewDir    string
+	cacheToDefault bool
+	cacheMoving    bool
+	cacheMoveRes   chan cacheMoveResult
+	cacheStatus    string
+	cacheStatusBad bool
+	cacheSizeRes   chan cacheSizes
 	// learnedKeys is the learned-formats map size learnedServers was counted for.
 	learnedKeys, learnedServers int
 
@@ -181,6 +191,8 @@ var settings = settingsState{
 	folderScanRes:      make(chan baseScan, folderScanResCap),
 	mountDropRes:       make(chan string, mountDropResCap),
 	cacheSizeRes:       make(chan cacheSizes, cacheSizeResCap),
+	cachePickRes:       make(chan dialogPick, 1),
+	cacheMoveRes:       make(chan cacheMoveResult, 1),
 	ioRes:              make(chan string, 1),
 }
 

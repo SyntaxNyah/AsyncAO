@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -57,7 +58,8 @@ type diskWrite struct {
 // DiskCache is tier 3: a user-clearable blob store with one writer goroutine.
 // Get is synchronous, never for render, decode or resolver paths; Put never blocks or does I/O.
 type DiskCache struct {
-	root string
+	// root is swapped whole by Relocate while readers and the writer keep running.
+	root atomic.Pointer[string]
 
 	queue     chan diskWrite
 	pruneReq  chan struct{} // coalescing wake: SetBudget signals the writer to sweep now
@@ -103,7 +105,106 @@ func DefaultDiskRoot() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cache: locating user cache dir: %w", err)
 	}
-	return filepath.Join(dir, CacheDirName, AssetsSubdir), nil
+	return DiskRootIn(dir), nil
+}
+
+// DiskRootIn is where the cache lives inside a folder the player chose: <dir>/AsyncAO/assets, never dir itself, so
+// clearing, moving or deleting the cache only ever touches AsyncAO's own folder.
+func DiskRootIn(dir string) string {
+	return filepath.Join(dir, CacheDirName, AssetsSubdir)
+}
+
+// ErrRelocateNested refuses a new cache folder inside the old one, or the old inside the new: moving would walk into
+// its own copy, and deleting the old folder would delete the new one.
+var ErrRelocateNested = errors.New("cache: the new folder and the old one are inside each other")
+
+// Relocate moves the cache to newRoot. Reads and writes go there at once; the old blobs are moved over when move is
+// set and deleted when it isn't, then the old folder is removed. A blob still being moved reads as a miss and is
+// fetched again. It walks and copies the old folder, so call it off the render thread (hard rule 2).
+func (d *DiskCache) Relocate(newRoot string, move bool) error {
+	newRoot = filepath.Clean(newRoot)
+	old := d.Root()
+	if newRoot == old {
+		return nil
+	}
+	if within(old, newRoot) || within(newRoot, old) {
+		return ErrRelocateNested
+	}
+	if err := os.MkdirAll(newRoot, diskDirPerm); err != nil {
+		return fmt.Errorf("cache: creating %s: %w", newRoot, err)
+	}
+	d.root.Store(&newRoot)
+	var err error
+	if move {
+		err = moveBlobs(old, newRoot)
+	}
+	if rmErr := os.RemoveAll(old); rmErr != nil && err == nil {
+		err = fmt.Errorf("cache: removing the old folder %s: %w", old, rmErr)
+	}
+	d.SetBudget(d.budget.Load()) // sweep the new folder against the cap
+	return err
+}
+
+// within reports whether path is dir or inside it.
+func within(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// moveBlobs moves every finished blob under from to the same place under to, keeping a blob already there (it is
+// newer). A rename that fails across drives falls back to copying.
+func moveBlobs(from, to string) error {
+	var firstErr error
+	_ = filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || !entry.Type().IsRegular() || filepath.Ext(path) == ".tmp" {
+			return nil
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil {
+			return nil
+		}
+		dst := filepath.Join(to, rel)
+		if _, err := os.Stat(dst); err == nil {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), diskDirPerm); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			return nil
+		}
+		if os.Rename(path, dst) == nil {
+			return nil
+		}
+		if err := copyFile(path, dst); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		return nil
+	})
+	return firstErr
+}
+
+// copyFile copies src to dst through a temp file, so a half-copied blob never looks finished.
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), diskTmpPattern)
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, dst)
 }
 
 // NewDiskCache opens the tier and starts its writer; initialBudget is set first so the at-open sweep sees it.
@@ -112,12 +213,12 @@ func NewDiskCache(root string, initialBudget int64) (*DiskCache, error) {
 		return nil, fmt.Errorf("cache: creating disk cache root %s: %w", root, err)
 	}
 	d := &DiskCache{
-		root:     root,
 		queue:    make(chan diskWrite, writeQueueCap),
 		pruneReq: make(chan struct{}, pruneReqCap),
 		stop:     make(chan struct{}),
 		done:     make(chan struct{}),
 	}
+	d.root.Store(&root)
 	d.budget.Store(initialBudget) // read by the at-open prune below, before any race
 	go d.writerLoop()
 	return d, nil
@@ -138,12 +239,12 @@ func (d *DiskCache) reportError(err error) {
 }
 
 // Root returns the cache directory, for read-only use.
-func (d *DiskCache) Root() string { return d.root }
+func (d *DiskCache) Root() string { return *d.root.Load() }
 
 // pathFor maps a URL to its blob path: <root>/<xx>/<xxhash64-hex>.
 func (d *DiskCache) pathFor(url string) string {
 	key := Key(url)
-	return filepath.Join(d.root, key[:shardPrefixLen], key)
+	return filepath.Join(d.Root(), key[:shardPrefixLen], key)
 }
 
 // Get reads the blob for url. A zero-length blob, a torn write from a crash, and a compressed blob from an older
@@ -189,13 +290,14 @@ func (d *DiskCache) Delete(url string) {
 
 // Clear removes every cached blob; the cache remains usable.
 func (d *DiskCache) Clear() error {
-	entries, err := os.ReadDir(d.root)
+	root := d.Root()
+	entries, err := os.ReadDir(root)
 	if err != nil {
-		return fmt.Errorf("cache: listing %s: %w", d.root, err)
+		return fmt.Errorf("cache: listing %s: %w", root, err)
 	}
 	var firstErr error
 	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(d.root, entry.Name())); err != nil && firstErr == nil {
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -298,7 +400,7 @@ func (d *DiskCache) prune() {
 	}
 	var total int64
 	files := make([]diskFileAge, 0, 256)
-	_ = filepath.WalkDir(d.root, func(path string, entry fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(d.Root(), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil // racing a concurrent Clear is fine
@@ -356,7 +458,7 @@ func (d *DiskCache) Stats() DiskStats {
 // SizeOnDisk walks the cache and reports total blob bytes.
 func (d *DiskCache) SizeOnDisk() (int64, error) {
 	var total int64
-	err := filepath.WalkDir(d.root, func(_ string, entry fs.DirEntry, err error) error {
+	err := filepath.WalkDir(d.Root(), func(_ string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil // racing a concurrent Clear is fine

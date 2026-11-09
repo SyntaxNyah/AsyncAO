@@ -562,7 +562,7 @@ func TestDiskShardLayout(t *testing.T) {
 	waitForBlob(t, d, url)
 
 	key := Key(url)
-	want := filepath.Join(d.root, key[:shardPrefixLen], key)
+	want := filepath.Join(d.Root(), key[:shardPrefixLen], key)
 	if _, err := os.Stat(want); err != nil {
 		t.Errorf("blob not at sharded path %s: %v", want, err)
 	}
@@ -622,7 +622,7 @@ func TestDiskNoTempLeftovers(t *testing.T) {
 	d.Close() // drains queue
 
 	var leftovers []string
-	err := filepath.Walk(d.root, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(d.Root(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

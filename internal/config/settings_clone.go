@@ -716,6 +716,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.DiskCacheBudgetMiBVal != o.DiskCacheBudgetMiBVal {
 		return false
 	}
+	if s.CacheDirVal != o.CacheDirVal {
+		return false
+	}
 	if s.NotFoundTTLSecVal != o.NotFoundTTLSecVal {
 		return false
 	}

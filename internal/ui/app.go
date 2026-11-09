@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
@@ -106,6 +107,8 @@ type Deps struct {
 	Prefs    *config.AssetPreferences
 	Resolver *assets.Resolver
 	Manager  *assets.Manager
+	// Disk is the disk cache tier, which Settings can move to another folder while the client runs.
+	Disk     *cache.DiskCache
 	Client   *network.Client
 	Store    *render.TextureStore
 	Viewport *render.Viewport

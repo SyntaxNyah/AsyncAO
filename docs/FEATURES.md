@@ -757,6 +757,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   adds synchronous I/O. The **default is 0 = unlimited**, which never deletes
   anything (T3's unboundedness is a deliberate design choice — no update silently
   wipes a cache).
+- **Cache folder** (Settings ▸ Assets ▸ Cache ▸ Disk): **Change…** picks any folder and
+  the cache moves at once, into an `AsyncAO/assets` folder inside it (never the
+  folder itself, so clearing the cache can't touch your other files). You choose
+  whether the files already cached **move** along or are **deleted**; the move
+  runs in the background and you can keep playing. **Use default** goes back to
+  the system cache folder. A folder inside the cache, or the cache inside it, is
+  refused.
 - **Reset to defaults** (Settings, with a confirmation pop-up): two scopes —
   **Reset settings** reverts the whole settings page (scales, volumes, theme,
   hotkeys, colours, toggles) to defaults but KEEPS your favourites, wardrobes,

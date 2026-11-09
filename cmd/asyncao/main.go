@@ -130,6 +130,9 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	if err != nil {
 		return err
 	}
+	if dir := prefs.Load().CacheDir(); dir != "" {
+		diskRoot = cache.DiskRootIn(dir) // the player's own folder (Settings > Assets > Cache)
+	}
 	// Pass the cap up front so the at-open sweep enforces it (0 = unlimited).
 	disk, err := cache.NewDiskCache(diskRoot, int64(prefs.Load().DiskCacheBudgetMiBVal)<<20)
 	if err != nil {
@@ -316,6 +319,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Prefs:            prefs,
 		Resolver:         resolver,
 		Manager:          manager,
+		Disk:             disk,
 		Client:           client,
 		Store:            store,
 		Viewport:         viewport,

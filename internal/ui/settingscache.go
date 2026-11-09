@@ -192,7 +192,7 @@ func (a *App) drawDiskCacheSettings(y int32) int32 {
 			a.openInFileManager(root)
 		}
 	}
-	return y + btnH
+	return a.drawCacheFolderSettings(y + btnH + cacheFolderGap)
 }
 
 // drawMissingSettings is how long a missing asset is remembered before it is asked for again.

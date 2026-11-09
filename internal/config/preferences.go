@@ -1301,6 +1301,10 @@ func (s *Settings) PreviewHeightPx() int {
 	return value.Clamp(orDefault(s.PreviewHeightPxVal, DefaultPreviewHeightPx), MinPreviewHeightPx, MaxPreviewHeightPx)
 }
 
+// CacheDir is the folder the player chose for the disk cache, "" for the system's cache folder. The cache itself lives
+// in an AsyncAO folder inside it (cache.DiskRootIn).
+func (s *Settings) CacheDir() string { return s.CacheDirVal }
+
 // WardrobeIconPx is the size the Wardrobe draws character icons at.
 func (s *Settings) WardrobeIconPx() int {
 	return value.Clamp(orDefault(s.WardrobeIconPxVal, WardrobeIconDefaultPx), WardrobeIconMinPx, WardrobeIconMaxPx)

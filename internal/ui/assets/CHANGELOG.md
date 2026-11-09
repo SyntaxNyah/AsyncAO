@@ -40,6 +40,10 @@ The sixth pre-release of v2.1.0, with a rebuilt Wardrobe.
   fonts), text size, icon size and highlight colour.
 
 ### Settings
+- **Pick where the disk cache lives**: Settings ▸ Assets ▸ Cache ▸ Disk ▸
+  **Change…**.
+  The cache moves right away, and you choose whether the files already cached
+  move with it or are deleted. **Use default** moves it back.
 - Every font box in Theme ▸ Font and size per panel now suggests your installed
   fonts as you type.
 
