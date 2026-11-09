@@ -4,17 +4,44 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## Unreleased
+## v2.1.0-rc.6 - 2026-11-09
+
+The sixth pre-release of v2.1.0, with a rebuilt Wardrobe.
 
 ### Before you update
-- **The Wardrobe is gone** while it is redesigned: its window, the Wardrobe
-  button and Ctrl+6, the Iniswap chip in the menu bar, the Wardrobe tab and ★
-  on Character Select, Quick-swap (Ctrl+J) and character key binds. Your saved
-  favourites, folders and key binds are kept for the new version.
-- A theme's iniswap dropdown still works; it now lists your own character and
-  the one you are wearing.
+- **Your favourites are now shared by every server.** On first start, each
+  server's saved characters merge into one list and their folders come along.
+  Folders made on the server you're on show a green ✓.
+- **Gone from the Wardrobe:** the Backgrounds tab (the Background picker keeps
+  your starred backgrounds), Quick-swap (Ctrl+J), character key binds, number
+  keys for filing, and the "From your base" list.
+- **The server's list is now `iniswaps.ini`**, the name AO2 uses, instead of
+  `iniswap.txt`. Server owners who published `iniswap.txt` should rename it.
 - **The Jukebox has its own window**: Extras ▸ Jukebox… in the menu bar, the
-  Extras box, or its hotkey (Ctrl+7).
+  Extras box, or Ctrl+7.
+
+### Wardrobe
+- **User / Server**: your own favourites, or the characters the server lists.
+  **Grid or List** view.
+- **Folders** on the left. A character can be in **several folders**. Hover a
+  folder to rename it, delete it, or give it an icon, a colour or your own
+  image (drop a PNG, WebP or GIF on it). Drag folders to reorder them.
+- **Click selects, double-click wears**: it switches to the character when the
+  slot is free and wears it as an iniswap otherwise, and tells you which.
+  Iniswaps carry a small yellow tag.
+- **Nicknames** show instead of a character's name, with the real name under
+  it; only you see them.
+- **Sort** by your own order (drag cards), name, last worn, or folder.
+- **Add** characters by typing their folder names, or tick them from the
+  server's list.
+- **Character Select's ★** saves a character to the Wardrobe again, and removes
+  it with a second click.
+- **Settings ▸ General ▸ Wardrobe**: font (with suggestions from your installed
+  fonts), text size, icon size and highlight colour.
+
+### Settings
+- Every font box in Theme ▸ Font and size per panel now suggests your installed
+  fonts as you type.
 
 ## v2.1.0-rc.5 - 2026-11-09
 
