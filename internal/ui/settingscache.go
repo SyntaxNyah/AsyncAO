@@ -36,8 +36,11 @@ const (
 	cacheSliderW  int32 = 230
 	cacheValueGap int32 = 6
 	cacheSliderH  int32 = 16
-	// cacheButtonW is a folded row's buttons.
-	cacheButtonW int32 = 170
+	// cacheValueW keeps room for a slider's value text; cacheSliderMinW is as far as a narrow window shrinks a slider.
+	cacheValueW     int32 = 80
+	cacheSliderMinW int32 = 60
+	// cacheButtonPadX is the space either side of a folded row's button label.
+	cacheButtonPadX int32 = 12
 	// cacheTexStepMiB is the art memory budget's -/+ step.
 	cacheTexStepMiB = 16
 	// cacheMeasureEvery spaces the disk counts; a clear measures again at once.
@@ -168,8 +171,6 @@ func (a *App) drawArtMemorySettings(y int32) int32 {
 
 // drawDiskCacheSettings is the disk cache's size limit and folder.
 func (a *App) drawDiskCacheSettings(y int32) int32 {
-	c := a.ctx
-	pad := a.formX
 	cur := a.d.Prefs.Load().DiskCacheBudgetMiBVal
 	next := a.cacheSlider(y, "diskcachebudget", "Size limit:", cur, config.DiskCacheBudgetMaxMiB,
 		"Past the limit the oldest files are deleted; far left keeps everything.")
@@ -185,14 +186,7 @@ func (a *App) drawDiskCacheSettings(y int32) int32 {
 		a.d.Prefs.Update(func(sn *config.Settings) { sn.DiskCacheBudgetMiBVal = next })
 		a.d.Manager.SetDiskBudget(int64(next) * bytesPerMiB)
 	}
-	y += settRowH
-
-	if c.Button(sdl.Rect{X: pad, Y: y, W: cacheButtonW, H: btnH}, "Open cache folder") {
-		if root := a.d.Manager.DiskRoot(); root != "" {
-			a.openInFileManager(root)
-		}
-	}
-	return a.drawCacheFolderSettings(y + btnH + cacheFolderGap)
+	return a.drawCacheFolderSettings(y + settRowH)
 }
 
 // drawMissingSettings is how long a missing asset is remembered before it is asked for again.
@@ -218,9 +212,9 @@ func (a *App) drawMissingSettings(y int32) int32 {
 // drawLearnedSettings is the learned formats' repair, export and import.
 func (a *App) drawLearnedSettings(y int32) int32 {
 	c := a.ctx
-	pad := a.formX
 	const fixLabel, exportLabel, importLabel = "Fix stuck images", "Export…", "Import…"
-	r := sdl.Rect{X: pad, Y: y, W: cacheButtonW, H: btnH}
+	row := cacheButtonRow{a: a, x: a.formX, y: y}
+	r := row.next(fixLabel)
 	// A server repack or stale CDN needs the learned format and the cached file dropped together; either alone
 	// leaves the other stuck.
 	if c.Button(r, fixLabel) {
@@ -233,32 +227,54 @@ func (a *App) drawLearnedSettings(y int32) int32 {
 		settings.cacheMeasuredAt = time.Time{}
 	}
 	c.Tooltip(r, "Clears learned formats and the disk cache together, for art that is wrong everywhere.")
-	a.noteSearchRow(fixLabel, y)
-	r.X += cacheButtonW + settBtnGap
+	a.noteSearchRow(fixLabel, r.Y)
+	r = row.next(exportLabel)
 	if c.Button(r, exportLabel) {
 		exportLearnedAsync(a.d)
 	}
 	c.Tooltip(r, "Writes learned formats beside the program, to carry to another computer.")
-	r.X += cacheButtonW + settBtnGap
+	r = row.next(importLabel)
 	if c.Button(r, importLabel) {
 		importLearnedAsync(a.d)
 	}
 	c.Tooltip(r, "Merges in an exported file, so its servers load right from the first visit.")
-	return y + btnH
+	return row.y + mountCtlH
+}
+
+// cacheButtonRow lays buttons left to right, each as wide as its label, and wraps to a new line at the form's edge.
+type cacheButtonRow struct {
+	a    *App
+	x, y int32
+}
+
+// next is the rect for a button labelled label.
+func (br *cacheButtonRow) next(label string) sdl.Rect {
+	w := max(br.a.ctx.TextWidth(label)+cacheButtonPadX*2, cacheActionW)
+	if br.x > br.a.formX && br.x+w > br.a.formX+br.a.formW {
+		br.x, br.y = br.a.formX, br.y+mountCtlH+mountCtlGap
+	}
+	r := sdl.Rect{X: br.x, Y: br.y, W: w, H: mountCtlH}
+	br.x += w + mountCtlGap
+	return r
 }
 
 // cacheSlider draws a folded setting's label and slider and returns the value the slider is at.
 func (a *App) cacheSlider(y int32, id, label string, cur, maxVal int, tip string) int {
 	c := a.ctx
 	c.Label(a.formX, y+settBadgeDY, label, ColText)
-	track := sdl.Rect{X: a.formX + cacheSliderX, Y: y + settDetailGap, W: cacheSliderW, H: cacheSliderH}
+	track := sdl.Rect{X: a.formX + cacheSliderX, Y: y + settDetailGap, W: a.cacheSliderWidth(), H: cacheSliderH}
 	c.Tooltip(track, tip)
 	return int(value.Clamp(c.Slider(id, track, int32(cur), int32(maxVal)), 0, int32(maxVal)))
 }
 
 // cacheSliderValue draws the value beside a cacheSlider.
 func (a *App) cacheSliderValue(y int32, text string) {
-	a.ctx.Label(a.formX+cacheSliderX+cacheSliderW+cacheValueGap, y+settBadgeDY, text, ColTextDim)
+	a.ctx.Label(a.formX+cacheSliderX+a.cacheSliderWidth()+cacheValueGap, y+settBadgeDY, text, ColTextDim)
+}
+
+// cacheSliderWidth fits a slider and its value text into the form, up to cacheSliderW.
+func (a *App) cacheSliderWidth() int32 {
+	return value.Clamp(a.formW-cacheSliderX-cacheValueGap-cacheValueW, cacheSliderMinW, cacheSliderW)
 }
 
 // measureCachesIfDue lands a finished count and starts the next once the last is older than cacheMeasureEvery.
