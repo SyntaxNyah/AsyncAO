@@ -26,7 +26,8 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	y += btnH + 6
 	y = a.settingsDesc(pad, y, "Server software, live packet inspector, performance (frame graph, heap, GC), the three-tier asset cache, and the failure log — one floating panel. Also opens with F8 anywhere, or Extras → Debug.", ColTextDim)
-	y += 10
+	y += settSectionGap
+	y = a.drawCPURendererSetting(y)
 
 	y = a.settingsSection(y, w, "Power user (advanced)")
 	y = a.settingsDesc(pad, y, "⚠ Everything here is for people who KNOW what their server needs. The wrong value can make characters fetch 0 assets or stop you connecting. If unsure, leave it all at the defaults.", ColDanger)

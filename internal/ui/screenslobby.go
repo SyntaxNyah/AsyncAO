@@ -363,9 +363,12 @@ func (a *App) drawLobby(w, h int32) {
 		a.drawPhoneFanatChip(w, h)
 	}
 
-	// The app starts here, so startup notices like the corrupt-prefs quarantine must draw on the lobby too.
+	// The app starts here, so startup notices like the corrupt-prefs quarantine must draw on the lobby too. The server
+	// list runs under this line, so it gets its own strip.
 	if a.warnActive() {
-		c.LabelClipped(pad, h-24, w-2*pad, a.warnLine, ColDanger)
+		c.Fill(sdl.Rect{X: 0, Y: h - lobbyWarnStripH, W: w, H: lobbyWarnStripH}, ColBackground)
+		c.Fill(sdl.Rect{X: 0, Y: h - lobbyWarnStripH, W: w, H: 1}, ColPanelHi)
+		c.LabelClipped(pad, h-lobbyWarnTextDY, w-2*pad, a.warnLine, ColDanger)
 	}
 }
 
@@ -476,6 +479,12 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 
 // maxDescLinks bounds the clickable-link rows under a description.
 const maxDescLinks = 4
+
+// lobbyWarnStripH is the strip behind a notice at the lobby's bottom; lobbyWarnTextDY places its text up from the edge.
+const (
+	lobbyWarnStripH int32 = 30
+	lobbyWarnTextDY int32 = 24
+)
 
 // selectServerRow selects a row and rebuilds its cached description lines and links.
 func (a *App) selectServerRow(idx int, w int32) {

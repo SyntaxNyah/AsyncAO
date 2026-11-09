@@ -26,6 +26,9 @@ func gpuRecoveryArgs(recovery host.GPURecovery, masterURL string, opts host.Grap
 	if recovery == host.GPURestartSoftware || opts.ForceSoftware {
 		args = append(args, "-software-gpu")
 	}
+	if opts.SkipDevice {
+		args = append(args, "-renderer="+rendererSDL)
+	}
 	if debug {
 		args = append(args, "-debug")
 	}

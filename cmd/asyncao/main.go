@@ -44,10 +44,12 @@ func main() {
 	var (
 		flagServer      = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
 		flagMaster      = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
-		flagDebug       = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr)
+		flagDebug       = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr+" and write the log to asyncao-debug.log")
 		flagVsync       = flag.Bool("vsync", true, "use vsync presentation")
 		flagSoftGPU     = flag.Bool("software-gpu", false, "draw with the bundled software GPU driver (for broken GPU drivers)")
+		flagRenderer    = flag.String("renderer", rendererGPU, `"gpu" draws through SDL_GPU (Vulkan, or Metal on macOS); "sdl" uses SDL's own renderer (Direct3D 11 on Windows), for drivers that hang on SDL_GPU`)
 		flagGPURecovery = flag.Int("gpu-recovery", 0, "set by the client when it restarts after a GPU device loss: losses so far")
+		flagStalled     = flag.Bool(rendererStalledFlag, false, "set by the client when it restarts on the CPU renderer after the graphics driver froze")
 		flagVersion     = flag.Bool("version", false, "print the version and exit")
 	)
 	flag.Parse()
@@ -58,20 +60,27 @@ func main() {
 	}
 
 	if *flagDebug {
+		// A restart after a GPU loss or a frozen driver keeps the log of the run it replaces.
+		defer host.LogToFile(windowTitle, *flagGPURecovery == 0 && !*flagStalled)()
 		go func() {
 			log.Printf("pprof listening on http://%s/debug/pprof/", debugPprofAddr)
 			log.Println(http.ListenAndServe(debugPprofAddr, nil))
 		}()
 	}
 
+	skipDevice, err := skipsGPUDevice(*flagRenderer)
+	if err != nil {
+		log.Fatal(err)
+	}
 	gpuOpts := host.GraphicsOptions{
 		VSync:              *flagVsync,
 		ForceSoftware:      *flagSoftGPU,
+		SkipDevice:         skipDevice,
 		SoftwareDriverFile: host.SoftwareVulkanDriverFile(),
 	}
 	app := host.App{Name: windowTitle, Version: update.Version, ID: appID}
-	err := host.Main(app, platform.SystemProbe{}, func(rt *host.Runtime) error {
-		return run(rt, *flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagDebug)
+	err = host.Main(app, platform.SystemProbe{}, func(rt *host.Runtime) error {
+		return run(rt, *flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagStalled, *flagDebug)
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -92,7 +101,7 @@ func logSamples(p *metrics.Profiler) {
 	}
 }
 
-func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOptions, gpuRecoveries int, debugMode bool) error {
+func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOptions, gpuRecoveries int, rendererStalled, debugMode bool) error {
 	vsync := gpuOpts.VSync
 	// --- engine singletons (SDL-free) ---
 	prefsPath, err := config.DefaultPath()
@@ -102,6 +111,10 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	prefs, err := config.New(prefsPath)
 	if err != nil {
 		log.Printf("config: %v", err) // defaults already applied
+	}
+	// A driver that froze a frame stays unused until Settings switches it back.
+	if prefs.Load().CPURenderer {
+		gpuOpts.SkipDevice, gpuOpts.ForceSoftware = true, true
 	}
 	// Corrupt settings were renamed aside; tell the user, since release builds have no console.
 	configQuarantine := prefs.Quarantine()
@@ -196,6 +209,14 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	log.Printf("renderer: %s", graphics.Name())
 	ren := graphics.Renderer()
 	gpuWatcher := host.NewGPUWatcher(gpuRecoveries, graphics.Software(), time.Now)
+	// A frame stuck in the driver never returns an error, so only a clock notices it; the CPU renderer is the last step.
+	onCPU := graphics.Software() && graphics.Device() == nil
+	stalls := host.NewStallWatch(rendererStallLimit, stallCheckEvery, time.Now, func(time.Duration) {
+		if !onCPU {
+			fallBackToCPU(prefs, cpuFallbackArgs(masterURL, vsync, debugMode))
+		}
+	})
+	defer stalls.Close()
 	// Linear or nearest, for every texture created from now on.
 	_ = ren.SetDefaultTextureScaleMode(ui.TextureScaleMode(prefs.Load().SmoothScaling))
 	// macOS Retina: fold the 2x drawable into the render scale, since SetLogicalSize would break hit-testing.
@@ -309,6 +330,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Toasts:           toasts,
 		MasterURL:        masterURL,
 		RestoreTabs:      gpuRecoveries > 0, // restarted after a GPU device loss: reopen the saved tabs
+		RendererStalled:  rendererStalled,
 		ConfigQuarantine: configQuarantine,
 		AutoMounts:       autoMounts,
 	})
@@ -447,6 +469,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		_ = ren.SetScale(scale*retinaScale, scale*retinaScale)
 		lw := int32(float32(w) / scale)
 		lh := int32(float32(h) / scale)
+		stalls.FrameStart()
 		_ = ren.SetDrawColor(0, 0, 0, 255)
 		_ = ren.Clear()
 		app.Frame(dt, lw, lh)
@@ -460,6 +483,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 			app.RequestRelaunch(gpuRecoveryArgs(recovery, masterURL, gpuOpts, gpuRecoveries, debugMode), true)
 		}
 		preview.Present()
+		stalls.FrameDone()
 		// A click's state change only appears on the next frame, so force one.
 		if sawInput {
 			app.NoteInteraction()

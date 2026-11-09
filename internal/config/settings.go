@@ -249,7 +249,9 @@ type Settings struct {
 	LocalAssetsEnabled bool `json:"localAssetsEnabled"`
 	LocalAssetsLayered bool `json:"localAssetsLayered"`
 	// PackagesOff leaves the packages/ folder out of the search order; stored inverted so packages default on.
-	PackagesOff                  bool                      `json:"packagesOff,omitempty"`
+	PackagesOff bool `json:"packagesOff,omitempty"`
+	// CPURenderer draws with SDL's CPU renderer; set when the graphics driver froze a frame, cleared in Settings.
+	CPURenderer                  bool                      `json:"cpuRenderer,omitempty"`
 	EmoteCaptions                bool                      `json:"emoteCaptions"`
 	ViewportExactW               int                       `json:"viewportExactW"`
 	OOCScalePct                  int                       `json:"oocScalePercent"`

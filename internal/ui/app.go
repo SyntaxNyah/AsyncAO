@@ -145,6 +145,8 @@ type Deps struct {
 	RestoreTabs bool
 	// ConfigQuarantine is non-nil when a corrupt preferences file was renamed aside; NewApp raises a one-time notice.
 	ConfigQuarantine *config.Quarantine
+	// RendererStalled is set when this client replaced one whose graphics driver froze; NewApp says so once.
+	RendererStalled bool
 	// AutoMounts are the auto-discovered packages/ folders, appended after the user's manual mounts.
 	AutoMounts []string
 }
@@ -1228,6 +1230,9 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			msg += " Your old file was saved as " + filepath.Base(q.BackupPath) + " (beside it)."
 		}
 		a.warnLine = clampLine(msg)
+		a.warnAt = time.Now()
+	} else if d.RendererStalled {
+		a.warnLine = clampLine(rendererStalledNotice)
 		a.warnAt = time.Now()
 	} else if line := mutedChannelsBootNotice(a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted); line != "" {
 		// The mute flags are persisted but the volume strip showing them defaults hidden, so a user who quit muted

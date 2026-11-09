@@ -35,6 +35,8 @@ type GraphicsOptions struct {
 	ForceSoftware bool
 	// SoftwareDriverFile is the bundled lavapipe manifest, or "" when this build ships none.
 	SoftwareDriverFile string
+	// SkipDevice goes straight to SDL's own renderer, for drivers that hang on SDL_GPU instead of failing.
+	SkipDevice bool
 }
 
 // OpenGraphics tries an SDL_GPU device on hardware, then lavapipe (SDL doesn't fall back), then SDL's own renderer.
@@ -42,6 +44,9 @@ func OpenGraphics(window *sdl.Window, opts GraphicsOptions) (Graphics, error) {
 	flags := uint32(0)
 	if opts.VSync {
 		flags = sdl.RENDERER_PRESENTVSYNC
+	}
+	if opts.SkipDevice {
+		return openSDLRendererGraphics(window, flags, opts.ForceSoftware)
 	}
 	if !opts.ForceSoftware {
 		b, err := openDeviceGraphics(window, flags, false)

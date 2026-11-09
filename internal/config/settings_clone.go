@@ -1209,6 +1209,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.PackagesOff != o.PackagesOff {
 		return false
 	}
+	if s.CPURenderer != o.CPURenderer {
+		return false
+	}
 	if s.EmoteCaptions != o.EmoteCaptions {
 		return false
 	}

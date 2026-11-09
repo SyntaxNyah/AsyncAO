@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"log"
-	"os"
 	"sync"
 )
 
@@ -46,17 +45,15 @@ const debugLogBuffer = 64
 
 var (
 	// debugLogChan is eager: a lazy write under sync.Once races PollDebugLogs, as Once serializes only writers.
-	debugLogChan   = make(chan string, debugLogBuffer)
-	debugLogOnce   sync.Once
-	originalStderr *os.File
+	debugLogChan = make(chan string, debugLogBuffer)
+	debugLogOnce sync.Once
 )
 
-// EnableDebugLogCapture redirects render package log.Printf to a channel; called once at Audio creation.
+// EnableDebugLogCapture also sends log output to a channel, keeping the log's output (stderr, or the debug log file);
+// called once at Audio creation.
 func EnableDebugLogCapture() {
 	debugLogOnce.Do(func() {
-		sink := &debugLogSink{sink: debugLogChan}
-		originalStderr = os.Stderr
-		log.SetOutput(io.MultiWriter(sink, originalStderr))
+		log.SetOutput(io.MultiWriter(&debugLogSink{sink: debugLogChan}, log.Writer()))
 	})
 }
 

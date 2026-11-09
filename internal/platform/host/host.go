@@ -4,6 +4,7 @@ package host
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,9 +16,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
-// crashLogName is the file that catches crashes no recover site saw.
+// crashLogName is the file that catches crashes no recover site saw; debugLogName holds a -debug run's whole log.
 const (
 	crashLogName    = "asyncao-crash.log"
+	debugLogName    = "asyncao-debug.log"
 	crashLogMode    = 0o644
 	crashLogDirMode = 0o755
 )
@@ -138,14 +140,42 @@ func mainWith(app App, probe platform.Probe, relaunch func([]string) error, clie
 	return client(rt)
 }
 
+// LogToFile copies the log into the debug log file, since a release build's stderr reaches no console; fresh empties
+// it first. The returned func closes it.
+func LogToFile(appName string, fresh bool) func() {
+	flags := os.O_CREATE | os.O_APPEND | os.O_WRONLY
+	if fresh {
+		flags |= os.O_TRUNC
+	}
+	f := openAppFile(appDirs(), appName, debugLogName, flags)
+	if f == nil {
+		log.Printf("debug log: no folder to write %s in", debugLogName)
+		return func() {}
+	}
+	// The file first: MultiWriter stops at a failed write, and a release build started without a console has no stderr.
+	log.SetOutput(io.MultiWriter(f, os.Stderr))
+	log.Printf("debug log: %s", f.Name())
+	return func() {
+		log.SetOutput(os.Stderr)
+		_ = f.Close()
+	}
+}
+
+// fileDirs is where the client's own files go: beside the executable, else the user's cache folder.
+type fileDirs struct{ exe, cache string }
+
+func appDirs() fileDirs {
+	var dirs fileDirs
+	if exe, err := os.Executable(); err == nil {
+		dirs.exe = filepath.Dir(exe)
+	}
+	dirs.cache, _ = os.UserCacheDir()
+	return dirs
+}
+
 // setupCrashOutput writes crashes the per-path recover sites miss to a file.
 func setupCrashOutput(appName string) {
-	exeDir := ""
-	if exe, err := os.Executable(); err == nil {
-		exeDir = filepath.Dir(exe)
-	}
-	cacheDir, _ := os.UserCacheDir()
-	f := openCrashLog(exeDir, cacheDir, appName)
+	f := openAppFile(appDirs(), appName, crashLogName, os.O_CREATE|os.O_APPEND|os.O_WRONLY)
 	if f == nil {
 		return
 	}
@@ -154,22 +184,21 @@ func setupCrashOutput(appName string) {
 	_ = f.Close()
 }
 
-// openCrashLog prefers the executable's folder, which Program Files, a macOS bundle and a Flatpak don't let us write.
-func openCrashLog(exeDir, cacheDir, appName string) *os.File {
-	const flags = os.O_CREATE | os.O_APPEND | os.O_WRONLY
-	if exeDir != "" {
-		if f, err := os.OpenFile(filepath.Join(exeDir, crashLogName), flags, crashLogMode); err == nil {
+// openAppFile prefers the executable's folder, which Program Files, a macOS bundle and a Flatpak don't let us write.
+func openAppFile(dirs fileDirs, appName, name string, flags int) *os.File {
+	if dirs.exe != "" {
+		if f, err := os.OpenFile(filepath.Join(dirs.exe, name), flags, crashLogMode); err == nil {
 			return f
 		}
 	}
-	if cacheDir == "" {
+	if dirs.cache == "" {
 		return nil
 	}
-	dir := filepath.Join(cacheDir, appName)
+	dir := filepath.Join(dirs.cache, appName)
 	if err := os.MkdirAll(dir, crashLogDirMode); err != nil {
 		return nil
 	}
-	f, err := os.OpenFile(filepath.Join(dir, crashLogName), flags, crashLogMode)
+	f, err := os.OpenFile(filepath.Join(dir, name), flags, crashLogMode)
 	if err != nil {
 		return nil
 	}
