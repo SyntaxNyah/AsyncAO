@@ -4,6 +4,28 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.0-rc.5 - 2026-11-09
+
+The fifth pre-release of v2.1.0, for graphics drivers that freeze.
+
+### Graphics
+- When the graphics driver freezes while drawing, AsyncAO notices after a few
+  seconds and restarts itself drawing on the CPU, instead of staying a black
+  "Not responding" window. It remembers this for later launches.
+- **Draw on the CPU (for graphics drivers that freeze)** in Settings → Power
+  user switches it back after a driver update. It takes effect on restart.
+- `-renderer=sdl` starts with SDL's own renderer (Direct3D 11 on Windows)
+  instead of Vulkan. Add `-software-gpu` to draw on the CPU.
+
+### Troubleshooting
+- `-debug` also writes everything AsyncAO logs to `asyncao-debug.log` next
+  to the program, so a report needs no console. After a restart caused by the
+  graphics driver, both runs are in the same file.
+
+### Fixes
+- Notices at the bottom of the server list, such as a reset settings file, no
+  longer draw over the last servers.
+
 ## v2.1.0-rc.4 - 2026-11-08
 
 The fourth pre-release of v2.1.0, reworking the Assets settings and removing
