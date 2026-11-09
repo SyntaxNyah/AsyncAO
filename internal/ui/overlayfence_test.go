@@ -347,10 +347,12 @@ func TestCompactToolboxNoFenceUnderCourtroomModal(t *testing.T) {
 			// set the flags directly through the same fields the predicate reads.
 			switch i {
 			case 0:
-				a.showJukebox = true
+				a.ward.show = true
 			case 1:
-				a.bgPick.show = true
+				a.showJukebox = true
 			case 2:
+				a.bgPick.show = true
+			case 3:
 				a.showSfxBrowser = true
 			default:
 				t.Fatalf("courtroomModals grew to %d entries — extend this switch", len(courtroomModals))

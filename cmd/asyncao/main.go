@@ -564,6 +564,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	app.RememberOpenTabs() // restore-on-launch: snapshot tabs before the final flush (no-op when off)
 	app.CloseTranscript()  // flush + close the detailed-log file (no-op when off/unopened)
 	app.CloseJukebox()     // flush the global music library (no-op until loaded)
+	app.CloseWardrobe()    // and the saved characters
 	_ = prefs.SaveNow()
 	if args, ok := app.RelaunchRequest(); ok {
 		rt.RelaunchAfterExit(args)

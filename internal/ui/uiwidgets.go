@@ -471,25 +471,34 @@ func cycleField(seq []string, cur string, back bool) string {
 	return seq[0]
 }
 
-// fieldFonts carries the optional emoji-aware faces for a text field. The zero value is the plain single-font path.
+// fieldOpts carries a text field's optional emoji-aware faces, and bare, which skips the field's own background and
+// frame for a caller that draws its own. The zero value is the plain framed single-font field.
 // TextFieldEmoji passes a fallback-capable primary plus the colour-emoji face (IC / OOC inputs).
-type fieldFonts struct{ primary, emoji *ttf.Font }
+type fieldOpts struct {
+	primary, emoji *ttf.Font
+	bare           bool
+}
 
 // TextField edits value in place; id keys focus. Returns (newValue, enterPressed).
 func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
-	return c.textField(id, r, value, placeholder, false, fieldFonts{})
+	return c.textField(id, r, value, placeholder, false, fieldOpts{})
+}
+
+// TextFieldBare is TextField without its own background and frame, for a field inside a box the caller draws.
+func (c *Ctx) TextFieldBare(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
+	return c.textField(id, r, value, placeholder, false, fieldOpts{bare: true})
 }
 
 // TextFieldEmoji is TextField that draws emoji and non-Latin runes through the per-glyph fallback raster; plain ASCII
 // stays on the single-font path.
 func (c *Ctx) TextFieldEmoji(id string, r sdl.Rect, value, placeholder string, primary, emoji *ttf.Font) (string, bool) {
-	return c.textField(id, r, value, placeholder, false, fieldFonts{primary: primary, emoji: emoji})
+	return c.textField(id, r, value, placeholder, false, fieldOpts{primary: primary, emoji: emoji})
 }
 
 // PasswordField is TextField rendered as asterisks. Ctrl+C/X never put the secret on the clipboard; Ctrl+X still
 // clears.
 func (c *Ctx) PasswordField(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
-	return c.textField(id, r, value, placeholder, true, fieldFonts{})
+	return c.textField(id, r, value, placeholder, true, fieldOpts{})
 }
 
 // editOp is a caret movement or forward-delete a text field applies this frame.
@@ -643,7 +652,7 @@ func editStep(value string, caret int, in editInput) (string, int) {
 	return value, caret
 }
 
-func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string, mask bool, fb fieldFonts) (string, bool) {
+func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string, mask bool, fb fieldOpts) (string, bool) {
 	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
 	hover := c.hovering(r)
 	// Out-of-band changes (macro fill, palette template, own-echo IC clear) enter the history here so Ctrl+Z restores
@@ -666,12 +675,14 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	}
 	focused := c.focusID == id
 
-	c.Fill(r, ColPanel)
-	border := ColTextDim
-	if focused {
-		border = ColAccent
+	if !fb.bare {
+		c.Fill(r, ColPanel)
+		border := ColTextDim
+		if focused {
+			border = ColAccent
+		}
+		c.Border(r, border)
 	}
-	c.Border(r, border)
 
 	const padX = 6
 	// The value interior, shrunk from the right by a ReserveFieldTail reservation; consumed here so only one field
@@ -1036,7 +1047,7 @@ func isASCII(s string) bool {
 
 // fieldRaster returns the fallback raster a text field draws its value with (nil = single-font path), shared by the
 // draw and every caret/scroll measurement.
-func (c *Ctx) fieldRaster(fb fieldFonts, mask bool, display string) *render.MessageRaster {
+func (c *Ctx) fieldRaster(fb fieldOpts, mask bool, display string) *render.MessageRaster {
 	if fb.primary == nil || mask || display == "" || isASCII(display) {
 		return nil
 	}

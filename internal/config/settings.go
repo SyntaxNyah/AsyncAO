@@ -251,10 +251,13 @@ type Settings struct {
 	// PackagesOff leaves the packages/ folder out of the search order; stored inverted so packages default on.
 	PackagesOff bool `json:"packagesOff,omitempty"`
 	// CPURenderer draws with SDL's CPU renderer; set when the graphics driver froze a frame, cleared in Settings.
-	CPURenderer                  bool                      `json:"cpuRenderer,omitempty"`
-	EmoteCaptions                bool                      `json:"emoteCaptions"`
-	ViewportExactW               int                       `json:"viewportExactW"`
-	OOCScalePct                  int                       `json:"oocScalePercent"`
+	CPURenderer       bool `json:"cpuRenderer,omitempty"`
+	EmoteCaptions     bool `json:"emoteCaptions"`
+	ViewportExactW    int  `json:"viewportExactW"`
+	OOCScalePct       int  `json:"oocScalePercent"`
+	WardrobeIconPxVal int  `json:"wardrobeIconPx,omitempty"`
+	// WardrobeAccentVal is the Wardrobe's highlight colour, packed 0xRRGGBB; 0 is the default blue.
+	WardrobeAccentVal            int                       `json:"wardrobeAccent,omitempty"`
 	CustomChromeHex              [7]string                 `json:"customChrome"`
 	LayoutPartHex                [4]string                 `json:"layoutPartColors"`
 	BoldNamesOff                 bool                      `json:"boldNamesOff"`
@@ -370,6 +373,7 @@ func clampSettingsStrictPhase(s *Settings) {
 	s.SpotlightStrength = value.ClampSet(s.SpotlightStrength, minSpotlightStrength, maxSpotlightStrength)
 	s.SpriteWaitMsVal = value.ClampSet(s.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
 	s.OOCScalePct = value.ClampSet(s.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+	s.WardrobeIconPxVal = value.ClampSet(s.WardrobeIconPxVal, WardrobeIconMinPx, WardrobeIconMaxPx)
 	s.PreviewHeightPxVal = value.ClampSet(s.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
 	s.WeatherDensity = value.ClampSet(s.WeatherDensity, 1, percentMax)
 	s.BgSlideshowSecs = value.ClampSet(s.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
@@ -410,6 +414,7 @@ func clampSettingsStrictPhase(s *Settings) {
 // normalizeSettings is the single clamp implementation; one-shot migration stamps live in normalize only.
 func normalizeSettings(s *Settings) {
 	s.HighlightColor &= rgbMask
+	s.WardrobeAccentVal &= rgbMask
 	s.ICCustomColor &= rgbMask
 	s.SpriteTintColor &= rgbMask
 	s.MusicFlagsVal &= MusicFlagsMask

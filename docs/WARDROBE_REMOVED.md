@@ -1,5 +1,13 @@
 # The old Wardrobe (removed)
 
+> **Replaced.** A new Wardrobe (Extras ▸ Wardrobe…, the courtroom button, Ctrl+6) is built from the confirmed
+> requirements; see FEATURES.md and ARCHITECTURE.md. It keeps favourites, folders, search, the try-before-wear
+> click and Character Select's ★, and adds characters in several folders, nicknames, sorting and folder looks. It
+> does **not** bring back: the Backgrounds tab (the Background picker keeps its favourites), the "From your base"
+> source, number-key filing, Quick-swap, character key binds, or `iniswap.txt` (the server list is now
+> `iniswaps.ini`). On first start the old per-server lists merge into `wardrobe.json`; character key binds and
+> background folders stay unused in `config.json`.
+
 The Wardrobe was removed whole so it can be redesigned from a confirmed list of requirements. This is everything it
 showed, so nothing is forgotten. The last commit with it is `0c6fe0dc`; read any of its files with
 `git show 0c6fe0dc:<path>`, for example `git show 0c6fe0dc:internal/ui/screenswardrobe.go`.

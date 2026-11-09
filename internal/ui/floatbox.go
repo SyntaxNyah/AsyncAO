@@ -124,6 +124,8 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Group Chat", "Private DMs & group chats with other AsyncAO players — over the server's /pm, never the room", "", func() { a.toggleMessages() }},
 			{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
 			{"Disconnect", "Leave this server", "", func() { a.requestDisconnect() }},
+			// Last on purpose: torn-off boxes are saved by their place in this table, so a new entry goes at the end.
+			{"Wardrobe", "Your saved characters, in folders, and the server's iniswaps", hotkeyWardrobe, func() { a.openWardrobe() }},
 		}
 	}
 	return a.extrasWidgetCache
@@ -179,7 +181,7 @@ func (a *App) blockingCourtPopup() bool {
 	// by footprint, and adding one would make extrasSurfaceLive false and disable its own fence.
 	// Not courtroomModalUp's set: this adds classicEdit and omits showSfxBrowser, which would hide the panels too.
 	// Ask courtroomModalUp whether drawCourtroomModals will take the screen.
-	return a.showJukebox || a.bgPick.show ||
+	return a.ward.show || a.showJukebox || a.bgPick.show ||
 		a.classicEdit
 }
 
@@ -254,6 +256,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showReactPicker = false
 	case a.bgPick.show:
 		a.bgPick.show = false
+	case a.ward.show:
+		a.closeWardrobeTop()
 	case a.showJukebox:
 		a.closeJukebox()
 	case a.showTimer:

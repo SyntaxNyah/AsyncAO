@@ -894,6 +894,10 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 		if a.juke != nil {
 			a.juke.Clear() // the jukebox library lives in its own file — wipe it too
 		}
+		if a.ward.store != nil {
+			a.ward.store.Clear() // so does the Wardrobe
+		}
+		_ = config.WipeWardrobeImages()
 		if a.notebook != nil {
 			a.notebook.Clear() // empty + stop its flush before deleting the files
 		}

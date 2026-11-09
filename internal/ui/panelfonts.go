@@ -33,6 +33,7 @@ var panelFontRows = [...]panelFontRow{
 	{id: "player_list", el: elemPlayerList, label: "Player list", hint: "the roster of who is in the room"},
 	{id: "notes", el: elemNotes, label: "Notes", hint: "your own notes tab"},
 	{id: "friends", el: elemFriends, label: "Friends", hint: "the friends and ignored lists"},
+	{id: "wardrobe", el: elemWardrobe, label: "Wardrobe", hint: "names, folders and buttons in the Wardrobe"},
 	{id: "debug_log", el: elemDebugLog, label: "Debug log", hint: "the failure log a theme can show"},
 }
 
@@ -96,7 +97,8 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 		c.Tooltip(sdl.Rect{X: pad, Y: y, W: panelFontLabelW, H: fieldH}, row.hint)
 
 		famRect := sdl.Rect{X: pad + panelFontLabelW, Y: y, W: panelFontFamilyW, H: fieldH}
-		if next, _ := c.TextField("panelfont-"+row.id, famRect, cur.Family, a.panelFontPlaceholder(row.el)); next != cur.Family {
+		next, below := a.fontFamilyField("panelfont-"+row.id, famRect, cur.Family, a.panelFontPlaceholder(row.el))
+		if next != cur.Family {
 			cur.Family = next
 			a.d.Prefs.SetPanelFont(row.id, cur)
 			a.applyPanelFontPrefs()
@@ -111,7 +113,7 @@ func (a *App) drawPanelFontSettings(y, w int32) int32 {
 		if next, _ := c.TextField(sizeID, sizeRect, shown, strconv.Itoa(a.currentPanelSizePx(row.el))); next != shown {
 			a.commitPanelSize(sizeID, row.id, cur, next)
 		}
-		y += fieldH + 4
+		y += fieldH + 4 + below
 	}
 
 	y += 4

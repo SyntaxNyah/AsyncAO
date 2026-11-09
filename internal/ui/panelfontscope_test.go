@@ -97,7 +97,7 @@ func TestPanelFontRowsAllHaveAPanel(t *testing.T) {
 	// they have a row but no bracket.
 	scoped := map[themeFontElem]bool{
 		elemICChatlog: true, elemServerChatlog: true, elemMusicList: true,
-		elemAreaList: true, elemPlayerList: true, elemNotes: true, elemFriends: true,
+		elemAreaList: true, elemPlayerList: true, elemNotes: true, elemFriends: true, elemWardrobe: true,
 	}
 	unscoped := map[themeFontElem]string{
 		elemShowname:  "drawn on the chatbox skin by the message raster",

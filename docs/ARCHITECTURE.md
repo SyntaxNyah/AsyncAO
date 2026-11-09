@@ -571,13 +571,32 @@ so a release hit-tests where it actually happened.
   fills (chat box, taken overlay, selection highlight) actually blend —
   SDL's default NONE silently rendered them opaque.
 
-## Iniswap (custom characters)
+## Wardrobe & iniswap (custom characters)
 
 `setIniswap` wears any character folder without taking a server slot: outgoing `MS` carries the folder in
 `char_name` (AO2-Client `set_iniswap` semantics — servers relay it, receivers stream it like any speaker), and the
 emote list reloads from that folder's `char.ini`. Picking a character or disconnecting clears it. The theme's
-`iniswap_dropdown` lists the player's own character and the folder worn now. The Wardrobe that browsed and saved
-folders was removed for a redesign; `docs/WARDROBE_REMOVED.md` lists what it did.
+`iniswap_dropdown` lists the player's own character and the folder worn now.
+
+The Wardrobe saves characters for the player, across servers:
+
+- **Data:** `config.Wardrobe`, its own `wardrobe.json` beside the prefs file, written by a debounced
+  temp-file-and-rename flush (one write per burst, like the Jukebox), loaded off the main thread. An entry is keyed by
+  its character folder (never the display name), carries any number of folders, a nickname and a last-worn time;
+  folders carry a name, the server key they were made on, an icon or image and a colour. Caps: 4096 entries,
+  200 folders. Folder images are copied into `wardrobe-icons/` beside it, so moving the original can't break a
+  folder; they load off-thread and live in T1 under `wardrobe://` keys. On first start the old per-server lists in
+  `config.json` merge into it once; `config.json` itself is left unchanged.
+- **What the window shows:** `internal/ui/wardrobe` (no SDL) filters, sorts and groups entries, and parses the
+  server's list. The window rebuilds its list only when the store's revision, the query or the server changes, so
+  painting allocates nothing per frame.
+- **The server's list:** `<asset origin>/iniswaps.ini`, AO2's name for it (courtroom.cpp:5349), fetched once per
+  server through `FetchRaw` (T2 + disk cached, singleflight), at most 4096 names.
+- **Drawing:** rounded shapes and line icons come from `ui/shapes.go`, white masks rasterised once with
+  `golang.org/x/image/vector` and tinted per draw, so they cost a few copies and no allocation.
+- **Character Select's ★** reads a lowercase membership set rebuilt only when the store's revision moves.
+
+`docs/WARDROBE_REMOVED.md` lists what the previous Wardrobe did and what the new one left out.
 
 ## Lobby data
 

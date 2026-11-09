@@ -35,10 +35,27 @@ const (
 	// the smallest character icons we draw (msgBubbleIconPx), the size at which a face is still recognisable.
 	charCellMinPx int32 = 20
 
+	// charCellChromeMinPx is the smallest cell that keeps the fixed-size ★: it doesn't scale, so on a small cell it would
+	// cover the art and its click area would eat the cell's own click. 48 keeps it down to 0.8x (button_width 60).
+	charCellChromeMinPx int32 = 48
+
+	// charCellStarPx / charCellStarInsetPx are the cell's ★ box and its inset from the top-right corner.
+	charCellStarPx      int32 = 18
+	charCellStarInsetPx int32 = 2
+	// charCellStarIconPx is the star drawn inside that box.
+	charCellStarIconPx int32 = 12
+	// charCellStarRad rounds the ★ box.
+	charCellStarRad int32 = 4
+
 	// charSelectorHaloDesignPx is the hover selector's overhang per side in design pixels: AO2 sizes ui_selector 62x62
 	// against a 60x60 button (aocharbutton.cpp:10, :68-69).
 	charSelectorHaloDesignPx = 1
 )
+
+// cellFitsCornerChrome reports whether a cell is big enough for the ★ (charCellChromeMinPx), on both axes.
+func cellFitsCornerChrome(cell sdl.Rect) bool {
+	return cell.W >= charCellChromeMinPx && cell.H >= charCellChromeMinPx
+}
 
 // themeStemCharTaken / themeStemCharSelector are AOCharButton's optional overlay images (aocharbutton.cpp:17 and :23).
 // A theme shipping neither keeps AsyncAO's own treatment. Stems name T1 theme:// textures, spelled as the file on disk.

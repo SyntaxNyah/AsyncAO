@@ -882,6 +882,13 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 		a.screen = ScreenCharSelect
 	}
 	x += 106
+	wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+	if c.Button(wr, "Wardrobe") {
+		a.openWardrobe()
+	}
+	c.Border(wr, ColAccent)
+	c.Tooltip(wr, "Wardrobe — your saved characters and the server's iniswaps")
+	x += 96
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
 		a.openBgPicker()
 	}
@@ -1003,6 +1010,13 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		if c.Button(r, "Character") {
 			a.screen = ScreenCharSelect
 		}
+	}
+	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
+		if c.Button(r, "Wardrobe") {
+			a.openWardrobe()
+		}
+		c.Border(r, ColAccent)
+		c.Tooltip(r, "Wardrobe — your saved characters and the server's iniswaps")
 	}
 	if r, ok := a.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
 		if c.Button(r, "Restyle") {

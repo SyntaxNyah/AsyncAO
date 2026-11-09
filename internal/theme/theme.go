@@ -68,6 +68,7 @@ var FontElements = [...]string{
 	"player_list",
 	"notes",
 	"friends",
+	"wardrobe",
 }
 
 type RGB struct{ R, G, B uint8 }

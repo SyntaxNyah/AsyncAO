@@ -118,6 +118,7 @@ const ctrlSettingsSlot = "ctrl.settings"
 // that appear on their own.
 var hideableButtons = []struct{ id, label string }{
 	{"ctrl.character", "Character"},
+	{"ctrl.wardrobe", "Wardrobe"},
 	{"ctrl.restyle", "Restyle"},
 	{"ctrl.background", "Background"},
 	{"ctrl.evidence", "Evidence"},

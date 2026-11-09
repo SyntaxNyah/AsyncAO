@@ -170,6 +170,7 @@ var menuWindowItems = []menuItem{
 // menuExtrasItems is the chrome home for AsyncAO's own controls. The floating toolbox survives as a movable,
 // theme-placeable box and the layout editor's drag handle.
 var menuExtrasItems = []menuItem{
+	{kind: menuItemAction, label: "Wardrobe…", enabled: menuInCourtroom, act: menuActWardrobe},
 	{kind: menuItemAction, label: "Jukebox…", enabled: menuInCourtroom, act: menuActJukebox},
 	{kind: menuItemCheck, label: "AsyncAO Extras box", checked: menuExtrasBoxOpen, enabled: menuInCourtroom, act: menuToggleExtrasBox},
 	{kind: menuItemCheck, label: "Restyle character…", checked: menuSpriteStyleOpen, enabled: menuInCourtroom, act: menuToggleSpriteStyle},
@@ -313,6 +314,8 @@ func menuExtrasBoxOpen(a *App, _ int) bool { return a.showWidgets }
 func menuToggleExtrasBox(a *App, _ int)    { a.showWidgets = !a.showWidgets }
 
 func menuActJukebox(a *App, _ int) { a.openJukebox() }
+
+func menuActWardrobe(a *App, _ int) { a.openWardrobe() }
 
 func menuSpriteStyleOpen(a *App, _ int) bool { return a.showStyleBox }
 func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }

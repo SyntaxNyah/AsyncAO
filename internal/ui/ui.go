@@ -300,6 +300,9 @@ type Ctx struct {
 	// cgoRect is the scratch rect for SDL calls taking *sdl.Rect: a pointer escapes through cgo, so &local allocates on
 	// every call. Safe to share: SDL copies the rect during the call, and Ctx is render-thread-only.
 	cgoRect sdl.Rect
+	// discTex and iconTex are shapes.go's masks, built on first use.
+	discTex *sdl.Texture
+	iconTex [iconShapeCount]*sdl.Texture
 	// cgoSrc is the second scratch rect, for Renderer.Copy with a non-nil source; reusing cgoRect would have the
 	// destination overwrite the source before SDL read it.
 	cgoSrc sdl.Rect

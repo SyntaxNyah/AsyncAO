@@ -45,6 +45,7 @@ const (
 	hotkeyExtras      = "extras"
 	// Jump straight to an Extras menu, which a legacy AO2 theme has no button for.
 	hotkeyCharMenu      = "char_menu"
+	hotkeyWardrobe      = "wardrobe"
 	hotkeyJukebox       = "jukebox"
 	hotkeyBackground    = "background"
 	hotkeyEvidence      = "evidence"
@@ -102,6 +103,7 @@ var hotkeyDefs = []struct {
 	{hotkeyExtras, "Open the Extras menu (AsyncAO features box)", "x"},
 	// Direct menu shortcuts on Ctrl+5..0.
 	{hotkeyCharMenu, "Menu: Characters", "5"},
+	{hotkeyWardrobe, "Menu: Wardrobe", "6"},
 	{hotkeyJukebox, "Menu: Jukebox", "7"},
 	{hotkeyBackground, "Menu: Background", "8"},
 	{hotkeyEvidence, "Menu: Evidence", "9"},
@@ -334,6 +336,8 @@ func (a *App) handleHotkeys() {
 		a.toggleExtrasBox()
 	case a.hotkeyFor(hotkeyCharMenu):
 		a.screen = ScreenCharSelect
+	case a.hotkeyFor(hotkeyWardrobe):
+		a.openWardrobe()
 	case a.hotkeyFor(hotkeyJukebox):
 		a.openJukebox()
 	case a.hotkeyFor(hotkeyBackground):

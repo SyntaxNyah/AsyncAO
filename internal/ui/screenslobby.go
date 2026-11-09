@@ -760,6 +760,9 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		// No caption on a theme's grid: it would print across the next row. AO2 uses a tooltip (charselect.cpp:304).
 		c.Tooltip(cell, slot.Name)
 	}
+	if a.drawCharCellStar(slot.Name, idx, cell) {
+		return
+	}
 	if c.hovering(cell) {
 		a.warmCharINI(slot.Name) // pick = memory hit, not an RTT
 		if c.clicked && !slot.Taken {
@@ -767,6 +770,46 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		}
 	}
 }
+
+// drawCharCellStar draws the ★ that saves a character to the Wardrobe or removes it, and reports a click on it, which
+// is consumed so it can't also pick the character. It works on taken characters too, and is left off cells too small
+// to carry it.
+func (a *App) drawCharCellStar(name string, idx int, cell sdl.Rect) bool {
+	c := a.ctx
+	if a.ward.store == nil || !cellFitsCornerChrome(cell) {
+		return false
+	}
+	saved := idx >= 0 && idx < len(a.charLower) && a.wardrobeHas(a.charLower[idx])
+	starR := sdl.Rect{X: cell.X + cell.W - charCellStarPx - charCellStarInsetPx, Y: cell.Y + charCellStarInsetPx, W: charCellStarPx, H: charCellStarPx}
+	c.FillRound(starR, charCellStarRad, sdl.Color{R: 0, G: 0, B: 0, A: charCellStarAlpha})
+	col := ColTextDim
+	if saved {
+		col = ColStar
+	}
+	icon := sdl.Rect{X: starR.X + (starR.W-charCellStarIconPx)/2, Y: starR.Y + (starR.H-charCellStarIconPx)/2, W: charCellStarIconPx, H: charCellStarIconPx}
+	c.Icon(iconShapeStar, icon, col)
+	if !c.hovering(starR) {
+		return false
+	}
+	if saved {
+		c.Tooltip(starR, "★ Saved in your Wardrobe. Click to remove it")
+	} else {
+		c.Tooltip(starR, "★ Save to your Wardrobe")
+	}
+	if !c.clicked {
+		return false
+	}
+	if saved {
+		a.ward.store.Remove(name)
+	} else {
+		a.ward.store.Add([]string{name}, "")
+	}
+	c.clicked = false
+	return true
+}
+
+// charCellStarAlpha darkens the art under the ★.
+const charCellStarAlpha uint8 = 130
 
 // randomChar swaps to a uniformly random untaken character other than the current one; reservoir sampling never
 // allocates.

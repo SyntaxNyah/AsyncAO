@@ -1827,6 +1827,27 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Force character names** (Settings, off by default): show every speaker's
   **character** name instead of their custom showname, in both the chatbox and
   the IC log — true-roleplay immersion and anti-impersonation for casing.
+- **Wardrobe** (courtroom **Wardrobe** button or `ctrl.wardrobe`, **Extras ▸ Wardrobe…**, the Extras box, or
+  **Ctrl+6**): your saved characters, kept across servers in their own `wardrobe.json`.
+  - **User / Server**: your own favourites, or the characters the server lists in its `iniswaps.ini` (greyed out when
+    it has none). **Grid / List** switches between cards and rows; icons are the native 40 × 40.
+  - **Folders** on the left: All favourites, your folders, Unfiled. A character can be in **several folders**.
+    Folders made on the server you're on carry a green ✓. Hover a folder for its pencil (name, icon, colour, or your
+    own PNG/WebP/GIF image, also by dropping a file on it) and its ×, which asks whether to delete the characters too
+    (only those in no other folder) or keep them. Double-click or F2 renames; drag folders to reorder.
+  - **Cards**: a click selects, a double-click (or Enter) switches to the character when its slot is free and wears
+    it as an iniswap otherwise, saying which. Iniswaps carry a small yellow tag. The bottom bar offers Switch, Wear
+    as iniswap, **Folders…** (a checklist in All favourites) or **Move to folder…** (inside a folder),
+    **Nickname…** (shown instead of the name, the real one smaller under it; only you see it) and **Remove…**
+    (asks first). Buttons that don't fit a narrow window move into **More…**.
+  - **Sort**: Custom (drag cards to reorder), Name, Last worn, or Folder (grouped under folder headings).
+    Search covers every folder and matches nicknames too.
+  - **Drag** a card onto a folder: from All favourites it adds that folder, from inside a folder it moves there.
+  - **Add**: type folder names (one per line or comma-separated; names the server has no slot for become
+    iniswaps), or tick them from the server's list.
+  - **Character Select ★** saves or removes a character in one click.
+  - **Settings ▸ General ▸ Wardrobe**: font (with suggestions from your installed fonts), text size, icon size
+    (40 / 80 / 120) and the highlight colour.
 - **Settings export/import**: Export writes the complete preferences
   file (knobs, favorites, wardrobes, keybinds, learned formats) beside
   the exe; Import = arm the button and drop the .json — applied on

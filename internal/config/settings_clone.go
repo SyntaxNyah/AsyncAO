@@ -1221,6 +1221,12 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.OOCScalePct != o.OOCScalePct {
 		return false
 	}
+	if s.WardrobeIconPxVal != o.WardrobeIconPxVal {
+		return false
+	}
+	if s.WardrobeAccentVal != o.WardrobeAccentVal {
+		return false
+	}
 	if s.CustomChromeHex != o.CustomChromeHex {
 		return false
 	}

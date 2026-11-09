@@ -42,6 +42,7 @@ const (
 	elemPlayerList
 	elemNotes
 	elemFriends
+	elemWardrobe
 	themeFontElemCount // array size — keep last
 )
 

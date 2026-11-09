@@ -1061,6 +1061,12 @@ type App struct {
 	// client.
 	theaterOn bool
 
+	// fontPick lists the fonts a family can name, for the font fields' suggestions.
+	fontPick fontPicker
+
+	// ward is the Wardrobe window; like the Jukebox its data is global, so it lives on App, not in sessionState.
+	ward wardrobeWindow
+
 	// Jukebox: the library is shared across servers and must survive disconnects and tab switches, so not in
 	// sessionState.
 	juke         *config.Jukebox      // global store, loaded off-thread
@@ -1163,6 +1169,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.reloadErrorSprite()
 	a.uploadEmbeddedSpeedlines() // #126 bundled zoom speedline fallback
 	a.seedHiddenFromPrefs()      // hidden-chrome set + the A6 no-strand normalization
+	a.startWardrobeLoad()
 	// The jukebox can be large, so it loads off-thread and lands via pollJukebox.
 	go func() {
 		if j, err := config.LoadJukebox(); err == nil {

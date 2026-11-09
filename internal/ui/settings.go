@@ -125,6 +125,8 @@ type settingsState struct {
 	// errorSpritePickRes carries the custom missing-sprite file dialog's outcome; errorSpritePickBusy keeps it to one.
 	errorSpritePickRes  chan dialogPick
 	errorSpritePickBusy bool
+	// wardHex is the Wardrobe highlight colour's hex field while it is being typed in.
+	wardHex string
 	// folderScans holds each listed folder's report; checkFolders keeps it to the listed folders (hard rule 4).
 	folderScans map[string]baseScan
 	// folderOpen is which listed folders show what they contain; checkFolders prunes it with folderScans.
@@ -213,7 +215,8 @@ const (
 // Keep terms lowercase; when adding a settings section, add its title here.
 var settingsSearchKeywords = [numSettingsTabs][]string{
 	tabGeneral: {
-		// Identity, Display & behaviour, Application, Log colours, Stage, Scale & text size, Window, Extras box, Fonts.
+		// Identity, Display & behaviour, Application, Log colours, Stage, Scale & text size, Window, Extras box, Wardrobe,
+		// Fonts.
 		"identity", "showname", "ooc name", "default showname", "force char names", "anti-impersonation",
 		"your profile", "profile", "character profile", "pronouns", "bio", "tagline", "theme song", "card",
 		"display", "behaviour", "behavior", "animation", "reduce motion", "accessibility",
@@ -226,6 +229,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"log colours", "log colors", "selection highlight", "highlight colour", "name colour", "name colours",
 		"stage", "desk", "hide desk", "scale", "text size", "ui scale", "dpi", "zoom",
 		"window", "fullscreen", "window size", "resolution", "extras box", "extras", "tear off",
+		"wardrobe", "icon size", "wardrobe font", "wardrobe text",
 		"fonts", "font", "cjk", "dyslexia", "dyslexic", "emoji", "smooth scaling", "tabs", "server tabs", "max tabs",
 		// The system-font toggle is on this tab, under Fonts.
 		"system fonts", "installed fonts", "use fonts installed",
@@ -1628,6 +1632,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	if next != cur || nextGrad != exGrad {
 		a.d.Prefs.SetExtrasBoxStyle(next[0], next[1], next[2], next[3], next[4], nextGrad)
 	}
+
+	y = a.settingsSection(y, w, "Wardrobe")
+	y = a.drawWardrobeSettings(y, w)
 
 	y = a.settingsSection(y, w, "Fonts")
 	// The scan reads the machine's own fonts, the only text path differing per OS,

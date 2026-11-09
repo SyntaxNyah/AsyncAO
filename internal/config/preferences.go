@@ -183,6 +183,16 @@ const (
 )
 
 // Sprite-preview box height in px; bounds match the grip clamp in the UI.
+// WardrobeDefaultAccent is the Wardrobe's highlight colour until the player picks one: the client's accent blue.
+const WardrobeDefaultAccent = defaultHighlightColor
+
+// Wardrobe icon sizes: the 40 px char_icon convention, up to three times it.
+const (
+	WardrobeIconDefaultPx = 40
+	WardrobeIconMinPx     = 40
+	WardrobeIconMaxPx     = 120
+)
+
 const (
 	DefaultPreviewHeightPx = 384
 	MinPreviewHeightPx     = 96
@@ -1291,6 +1301,11 @@ func (s *Settings) PreviewHeightPx() int {
 	return value.Clamp(orDefault(s.PreviewHeightPxVal, DefaultPreviewHeightPx), MinPreviewHeightPx, MaxPreviewHeightPx)
 }
 
+// WardrobeIconPx is the size the Wardrobe draws character icons at.
+func (s *Settings) WardrobeIconPx() int {
+	return value.Clamp(orDefault(s.WardrobeIconPxVal, WardrobeIconDefaultPx), WardrobeIconMinPx, WardrobeIconMaxPx)
+}
+
 func (p *AssetPreferences) SetPreviewHeightPx(n int) {
 	n = value.Clamp(n, MinPreviewHeightPx, MaxPreviewHeightPx)
 	p.Update(func(sn *Settings) {
@@ -1364,6 +1379,11 @@ func (p *AssetPreferences) ClearLearnedHost(host string) int {
 func (s *Settings) HighlightColorRGB() int {
 
 	return s.HighlightColor & rgbMask
+}
+
+// WardrobeAccentRGB is the Wardrobe's highlight colour, packed 0xRRGGBB.
+func (s *Settings) WardrobeAccentRGB() int {
+	return orDefault(s.WardrobeAccentVal, WardrobeDefaultAccent)
 }
 
 // ICCustomColorRGB returns the last free IC pick, packed 0xRRGGBB, seeding the colour wheel.

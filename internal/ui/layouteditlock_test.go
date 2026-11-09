@@ -24,6 +24,7 @@ var courtroomModalOpeners = []struct {
 	name string
 	open func(*App)
 }{
+	{"wardrobe", func(a *App) { a.ward.show = true }},
 	{"jukebox", func(a *App) { a.showJukebox = true }},
 	{"background picker", func(a *App) { a.bgPick.show = true }},
 	// The timer, the login dialog and the pair popup left this table in #31 — they are

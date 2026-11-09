@@ -449,6 +449,7 @@ type courtroomModal struct {
 // courtroomModals is that list in priority order; plain function values, so walking it allocates nothing. A row here
 // ends the courtroom pass, so non-blocking panels belong in drawFloatingPanels instead.
 var courtroomModals = []courtroomModal{
+	{func(a *App) bool { return a.ward.show }, (*App).drawWardrobePanel, (*App).closeWardrobe},
 	{func(a *App) bool { return a.showJukebox }, (*App).drawJukeboxPanel, (*App).closeJukebox},
 	{func(a *App) bool { return a.bgPick.show }, (*App).drawBgPanel, func(a *App) { a.bgPick.show = false }},
 	{func(a *App) bool { return a.showSfxBrowser }, (*App).drawSfxBrowser, func(a *App) { a.showSfxBrowser = false }}, // #12 SFX Browser (preview + favourites)
