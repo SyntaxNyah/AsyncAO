@@ -14,13 +14,18 @@ The sixth pre-release of v2.1.0, with a rebuilt Wardrobe.
   Folders made on the server you're on show a green ✓.
 - **Gone from the Wardrobe:** the Backgrounds tab (the Background picker keeps
   your starred backgrounds), Quick-swap (Ctrl+J), character key binds, number
-  keys for filing, and the "From your base" list.
+  keys for filing, the "From your base" list, the Iniswap chip in the menu bar,
+  and cycling a character's emotes in the hover preview.
+- **The theme's iniswap dropdown** now lists only your own character and the
+  one you're wearing.
 - **The server's list is now `iniswaps.ini`**, the name AO2 uses, instead of
   `iniswap.txt`. Server owners who published `iniswap.txt` should rename it.
 - **The Jukebox has its own window**: Extras ▸ Jukebox… in the menu bar, the
   Extras box, or Ctrl+7.
 
 ### Wardrobe
+- **Open it** from Extras ▸ Wardrobe… in the menu bar, the Wardrobe button in
+  the courtroom, the Extras box, or Ctrl+6.
 - **User / Server**: your own favourites, or the characters the server lists.
   **Grid or List** view.
 - **Folders** on the left. A character can be in **several folders**. Hover a
@@ -46,6 +51,10 @@ The sixth pre-release of v2.1.0, with a rebuilt Wardrobe.
   move with it or are deleted. **Use default** moves it back.
 - Every font box in Theme ▸ Font and size per panel now suggests your installed
   fonts as you type.
+
+### Fixes
+- The cache sliders and the learned formats' buttons in Settings ▸ Assets no
+  longer run off the edge of a narrow window.
 
 ## v2.1.0-rc.5 - 2026-11-09
 
