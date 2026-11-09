@@ -1,11 +1,8 @@
 package ui
 
 import (
-	"image"
 	"testing"
-	"time"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -76,7 +73,7 @@ func TestCharNameColumnCoversTheOrphanSlotFrames(t *testing.T) {
 // char_list and hands the whole area to char_buttons = 25,36,663,596, so the INHERITED
 // default column lands under its grid. Stock AO2 draws both (ui_char_list is a sibling
 // created before ui_char_buttons, so the tree shows through the 7 px gutters); that is
-// a stacking artefact, not a design. The roster switch must survive the skip.
+// a stacking artefact, not a design.
 func TestCharNameColumnSkippedWhenItWouldSitOnTheGrid(t *testing.T) {
 	const w, h int32 = 1920, 1080
 	aai := stockCharSelectDesign()
@@ -95,22 +92,11 @@ func TestCharNameColumnSkippedWhenItWouldSitOnTheGrid(t *testing.T) {
 	if g.cols != 10 {
 		t.Errorf("AAI grid = %d columns, want the art's 10", g.cols)
 	}
-	strip, ok := a.charSelectTabStripRect(lay)
-	if !ok {
-		t.Fatal("no fallback home for the Characters/Wardrobe switch — the Wardrobe tab is unreachable")
-	}
-	if strip.W < 1 || strip.H < 1 {
-		t.Errorf("degenerate tab strip %+v", strip)
-	}
-	if strip.X+strip.W > lay.area.X+lay.area.W || strip.Y+strip.H > lay.area.Y+lay.area.H {
-		t.Errorf("tab strip %+v escapes the canvas %+v", strip, lay.area)
-	}
 }
 
 // TestCharNameColumnHonoursAThemeThatSaysNo covers the two real ways a theme declines
 // the column outright: CCWidescreen ships `char_list = 0, 0, 0, 0` and Mobile parks it
-// at x=99999. Both must produce no column and no complaint — and, again, must keep the
-// roster switch reachable.
+// at x=99999. Both must produce no column and no complaint.
 func TestCharNameColumnHonoursAThemeThatSaysNo(t *testing.T) {
 	const w, h int32 = 1920, 1080
 	for name, r := range map[string]theme.Rect{
@@ -125,9 +111,6 @@ func TestCharNameColumnHonoursAThemeThatSaysNo(t *testing.T) {
 		}
 		if col, ok := a.charSelectNameListRect(lay); ok {
 			t.Errorf("%s: drew a column at %+v the theme asked to hide", name, col)
-		}
-		if _, ok := a.charSelectTabStripRect(lay); !ok {
-			t.Errorf("%s: no fallback home for the roster switch", name)
 		}
 	}
 }
@@ -253,52 +236,6 @@ func TestCharSelectTinyCellFallsBackToTheClassicScreen(t *testing.T) {
 	}
 }
 
-// TestCharListTabsShowWhichRosterIsActive pins the roster switch's selected state.
-//
-// It was invisible: the active chip was Fill(chip, ColAccent) followed by
-// Button(chip, ...) on the IDENTICAL rect, and Button fills again with an opaque
-// ColPanel/ColPanelHi. Both chips then took Button's ColAccent border, so Characters
-// and Wardrobe rendered pixel-for-pixel the same whichever one you were on. The test
-// captures the two chips and requires them to differ.
-func TestCharListTabsShowWhichRosterIsActive(t *testing.T) {
-	ren, cleanup := newCaptureHarness(t)
-	defer cleanup()
-	ctx, err := NewCtx(ren)
-	if err != nil {
-		t.Skipf("Ctx unavailable: %v", err)
-	}
-	a := testTabApp(t)
-	a.ctx = ctx
-	a.uiScalePct = 100
-	strip := sdl.Rect{X: 10, Y: 10, W: charSelectTabsW(ctx), H: 22}
-	// Park the pointer far away: hover must not be what makes the two differ.
-	ctx.mouseX, ctx.mouseY = -100, -100
-	shot := func() []byte {
-		ctx.Fill(sdl.Rect{X: 0, Y: 0, W: 300, H: 60}, ColBackground)
-		a.drawCharListTabs(strip)
-		return readRegion(t, ren, strip)
-	}
-	a.charTab = charTabServer
-	onChars := shot()
-	a.charTab = charTabWardrobe
-	onWardrobe := shot()
-	if sameRegion(onChars, onWardrobe) {
-		t.Error("the Characters and Wardrobe chips render identically — nothing tells the user which roster is live")
-	}
-	// Both chips must stay clickable when the column is too narrow for their natural
-	// widths; the old code clipped the second one to whatever was left, which could be
-	// a pixel — an unreachable Wardrobe tab.
-	a.charTab = charTabServer
-	narrow := sdl.Rect{X: 0, Y: 0, W: charSelectTabsW(ctx) / 2, H: 22}
-	ctx.mouseX, ctx.mouseY = narrow.X+narrow.W-4, narrow.Y+narrow.H/2 // over the LAST chip
-	ctx.clicked = true
-	a.drawCharListTabs(narrow)
-	ctx.clicked = false
-	if a.charTab != charTabWardrobe {
-		t.Error("the Wardrobe chip is unreachable in a column too narrow for both labels")
-	}
-}
-
 // TestCharSelectControlsAtTheWindowFloor is C3, both ends.
 //
 // UP: eleven corpus themes are smaller than config.MinWindowW/H and letterbox
@@ -373,7 +310,6 @@ func TestCharSelectControlsAtTheWindowFloor(t *testing.T) {
 // column index into the same filtered order.
 func TestCharSelectFilterIsAO2sTakenCheckbox(t *testing.T) {
 	rows := charListRows{
-		n:     4,
 		chars: []courtroom.CharacterSlot{{Name: "Phoenix"}, {Name: "Edgeworth", Taken: true}, {Name: "Franziska"}, {Name: "Godot", Taken: true}},
 		lower: []string{"phoenix", "edgeworth", "franziska", "godot"},
 	}
@@ -397,7 +333,7 @@ func TestCharSelectFilterIsAO2sTakenCheckbox(t *testing.T) {
 	for _, q := range []string{"", "o", "zzz"} {
 		for _, show := range []bool{true, false} {
 			want := int32(0)
-			for i := 0; i < rows.n; i++ {
+			for i := range rows.chars {
 				if !rows.hidden(i, q, show) {
 					want++
 				}
@@ -406,11 +342,6 @@ func TestCharSelectFilterIsAO2sTakenCheckbox(t *testing.T) {
 				t.Errorf("matches(%q, %v) = %d, hidden() says %d", q, show, got, want)
 			}
 		}
-	}
-	// The wardrobe has no taken slots, so the taken arm can never hide one of its rows.
-	ward := charListRows{n: 2, names: []string{"Blue Badger", "Steel Samurai"}, lower: []string{"blue badger", "steel samurai"}}
-	if ward.taken(0) || ward.matches("", false) != 2 {
-		t.Error("the wardrobe lost rows to a filter that cannot apply to it")
 	}
 }
 
@@ -429,25 +360,6 @@ func TestCharSelectTakenFilterDefaultsToShowing(t *testing.T) {
 	a.resetSessionState()
 	if !a.charShowTaken || a.charListSel != -1 {
 		t.Errorf("reconnecting kept the old filter/selection: showTaken=%v sel=%d", a.charShowTaken, a.charListSel)
-	}
-}
-
-// TestCharListSelectionDropsOnTabSwitch: the two tabs index different slices, so a
-// selection carried across would point at a different character — or past the end of a
-// shorter list.
-func TestCharListSelectionDropsOnTabSwitch(t *testing.T) {
-	a := testTabApp(t)
-	a.charListSel, a.charListScroll = 12, 340
-	a.selectCharTab(charTabServer) // no-op: already there
-	if a.charListSel != 12 || a.charListScroll != 340 {
-		t.Error("re-selecting the current tab reset the column")
-	}
-	a.selectCharTab(charTabWardrobe)
-	if a.charTab != charTabWardrobe {
-		t.Fatalf("tab = %d, want the wardrobe", a.charTab)
-	}
-	if a.charListSel != -1 || a.charListScroll != 0 {
-		t.Errorf("switching tabs kept sel=%d scroll=%d", a.charListSel, a.charListScroll)
 	}
 }
 
@@ -563,16 +475,16 @@ func TestCharNameListClickSelectsAndRevealsIsTheSharedSelection(t *testing.T) {
 	}
 	// A roster long enough that the last name is far off the grid's first page.
 	const n = 400
-	rows := charListRows{n: n, chars: make([]courtroom.CharacterSlot, n), lower: make([]string, n)}
+	rows := charListRows{chars: make([]courtroom.CharacterSlot, n), lower: make([]string, n)}
 	for i := range rows.chars {
 		rows.chars[i].Name = "char" + string(rune('A'+i%26))
 		rows.lower[i] = rows.chars[i].Name
 	}
 	rowH := charListRowH(a.fontLineH())
-	// Click the third visible name (row 2 of the body, which starts under the header).
+	// Click the third visible name; the column has no header row.
 	const target = 2
 	a.ctx.mouseX = col.X + 4
-	a.ctx.mouseY = col.Y + rowH + target*rowH + rowH/2
+	a.ctx.mouseY = col.Y + target*rowH + rowH/2
 	a.ctx.clicked = true
 	a.drawCharNameList(lay, rows, "", true, g)
 	if a.charListSel != target {
@@ -584,7 +496,7 @@ func TestCharNameListClickSelectsAndRevealsIsTheSharedSelection(t *testing.T) {
 	// Now a name far down the list: the grid must follow.
 	a.ctx.clicked = true
 	a.charListScroll = int32(300) * rowH // scroll the column to name 300
-	a.ctx.mouseY = col.Y + rowH + rowH/2 // the first row now visible
+	a.ctx.mouseY = col.Y + rowH/2        // the first row now visible
 	a.drawCharNameList(lay, rows, "", true, g)
 	if a.charListSel < 290 {
 		t.Fatalf("a scrolled column selected %d, want a name near 300", a.charListSel)
@@ -666,14 +578,6 @@ func TestCharSelectPageArrowsStepWholePages(t *testing.T) {
 	if a.charScroll != 0 {
 		t.Errorf("the previous-page arrow left the grid at %d, want the top", a.charScroll)
 	}
-	// The arrows follow the active tab's grid, not always the Characters one.
-	a.charTab = charTabWardrobe
-	a.ctx.mouseX, a.ctx.mouseY = right.X+right.W/2, right.Y+right.H/2
-	a.ctx.clicked = true
-	a.drawCharSelectPageArrows(lay, g)
-	if a.iniScroll != wantPage || a.charScroll != 0 {
-		t.Errorf("on the Wardrobe tab the arrows moved the wrong grid: ini=%d chars=%d", a.iniScroll, a.charScroll)
-	}
 }
 
 // TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs pins the rule the classic arm
@@ -722,107 +626,6 @@ func TestCharSelectTakenFilterOnlyAppliesWhereItsCheckboxIs(t *testing.T) {
 	}
 }
 
-// TestCharSelectWardrobeTabHostsItsOwnDeferredActions is the other half of "one cell,
-// two hosts". drawIniswapCell cannot act on the ★ or the right-click move menu inline —
-// both rebuild the iniList / iniWardrobe / iniFolders slices the grid loop is ranging,
-// which panicked on a remove — so it parks them and the HOST services them after the
-// loop. Only the wardrobe modal ever did, so on the char-select Wardrobe tab the ★
-// silently did nothing and a right-click armed a menu that was drawn nowhere; both then
-// fired later, out of context, the next time the modal opened.
-func TestCharSelectWardrobeTabHostsItsOwnDeferredActions(t *testing.T) {
-	a, _, cleanup := cellChromeHarness(t)
-	defer cleanup()
-	a.serverKey = "ws://wardrobe.test"
-	const w, h int32 = 320, 240
-	lay := a.charSelectLayout(w, h) // themeless: the classic plan, which is what this tab had
-	g := a.charSelectGridPlan(w, h, 40, lay)
-	rows := func() charListRows {
-		return charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
-	}
-
-	// The ★.
-	a.iniFavPending, a.iniFavPendingAdd = "Phoenix", true
-	a.drawWardrobeGrid(w, h, g, rows(), "")
-	if a.iniFavPending != "" {
-		t.Error("a deferred ★ toggle survived the frame — on this screen the star does nothing")
-	}
-	if list := a.d.Prefs.Load().WardrobeList(a.serverKey); len(list) != 1 || list[0] != "Phoenix" {
-		t.Errorf("the wardrobe is %v, want the starred character to have been saved", list)
-	}
-
-	// The move-to-folder menu: Esc is handleIniFolderMenu's own close path, so a screen
-	// that never runs it can never close what its own cells arm.
-	a.iniMenuChar, a.iniMenuAt = "Phoenix", [2]int32{50, 50}
-	a.ctx.escPressed = true
-	a.drawWardrobeGrid(w, h, g, rows(), "")
-	a.ctx.escPressed = false
-	if a.iniMenuChar != "" {
-		t.Error("the char-select Wardrobe tab never serviced the move-to-folder menu its own cells arm")
-	}
-
-	// ...and the empty-wardrobe arm returns early, so the host bookkeeping has to sit
-	// OUTSIDE it: a ★ that emptied the list must still be applied on that very frame.
-	a.iniList, a.iniLower, a.iniFolders, a.iniWardrobe, a.iniHoverIDs = nil, nil, nil, nil, nil
-	a.iniFavPending, a.iniFavPendingAdd = "Phoenix", false
-	a.drawWardrobeGrid(w, h, g, charListRows{}, "")
-	if a.iniFavPending != "" {
-		t.Error("the empty-wardrobe arm skipped the host bookkeeping")
-	}
-	if list := a.d.Prefs.Load().WardrobeList(a.serverKey); len(list) != 0 {
-		t.Errorf("the wardrobe is %v after an un-star, want it empty", list)
-	}
-}
-
-// TestWardrobeGridPaintsTheHoverSelectorToo pins the two tabs' last visible divergence.
-// Both grids draw on ONE lattice over ONE backdrop since #20, so the theme's
-// char_selector — AO2's 62x62 hover halo, raised above every button
-// (aocharbutton.cpp) — has to appear on whichever tab the pointer is over. It was wired
-// on the Characters grid only, so the same cell in the same place behaved differently
-// depending on which roster was showing.
-func TestWardrobeGridPaintsTheHoverSelectorToo(t *testing.T) {
-	a, ren, cleanup := cellChromeHarness(t)
-	defer cleanup()
-	const w, h int32 = 200, 120
-	// A 1:1 themed lattice built by hand: canvas == viewport, so scaleToCanvas is the
-	// identity and cell 0 lands at the design origin.
-	view := sdl.Rect{X: 0, Y: 0, W: w, H: h}
-	g := charGridPlan{
-		view: view, themed: true, cols: 1, cell: charSelectButtonPx,
-		pitchX: charSelectButtonPx + 7, pitchY: charSelectButtonPx + 7, haloPx: 1,
-		canvas: view, designW: w, designH: h, designX: 20, designY: 20,
-		designPitchX: charSelectButtonPx + 7, designPitchY: charSelectButtonPx + 7,
-		originX: 20, originY: 20, trackX: w - scrollBarW,
-	}
-	cell := g.cellAt(0, 0)
-	a.ctx.mouseX, a.ctx.mouseY = cell.X+cell.W/2, cell.Y+cell.H/2 // parked ON the cell
-	rows := charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
-	shot := func() []byte {
-		a.ctx.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
-		a.drawWardrobeGrid(w, h, g, rows, "")
-		return readRegion(t, ren, charSelectorRect(cell, g.haloPx))
-	}
-	shot() // warm the label cache
-	without := shot()
-	// A theme that ships char_selector. One flat 2x2 frame is enough: the halo is a
-	// stretched blit, so any non-background pixel proves it painted.
-	dec := &assets.Decoded{
-		Frames: []*image.RGBA{image.NewRGBA(image.Rect(0, 0, 2, 2))},
-		Delays: []time.Duration{0}, Width: 2, Height: 2,
-	}
-	for i := range dec.Frames[0].Pix {
-		dec.Frames[0].Pix[i] = 0xFF // opaque white: nothing else on this cell is white
-	}
-	if err := a.d.Store.UploadPinned(themeTexKey(themeStemCharSelector), dec); err != nil {
-		t.Skipf("theme upload unavailable: %v", err)
-	}
-	a.themeTex[themeStemCharSelector] = true
-	with := shot()
-	if sameRegion(without, with) {
-		t.Error("the Wardrobe grid ignored the theme's char_selector — the same cell shows a hover " +
-			"halo on the Characters tab and none here")
-	}
-}
-
 // TestCharSelectWidgetGateIsAllocFree keeps the per-frame decision off the heap. It
 // runs once per char-select frame, alongside the grid plan (which has its own gate).
 func TestCharSelectWidgetGateIsAllocFree(t *testing.T) {
@@ -834,7 +637,7 @@ func TestCharSelectWidgetGateIsAllocFree(t *testing.T) {
 	if n := testing.AllocsPerRun(200, func() { a.charSelectNameListRect(lay) }); n != 0 {
 		t.Errorf("charSelectNameListRect allocates %v per frame, want 0", n)
 	}
-	rows := charListRows{n: 3, chars: []courtroom.CharacterSlot{{Name: "A"}, {Name: "B", Taken: true}, {Name: "C"}}, lower: []string{"a", "b", "c"}}
+	rows := charListRows{chars: []courtroom.CharacterSlot{{Name: "A"}, {Name: "B", Taken: true}, {Name: "C"}}, lower: []string{"a", "b", "c"}}
 	if n := testing.AllocsPerRun(200, func() { rows.matches("b", false) }); n != 0 {
 		t.Errorf("charListRows.matches allocates %v per frame, want 0", n)
 	}

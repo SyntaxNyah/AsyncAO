@@ -234,38 +234,6 @@ func (a *App) drawPreviewZoom(frame sdl.Rect, srcW, srcH, shownH int32) {
 	}
 }
 
-// drawPreviewEmoteNav draws the [<] caption [>] bar above the preview and handles its clicks and Left/Right keys. Arrow
-// clicks are consumed so click-to-dismiss doesn't fire.
-func (a *App) drawPreviewEmoteNav(frame sdl.Rect) {
-	c := a.ctx
-	const barH = 22
-	const navW = 22
-	bar := sdl.Rect{X: frame.X, Y: frame.Y - barH - 2, W: frame.W, H: barH}
-	c.Fill(bar, sdl.Color{R: 0, G: 0, B: 0, A: 210})
-	caption := ""
-	if a.previewEmoteIdx < len(a.previewLabels) {
-		caption = a.previewLabels[a.previewEmoteIdx]
-	}
-	caption = fmt.Sprintf("%s (%d/%d)", caption, a.previewEmoteIdx+1, len(a.previewAnims))
-	c.LabelClipped(bar.X+navW+4, bar.Y+3, bar.W-2*navW-8, caption, ColAccent)
-	if c.Button(sdl.Rect{X: bar.X, Y: bar.Y, W: navW, H: barH}, "<") {
-		a.cyclePreviewEmote(-1)
-		c.clicked = false
-	}
-	if c.Button(sdl.Rect{X: bar.X + bar.W - navW, Y: bar.Y, W: navW, H: barH}, ">") {
-		a.cyclePreviewEmote(1)
-		c.clicked = false
-	}
-	if c.focusID == "" { // arrow keys cycle too, unless the search field has focus
-		switch c.keyPressed {
-		case sdl.K_LEFT:
-			a.cyclePreviewEmote(-1)
-		case sdl.K_RIGHT:
-			a.cyclePreviewEmote(1)
-		}
-	}
-}
-
 func (a *App) drawCourtroom(w, h int32) {
 	c := a.ctx
 	// The registry is rebuilt from this frame's draws while editing, so a piece hidden mid-session stops showing
@@ -481,7 +449,7 @@ type courtroomModal struct {
 // courtroomModals is that list in priority order; plain function values, so walking it allocates nothing. A row here
 // ends the courtroom pass, so non-blocking panels belong in drawFloatingPanels instead.
 var courtroomModals = []courtroomModal{
-	{func(a *App) bool { return a.showIni }, (*App).drawIniswapPanel, func(a *App) { a.showIni = false }},
+	{func(a *App) bool { return a.showJukebox }, (*App).drawJukeboxPanel, (*App).closeJukebox},
 	{func(a *App) bool { return a.bgPick.show }, (*App).drawBgPanel, func(a *App) { a.bgPick.show = false }},
 	{func(a *App) bool { return a.showSfxBrowser }, (*App).drawSfxBrowser, func(a *App) { a.showSfxBrowser = false }}, // #12 SFX Browser (preview + favourites)
 }

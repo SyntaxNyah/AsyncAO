@@ -973,9 +973,6 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 		if rr, ok := lay.rect("iniswap_remove"); ok && cur != 0 && cur < len(a.iniswapChoices) {
 			if a.drawThemeButton("iniswap_remove", "X", rr) {
-				// Drop it from the wardrobe and stop wearing it; RemoveWardrobe is a no-op for a folder that was only
-				// ever worn.
-				a.d.Prefs.RemoveWardrobe(a.serverKey, a.iniswapChoices[cur])
 				a.setIniswap("")
 				c.FocusField("ic")
 			}
@@ -1327,7 +1324,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	}
 	if a.previewBase != "" {
 		// Clamp to the window, not the stage: the box is draggable anywhere.
-		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
+		a.drawSpritePreview(a.winW, a.winH, a.previewedEmoteName()) // ARM 2: caption the emote name
 		// closeSpritePreview disarms the trigger's dwell id; a raw previewBase="" would re-open the box next frame.
 		a.dismissPreviewOnClick()
 		a.emoteGridDrewPreview = true // tell drawSpritePreviewFallback to stand down
@@ -1341,7 +1338,7 @@ func (a *App) themedExtrasHint() {
 		return
 	}
 	a.themedHintShown = true
-	a.warnLine = clampLine("AO2 theme — Wardrobe, Jukebox & all AsyncAO extras are in the Extras menu (or press [" +
+	a.warnLine = clampLine("AO2 theme — the Jukebox & all AsyncAO extras are in the Extras menu (or press [" +
 		a.hotkeyFor(hotkeyExtras) + "])")
 	a.warnAt = time.Now()
 }

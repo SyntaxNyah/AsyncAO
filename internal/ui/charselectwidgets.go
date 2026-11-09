@@ -27,10 +27,6 @@ const (
 	charListRowMinH = checkboxBoxPx
 	// charListTextInsetPx is the left margin inside a name row.
 	charListTextInsetPx int32 = 4
-	// charListTabGapPx separates the two roster chips in the column header.
-	charListTabGapPx int32 = 4
-	// charListTabPadPx is how much wider than its label a roster chip is; matches the classic header's chips.
-	charListTabPadPx int32 = 10
 )
 
 // charListRows is the roster the name column shows this frame, and the one filter the column and grid share.
@@ -38,29 +34,16 @@ const (
 // The column's row order is the grid's cell order, so a clicked name maps to its cell. Built per frame; it holds
 // only slice headers and must not reach the heap.
 type charListRows struct {
-	// n is the row count. chars (server roster) and names (wardrobe folders) are alternatives, never both.
-	n     int
 	chars []courtroom.CharacterSlot
-	names []string
 	// lower is the index-aligned lowercased name cache the search filter reads.
 	lower []string
 }
 
 // name is row i's display text.
-func (s charListRows) name(i int) string {
-	if s.chars != nil {
-		return s.chars[i].Name
-	}
-	if i < len(s.names) {
-		return s.names[i]
-	}
-	return ""
-}
+func (s charListRows) name(i int) string { return s.chars[i].Name }
 
-// taken reports whether row i's slot is occupied; always false off the server roster.
-func (s charListRows) taken(i int) bool {
-	return s.chars != nil && s.chars[i].Taken
-}
+// taken reports whether row i's slot is occupied.
+func (s charListRows) taken(i int) bool { return s.chars[i].Taken }
 
 // hidden is AO2's filter_character_list (charselect.cpp:347-372): the taken checkbox, then the search text.
 //
@@ -75,10 +58,10 @@ func (s charListRows) hidden(i int, query string, showTaken bool) bool {
 // matches counts the rows that survive the filter; the unfiltered case skips the O(n) walk.
 func (s charListRows) matches(query string, showTaken bool) int32 {
 	if query == "" && showTaken {
-		return int32(s.n)
+		return int32(len(s.chars))
 	}
 	out := int32(0)
-	for i := 0; i < s.n; i++ {
+	for i := range s.chars {
 		if !s.hidden(i, query, showTaken) {
 			out++
 		}
@@ -148,8 +131,7 @@ func (a *App) charSelectShowTaken(themedUI bool, lay *charSelectLayoutCache) boo
 
 // charSelectNameListRect resolves where AO2's char_list column goes this frame, or false when there is no room.
 //
-// No room when: the theme hides or zeroes the key; the column cannot hold its header plus one name beside its
-// scrollbar; or it overlaps char_buttons (AAI, alter ego (mobi)). Stock AO2 draws both overlapped, which is a
+// No room when: the theme hides or zeroes the key; the column cannot hold one name beside its scrollbar; or it overlaps char_buttons (AAI, alter ego (mobi)). Stock AO2 draws both overlapped, which is a
 // stacking artefact not worth reproducing.
 func (a *App) charSelectNameListRect(lay *charSelectLayoutCache) (sdl.Rect, bool) {
 	r, ok := lay.rect(charSelectListKey)
@@ -160,8 +142,8 @@ func (a *App) charSelectNameListRect(lay *charSelectLayoutCache) (sdl.Rect, bool
 	// leave a half row clickable) to the canvas region under the app-chrome band.
 	r = intersectRect(r, lay.clip)
 	rowH := charListRowH(a.fontLineH())
-	// Header plus one name, and one line height of text beside the scrollbar.
-	if r.H < 2*rowH || r.W-scrollBarW-scrollBarGap-charListTextInsetPx < rowH {
+	// One name, and one line height of text beside the scrollbar.
+	if r.H < rowH || r.W-scrollBarW-scrollBarGap-charListTextInsetPx < rowH {
 		return sdl.Rect{}, false
 	}
 	if buttons, ok := lay.rect(charSelectButtonsKey); ok {
@@ -170,45 +152,6 @@ func (a *App) charSelectNameListRect(lay *charSelectLayoutCache) (sdl.Rect, bool
 		}
 	}
 	return r, true
-}
-
-// charSelectTabStripRect is the fallback home for the Characters/Wardrobe switch when there is no name column:
-// the row under char_search, sized to the chips' labels and kept inside the canvas.
-//
-// It may cover the first cells of a grid that fills the canvas; that beats losing the tab.
-func (a *App) charSelectTabStripRect(lay *charSelectLayoutCache) (sdl.Rect, bool) {
-	search, ok := lay.rect(charSelectSearchKey)
-	if !ok {
-		return sdl.Rect{}, false
-	}
-	r := sdl.Rect{X: search.X, Y: search.Y + search.H, W: charSelectTabsW(a.ctx), H: charListRowH(a.fontLineH())}
-	if r.W < 1 {
-		r.W = search.W // no font to measure (headless): fall back to the search width
-	}
-	if right := lay.area.X + lay.area.W; r.X+r.W > right {
-		r.X = right - r.W
-	}
-	if bottom := lay.area.Y + lay.area.H; r.Y+r.H > bottom {
-		r.Y = bottom - r.H
-	}
-	r = intersectRect(r, lay.clip)
-	// minThemedElementPx, not 1: a sliver of tab strip is not a reachable control.
-	if r.W < minThemedElementPx || r.H < minThemedElementPx {
-		return sdl.Rect{}, false
-	}
-	return r, true
-}
-
-// charSelectTabsW is both chips at their label widths plus the gap.
-func charSelectTabsW(c *Ctx) int32 {
-	out := int32(0)
-	for i, tb := range charSelectTabs {
-		if i > 0 {
-			out += charListTabGapPx
-		}
-		out += c.TextWidth(tb.label) + 2*charListTabPadPx
-	}
-	return out
 }
 
 // drawCharSelectControls draws the mapped controls at their theme rects and reports whether one changed the
@@ -280,10 +223,7 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 // AO2 pages its grid; AsyncAO scrolls in whole rows, so a page is as many whole rows as the viewport holds.
 func (a *App) drawCharSelectPageArrows(lay *charSelectLayoutCache, g charGridPlan) {
 	c := a.ctx
-	scroll := a.gridScroll()
-	if scroll == nil {
-		return
-	}
+	scroll := &a.charScroll
 	// rowOffset, not rows*pitchY: on the themed lattice a page must be whole artwork rows or the snap lands elsewhere.
 	rows := int32(1)
 	if fit := g.view.H / g.pitchY; fit > 1 {
@@ -304,14 +244,6 @@ func (a *App) drawCharSelectPageArrows(lay *charSelectLayoutCache, g charGridPla
 	}
 }
 
-// gridScroll is the active tab's grid scroll offset; both tabs share one plan and set of arrows.
-func (a *App) gridScroll() *int32 {
-	if a.charTab == charTabWardrobe {
-		return &a.iniScroll
-	}
-	return &a.charScroll
-}
-
 // drawCharNameList is AO2's char_list: a scrolling column of names beside the grid, sharing its filter and cells.
 //
 // Clicking a name selects it, outlines its cell and scrolls the grid to it; a double click picks it
@@ -319,17 +251,11 @@ func (a *App) gridScroll() *int32 {
 // Categories are absent: they need one char.ini fetch per character (docs/ROADMAP.md).
 func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, query string, showTaken bool, g charGridPlan) {
 	c := a.ctx
-	r, ok := a.charSelectNameListRect(lay)
+	body, ok := a.charSelectNameListRect(lay)
 	if !ok {
-		// No column on this theme: the roster switch falls back to its own strip under the search box.
-		if strip, ok := a.charSelectTabStripRect(lay); ok {
-			a.drawCharListTabs(strip)
-		}
 		return
 	}
 	rowH := charListRowH(a.fontLineH())
-	a.drawCharListTabs(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: rowH})
-	body := sdl.Rect{X: r.X, Y: r.Y + rowH, W: r.W, H: r.H - rowH}
 	matches := rows.matches(query, showTaken)
 	contentH := matches * rowH
 	scroll := a.charListScroll
@@ -344,7 +270,7 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 	// pushClip, not SetClipRect: it fences input too, so a row scrolled under the header is not clickable.
 	prev, had := c.pushClip(body)
 	n := int32(0)
-	for i := 0; i < rows.n; i++ {
+	for i := range rows.chars {
 		if rows.hidden(i, query, showTaken) {
 			continue
 		}
@@ -370,7 +296,7 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 		if !c.hovering(row) {
 			continue
 		}
-		if c.dblClick && rows.chars != nil && !rows.taken(i) {
+		if c.dblClick && !rows.taken(i) {
 			// AO2's itemDoubleClicked → char_clicked (charselect.cpp:55, :183).
 			c.dblClick = false // consumed: the grid must not also read it
 			c.popClip(prev, had)
@@ -379,63 +305,10 @@ func (a *App) drawCharNameList(lay *charSelectLayoutCache, rows charListRows, qu
 		}
 		if c.clicked {
 			a.charListSel = i
-			*a.gridScroll() = revealRowInGrid(g, ord, *a.gridScroll())
+			a.charScroll = revealRowInGrid(g, ord, a.charScroll)
 		}
 	}
 	c.popClip(prev, had)
-}
-
-// drawCharListTabs is the Characters / Wardrobe switch, drawn as the name column's header.
-//
-// The active chip is an accent-bodied button (ButtonCol with bg == hoverBg == accent); filling then drawing a
-// Button on the same rect overpaints the accent. When natural widths do not fit the row splits evenly so both
-// chips stay clickable.
-func (a *App) drawCharListTabs(r sdl.Rect) {
-	c := a.ctx
-	n := int32(len(charSelectTabs))
-	even := int32(0)
-	if natural := charSelectTabsW(c); natural > r.W {
-		even = (r.W - (n-1)*charListTabGapPx) / n
-		if even < 1 {
-			return // no room for a usable switch at all
-		}
-	}
-	x := r.X
-	for _, tb := range charSelectTabs {
-		w := even
-		if w == 0 {
-			w = c.TextWidth(tb.label) + 2*charListTabPadPx
-		}
-		chip := sdl.Rect{X: x, Y: r.Y, W: w, H: r.H}
-		clicked := false
-		if a.charTab == tb.id {
-			clicked = c.ButtonCol(chip, tb.label, ColAccent, ColAccent, ColAccent, ColBackground)
-		} else {
-			clicked = c.Button(chip, tb.label)
-		}
-		if clicked {
-			a.selectCharTab(tb.id)
-		}
-		x += w + charListTabGapPx
-	}
-}
-
-// charSelectTabs is the roster switch's row, shared by the classic and themed headers.
-var charSelectTabs = [...]struct {
-	id    int
-	label string
-}{{charTabServer, "Characters"}, {charTabWardrobe, "Wardrobe"}}
-
-// selectCharTab switches roster, dropping the selection and column scroll, which index the old tab's slice.
-func (a *App) selectCharTab(id int) {
-	if a.charTab == id {
-		return
-	}
-	a.charTab = id
-	a.charListSel, a.charListScroll = -1, 0
-	if id == charTabWardrobe {
-		a.ensureIniList()
-	}
 }
 
 // revealRowInGrid returns the grid scroll offset that brings the ord-th filtered cell into view with the least

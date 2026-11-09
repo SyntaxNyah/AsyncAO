@@ -170,8 +170,7 @@ var menuWindowItems = []menuItem{
 // menuExtrasItems is the chrome home for AsyncAO's own controls. The floating toolbox survives as a movable,
 // theme-placeable box and the layout editor's drag handle.
 var menuExtrasItems = []menuItem{
-	// A written Wardrobe path from every screen: the band's Iniswap chip is dropped when the band gets tight.
-	{kind: menuItemAction, label: "Wardrobe / iniswap…", enabled: menuInCourtroom, act: menuActWardrobe},
+	{kind: menuItemAction, label: "Jukebox…", enabled: menuInCourtroom, act: menuActJukebox},
 	{kind: menuItemCheck, label: "AsyncAO Extras box", checked: menuExtrasBoxOpen, enabled: menuInCourtroom, act: menuToggleExtrasBox},
 	{kind: menuItemCheck, label: "Restyle character…", checked: menuSpriteStyleOpen, enabled: menuInCourtroom, act: menuToggleSpriteStyle},
 	// Text FX and the emoji picker have no AO2 design key. The themed IC bar draws them only at override rects no stock
@@ -313,8 +312,7 @@ func menuToolboxPiecesOpen(a *App, _ int) bool { return a.toolboxPinned && a.too
 func menuExtrasBoxOpen(a *App, _ int) bool { return a.showWidgets }
 func menuToggleExtrasBox(a *App, _ int)    { a.showWidgets = !a.showWidgets }
 
-// menuActWardrobe opens the Wardrobe on its browse tab, the same entry the Iniswap chip uses (iniswapchip.go).
-func menuActWardrobe(a *App, _ int) { a.openIniswapBrowse() }
+func menuActJukebox(a *App, _ int) { a.openJukebox() }
 
 func menuSpriteStyleOpen(a *App, _ int) bool { return a.showStyleBox }
 func menuToggleSpriteStyle(a *App, _ int)    { a.openSpriteStyle() }
@@ -674,10 +672,6 @@ func (a *App) menuBarFrame(w, h int32) {
 	// rect left in the registry would blank its widgets, so publish nothing. Otherwise the strip is painted over the
 	// band, so screens must not hit-test under it.
 	a.menuBar.live = !c.ptrFenced
-	// The Iniswap chip shares this band, so claim its click before the strip's rect covers it.
-	if a.menuBar.live && !a.menuBar.inert {
-		a.handleIniswapChipInput(w)
-	}
 	if a.menuBar.live {
 		c.fenceOverlay(a.menuBar.strip)
 	}
@@ -856,7 +850,6 @@ func (a *App) drawMenuBar(w, _ int32) {
 		c.Label(r.X+menuBarTitlePadX, r.Y+textY, menuBarMenus[i].title, col.text)
 	}
 	// The band's chips are drawn only here so they can't intrude on an AO2 design canvas or the emote grid.
-	a.drawIniswapChip(w)
 	a.drawThemeErrChip(w)
 }
 

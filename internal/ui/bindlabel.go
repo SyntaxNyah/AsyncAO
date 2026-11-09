@@ -12,7 +12,7 @@ const bareBindChordPrefix = "Alt+"
 const bareBindUnboundLabel = "(no key)"
 
 // bareBindLabel renders a user-assigned plain-key bind the way it fires: Alt+<KEY>.
-// Single characters come from a table: the wardrobe grid paints one per bound cell every frame and concat allocates.
+// Single characters come from a table: bind lists paint one per bound row every frame and concat allocates.
 func bareBindLabel(key string) string {
 	if key == "" {
 		return bareBindUnboundLabel

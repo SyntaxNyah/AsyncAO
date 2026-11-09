@@ -140,8 +140,7 @@ func (a *App) reloadFromFolders() {
 func (a *App) forgetParsedINIs() {
 	a.charMetaCache = nil // remote speakers: refetched on their next message
 	// Or the next hover over the same character is dropped as already showing, keeping the old emote list.
-	a.previewChar, a.previewAnims, a.previewLabels = "", nil, nil
-	a.previewEmoteIdx = 0
+	a.previewChar, a.previewAnims = "", nil
 	a.iniWarmed = "" // the hover warm's latch, same reason
 	if a.sess != nil && a.activeCharName() != "" {
 		a.loadCharINI() // the emote strip in front of the user, reloaded in place

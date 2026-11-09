@@ -554,81 +554,6 @@ func (a *App) scrollServerIntoView(idx int, listTop, h int32) {
 	}
 }
 
-// drawWardrobeGrid is the wardrobe's char-select grid, sharing the Characters tab's charGridPlan and charListRows.
-// drawIniswapCell defers ★ toggles and folder menus because both rebuild slices the loop ranges; this services them.
-func (a *App) drawWardrobeGrid(w, h int32, g charGridPlan, rows charListRows, query string) {
-	// The open folder menu resolves clicks before the grid draws, so they cannot leak to a cell underneath.
-	if a.iniMenuChar != "" {
-		opts := a.iniFolderMenuOpts()
-		a.handleIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
-	}
-	a.drawWardrobeGridCells(w, h, g, rows, query)
-	// A deferred ★ toggle rebuilds the slices the loop ranged, so it runs after the loop.
-	a.applyPendingFav()
-	// The menu paints last, above the grid and any sprite preview.
-	if a.iniMenuChar != "" {
-		opts := a.iniFolderMenuOpts()
-		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
-	}
-}
-
-// drawWardrobeGridCells is the grid body, split so the wrapper's after-loop work also runs on the empty-state return.
-func (a *App) drawWardrobeGridCells(w, h int32, g charGridPlan, rows charListRows, query string) {
-	c := a.ctx
-	if len(a.iniList) == 0 {
-		// Anchored on the grid's viewport: under a theme the grid starts at char_buttons, not x=pad.
-		msgX, msgW := g.view.X+pad, g.view.W-2*pad
-		if !g.themed {
-			msgX, msgW = pad, w-2*pad
-		}
-		switch {
-		case a.iniBusy:
-			c.LabelClipped(msgX, g.view.Y+8, msgW, "Fetching "+iniswapFileName+"...", ColTextDim)
-		case a.iniListErr != "":
-			c.LabelClipped(msgX, g.view.Y+8, msgW, a.iniListErr, ColTextDim)
-		default:
-			c.LabelClipped(msgX, g.view.Y+8, msgW,
-				"Wardrobe empty — tap the ★ on any character in the Characters tab to save it here (it stays per server).", ColTextDim)
-		}
-		return
-	}
-
-	// A wardrobe folder cannot be occupied, so the shared filter runs with taken always shown.
-	a.iniScroll = a.charGridScroll(w, "iniscroll", g, a.iniScroll, rows.matches(query, true))
-
-	n := int32(0)
-	// AO2 raises char_selector above every button (aocharbutton.cpp); paint it after the loop or the next cell covers
-	// it.
-	hoverCell := sdl.Rect{}
-	// pushClip, not raw SetClipRect, so a cell scrolled under the top bar is neither drawn nor clickable there.
-	prev, had := c.pushClip(g.view)
-	for i := range a.iniList {
-		if rows.hidden(i, query, true) {
-			continue
-		}
-		cell := g.cellAt(n, a.iniScroll)
-		n++
-		if g.visible(cell) {
-			if c.hovering(cell) {
-				hoverCell = cell
-			}
-			// A favourite switches to the real character (wardrobeClick), not a blind iniswap.
-			a.drawIniswapCell(i, cell, cellClickChar, g.caption)
-			if i == a.charListSel {
-				c.Border(cell, ColStar) // the name column's selection (charselectwidgets.go)
-			}
-		}
-	}
-	if g.themed && hoverCell.W > 0 {
-		a.drawCharSelectorHalo(hoverCell, g.haloPx)
-	}
-	c.popClip(prev, had)
-	if a.previewBase != "" {
-		a.drawSpritePreview(w, h, false, "") // character preview: no emote-name caption
-		a.closeSpritePreviewOnLeave()
-	}
-}
-
 func (a *App) toggleFavorite(e *network.ServerEntry) {
 	url := e.WebSocketURL()
 	if url == "" {
@@ -674,8 +599,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	if !themedUI {
 		gridTop = hdrY + charSelectHeaderH
 	}
-	// AO2's grid inside char_buttons under a theme (charselectgrid.go), else the full-window grid; both tabs use this
-	// plan.
+	// AO2's grid inside char_buttons under a theme (charselectgrid.go), else the full-window grid.
 	g := a.charSelectGridPlan(w, h, gridTop, csLay)
 
 	// Status sits under the client row when classic, at the top-left of the grid when themed.
@@ -731,19 +655,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	if !themedUI {
 		a.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: hdrY + 36, W: 230, H: fieldH}, a.charSearch, "Search...")
 
-		// Tabs swap the same grid between the server's list and your wardrobe.
-		tabX := pad + 240
-		for _, tb := range charSelectTabs {
-			bw := c.TextWidth(tb.label) + 20
-			if a.charTab == tb.id {
-				c.Fill(sdl.Rect{X: tabX - 2, Y: hdrY + 34, W: bw + 4, H: btnH + 4}, ColAccent)
-			}
-			if c.Button(sdl.Rect{X: tabX, Y: hdrY + 36, W: bw, H: btnH}, tb.label) {
-				a.selectCharTab(tb.id)
-			}
-			tabX += bw + 6
-		}
-		specX := tabX + 8
+		specX := pad + 240
 		if c.Button(sdl.Rect{X: specX, Y: hdrY + 36, W: 90, H: btnH}, "Spectate") {
 			if !a.sess.Rehearsal {
 				a.sess.PickCharacter(protocol.UnpairedCharID)
@@ -764,18 +676,8 @@ func (a *App) drawCharSelect(w, h int32) {
 	query := a.charQ.get(a.charSearch)
 	showTaken := a.charSelectShowTaken(themedUI, csLay)
 
-	if a.charTab == charTabWardrobe {
-		rows := charListRows{n: len(a.iniList), names: a.iniList, lower: a.iniLower}
-		if themedUI {
-			a.drawCharNameList(csLay, rows, query, showTaken, g)
-		}
-		a.drawWardrobeGrid(w, h, g, rows, query)
-		return
-	}
-
 	a.ensureCharLower()
-	a.ensureWardrobeMembers() // star state for the grid; rebuilt only on change
-	rows := charListRows{n: len(a.sess.Chars), chars: a.sess.Chars, lower: a.charLower}
+	rows := charListRows{chars: a.sess.Chars, lower: a.charLower}
 	// The name column draws first so the selection is settled before the cells paint with it.
 	if themedUI {
 		a.drawCharNameList(csLay, rows, query, showTaken, g)
@@ -810,7 +712,7 @@ func (a *App) drawCharSelect(w, h int32) {
 				// Parse the char.ini behind the portrait once per character: "normal" is only a convention, and packs
 				// differ.
 				// AssetType: CharSprite (preview)
-				a.ensurePreviewEmotes(slot.Name, previewEmotePortrait)
+				a.ensurePreviewEmotes(slot.Name)
 				a.setCharPortraitPreview(slot.Name)
 			}
 		}
@@ -820,7 +722,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 	c.popClip(prev, had)
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h, false, "") // character preview: no emote-name caption
+		a.drawSpritePreview(w, h, "") // character preview: no emote-name caption
 		a.closeSpritePreviewOnLeave()
 	}
 }
@@ -856,34 +758,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, slot.Name, ColTextDim)
 	} else {
 		// No caption on a theme's grid: it would print across the next row. AO2 uses a tooltip (charselect.cpp:304).
-		// Registered before the badge and star tooltips, which override it on their rects (last write wins).
 		c.Tooltip(cell, slot.Name)
-	}
-	// Fixed-size badge and star would cover a small cell and steal its clicks, so below the floor both go.
-	if cellFitsCornerChrome(cell) {
-		// The star saves to the Wardrobe; the click is consumed so it cannot also pick the character.
-		// Works on taken too.
-		starred := idx >= 0 && idx < len(a.charLower) && a.wardrobeMembers[a.charLower[idx]]
-		starR := sdl.Rect{X: cell.X + cell.W - charCellStarPx - charCellStarInsetPx,
-			Y: cell.Y + charCellStarInsetPx, W: charCellStarPx, H: charCellStarPx}
-		c.Fill(starR, sdl.Color{R: 0, G: 0, B: 0, A: 130})
-		starCol := ColTextDim
-		if starred {
-			starCol = ColStar
-		}
-		c.IconLabel(starR, "★", starCol)
-		if c.hovering(starR) {
-			c.Tooltip(starR, "Star → save to your Wardrobe (favourites)")
-			if c.clicked {
-				if starred {
-					a.d.Prefs.RemoveWardrobe(a.serverKey, slot.Name)
-				} else {
-					a.d.Prefs.AddWardrobe(a.serverKey, slot.Name)
-				}
-				c.clicked = false // consumed: don't also pick the character
-				return
-			}
-		}
 	}
 	if c.hovering(cell) {
 		a.warmCharINI(slot.Name) // pick = memory hit, not an RTT
@@ -920,9 +795,8 @@ func (a *App) randomChar() {
 	a.warnAt = time.Now()
 }
 
-// drawSpritePreview shows the previewed sprite; with cycle set it also draws the emote navigator and keeps the box
-// alive.
-func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
+// drawSpritePreview shows the previewed sprite, captioned with name when it is not empty.
+func (a *App) drawSpritePreview(w, h int32, name string) {
 	c := a.ctx
 	// Detached: the sprite lives in its own OS window. previewFrameRect is zeroed so handlePreviewInput stands down
 	// too.
@@ -936,8 +810,7 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	defer c.popOverlayOwner(prevOwner)
 	page, ok := a.d.Store.Get(a.previewBase)
 	ready := ok && len(page.Frames) > 0
-	cycling := cycle && len(a.previewAnims) > 1
-	if !ready && !cycling {
+	if !ready {
 		a.previewFrameRect = sdl.Rect{} // no box this frame — no phantom wheel/drag target
 		return
 	}
@@ -1028,8 +901,8 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 		c.LabelClipped(dst.X+4, dst.Y+dst.H/2-8, dst.W-8, "loading…", ColTextDim)
 	}
 	// The chrome paints after the blit, or the sprite would cover buttons that remain clickable.
-	// Emote-name strip: skipped when cycling (the nav bar captions it) or with no name (character previews).
-	if name != "" && !cycle {
+	// Emote-name strip: skipped with no name (character previews).
+	if name != "" {
 		strip := sdl.Rect{X: frame.X, Y: frame.Y, W: frame.W, H: previewNameStripH}
 		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
 		// Always reserve the chrome width: the pin button is always there.
@@ -1054,9 +927,6 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	c.Fill(closeB, ColPanelHi)
 	c.Label(closeB.X+5, closeB.Y+1, "x", ColText)
 	c.Tooltip(closeB, "Close the preview")
-	if cycling {
-		a.drawPreviewEmoteNav(frame)
-	}
 }
 
 // previewGripRect is the resize grip's hit rect, shared by the draw and the input handler.

@@ -20,7 +20,6 @@ func TestCtrlSlotCompaction(t *testing.T) {
 		wdt, adv int32
 	}{
 		{"ctrl.character", 100, 106},
-		{"ctrl.wardrobe", 90, 96},
 		{"ctrl.restyle", 84, 100},
 		{"ctrl.background", 100, 106},
 	}
@@ -57,25 +56,22 @@ func TestCtrlSlotCompaction(t *testing.T) {
 	}
 
 	// 2) Hide a MIDDLE button: it vanishes and every later button shifts LEFT by
-	//    exactly that button's advance (96) — no gap, and the button before it
+	//    exactly that button's advance (100) — no gap, and the button before it
 	//    is untouched.
-	const wardrobeAdv int32 = 96
-	a.setPanelHidden("ctrl.wardrobe", true)
+	const restyleAdv int32 = 100
+	a.setPanelHidden("ctrl.restyle", true)
 	at2, end2 := run()
-	if _, shown := at2["ctrl.wardrobe"]; shown {
+	if _, shown := at2["ctrl.restyle"]; shown {
 		t.Error("a hidden button must not be drawn")
 	}
 	if at2["ctrl.character"] != startX {
 		t.Errorf("the button before the hidden one moved: X=%d, want %d", at2["ctrl.character"], startX)
 	}
-	if got, want := at2["ctrl.restyle"], at["ctrl.restyle"]-wardrobeAdv; got != want {
-		t.Errorf("restyle did not compact: X=%d, want %d", got, want)
-	}
-	if got, want := at2["ctrl.background"], at["ctrl.background"]-wardrobeAdv; got != want {
+	if got, want := at2["ctrl.background"], at["ctrl.background"]-restyleAdv; got != want {
 		t.Errorf("background did not compact: X=%d, want %d", got, want)
 	}
-	if end2 != end-wardrobeAdv {
-		t.Errorf("cursor after hide = %d, want %d (one advance shorter)", end2, end-wardrobeAdv)
+	if end2 != end-restyleAdv {
+		t.Errorf("cursor after hide = %d, want %d (one advance shorter)", end2, end-restyleAdv)
 	}
 }
 

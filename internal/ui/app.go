@@ -71,13 +71,8 @@ const (
 	// warnShowDuration is how long a transient toast stays up.
 	warnShowDuration = 12 * time.Second
 
-	// iniswapFileName is the server's custom character list at the asset origin root, one folder name per line.
-	// Listed characters stream like normal ones but never occupy a server character.
-	iniswapFileName = "iniswap.txt"
-	// iniswapListCap bounds the parsed list against a hostile file.
-	iniswapListCap = 4096
-	// iniswapFetchTimeout caps the download.
-	iniswapFetchTimeout = 15 * time.Second
+	// smallFetchTimeout caps a one-off background download: a char.ini, the format manifest, a casing probe.
+	smallFetchTimeout = 15 * time.Second
 
 	// restoreDialTimeout bounds each restore-on-launch reconnect so a dead server can't freeze boot.
 	restoreDialTimeout = 4 * time.Second
@@ -104,12 +99,6 @@ const (
 	logTabOOC
 	logTabNotes
 	logTabFriends
-)
-
-// Char select grid tabs.
-const (
-	charTabServer = iota
-	charTabWardrobe
 )
 
 // Deps wires the app to the engine singletons built in main.
@@ -263,16 +252,10 @@ type App struct {
 	previewFor     string    // base the preview clock was started for
 	previewAt      time.Time // loop anchor — animated previews play, not freeze
 	previewZoom    int       // magnifier factor (1 = fit; >1 shows a cursor-panned window)
-	// Cycle a previewed, non-worn wardrobe character's emotes: previewChar guards a one-shot char.ini parse;
-	// the capped slices drive the buttons and arrow keys.
-	previewChar     string
-	previewAnims    []string
-	previewLabels   []string
-	previewEmoteIdx int
-	// previewEmoteCycle says who asked for the emote list. True (wardrobe navigator): jump to emote 0 so the caption
-	// matches the sprite. False (char-select portrait): keep the "normal" probe and repoint only when the char.ini
-	// has no emote "normal" (correctPortraitPreview).
-	previewEmoteCycle bool
+	// The char-select portrait keeps the "normal" probe and repoints only when the char.ini has no emote "normal"
+	// (correctPortraitPreview): previewChar guards a one-shot char.ini parse, previewAnims is its capped emote list.
+	previewChar  string
+	previewAnims []string
 
 	// Async result channels: payloads carry the serverKey they were fetched for and polls drop mismatches,
 	// so a tab switch can't land another server's data.
@@ -413,7 +396,7 @@ type App struct {
 	// Created lazily, bounded by tabColorsCap.
 	tabColors map[string]int
 	// Tab drag-reorder: tabDragFrom is the chip pressed (-1 = none); tabDragging flips past tabDragThreshold, then a
-	// release reorders. tabPrevDown is separate from the wardrobe's tracker because the strip draws over every screen.
+	// release reorders. tabPrevDown is the strip's own press tracker because the strip draws over every screen.
 	tabDragFrom  int
 	tabDragStart [2]int32
 	tabDragging  bool
@@ -1053,8 +1036,6 @@ type App struct {
 	vpExactBuf        string // edit buffer for the Settings exact-stage-width px field (commit on Enter)
 	hidden            map[string]bool
 
-	iniRes chan iniswapFetch
-
 	// Layout scales in percent; mirror prefs, saved on change.
 	vpPct, chatPct, boxPct, logPct, inputPct int
 	oocPct                                   int // OOC log text size, independent of logPct (IC log)
@@ -1142,7 +1123,6 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		previewEmoteRes:     make(chan previewEmoteFetch, 1),
 		updateRes:           make(chan updateCheckResult, 1),
 		updateApplyRes:      make(chan error, 1),
-		iniRes:              make(chan iniswapFetch, 1),
 		manifestRes:         make(chan manifestFetch, 1),
 		casingRes:           make(chan casingProbeResult, 1),
 		fontRes:             make(chan fontLoad, 1),

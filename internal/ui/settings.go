@@ -987,7 +987,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			keyLbl := bindChipLabel(bound, a.shownameBindFor == name, "press a key…", "Bind key")
 			kr := sdl.Rect{X: pad + 90, Y: y, W: 96, H: 18}
 			if c.Button(kr, keyLbl) {
-				a.bindingFor = "" // don't also arm a character keybind
 				a.shownameBindFor = name
 				c.focusID = "" // the capture owns the next keypress
 			}

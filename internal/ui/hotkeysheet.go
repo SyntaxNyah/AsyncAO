@@ -86,7 +86,6 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 	}
 
 	// The user-bound key namespaces fire on ALT+<key> (bareBindKey, qol.go) since plain letters go to the IC input.
-	out = appendKeyMapSection(out, "Character keys", a.charKeys, "Wear: ")
 	out = appendKeyMapSection(out, "Showname keys", a.shownameKeys, "Showname: ")
 	out = appendKeyMapSection(out, "IC phrases", a.icPhraseKeys, "IC: ")
 	return out

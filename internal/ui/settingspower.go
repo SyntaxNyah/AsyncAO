@@ -615,7 +615,6 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 		br := sdl.Rect{X: hx + 198, Y: y, W: 110, H: btnH}
 		if c.Button(br, lbl) {
 			a.hkCapture = def.id // arm capture for this action
-			a.bindingFor = ""    // don't also arm a character keybind
 			c.focusID = ""       // the capture owns the next keypress
 		}
 		if c.rightClicked && c.hovering(br) {

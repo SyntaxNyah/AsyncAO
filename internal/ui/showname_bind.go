@@ -9,7 +9,6 @@ import (
 
 // Showname keybinds: bind a key to a saved showname preset and press it in the courtroom to swap to it, the
 // per-preset companion to Ctrl+H (random) and Ctrl+B (cycle). Global, persisted, armed from Settings → General.
-// Mirrors the wardrobe character-keybind machinery, but server-agnostic.
 
 // refreshShownameKeys re-reads the global showname binds into the per-frame lookup caches (startup and bind edits
 // only).

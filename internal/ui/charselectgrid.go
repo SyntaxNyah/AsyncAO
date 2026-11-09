@@ -35,26 +35,10 @@ const (
 	// the smallest character icons we draw (msgBubbleIconPx), the size at which a face is still recognisable.
 	charCellMinPx int32 = 20
 
-	// charCellChromeMinPx is the smallest cell that keeps the fixed-size corner chrome: star, download badge, folder
-	// tag, key badge. They don't scale, so on small cells they cover the art and their click areas eat the cell's own
-	// click; one threshold makes all four appear together. 48 keeps the star down to 0.8x (button_width 60). Names stay
-	// as tooltips (charselect.cpp:304).
-	charCellChromeMinPx int32 = 48
-
-	// charCellStarPx / charCellStarInsetPx are the Characters cell's star box and its inset from the top-right corner.
-	charCellStarPx      int32 = 18
-	charCellStarInsetPx int32 = 2
-
 	// charSelectorHaloDesignPx is the hover selector's overhang per side in design pixels: AO2 sizes ui_selector 62x62
 	// against a 60x60 button (aocharbutton.cpp:10, :68-69).
 	charSelectorHaloDesignPx = 1
 )
-
-// cellFitsCornerChrome reports whether a cell is big enough for the corner chrome (charCellChromeMinPx), on both axes.
-// It is the one predicate shared by drawCharCell and drawIniswapCell.
-func cellFitsCornerChrome(cell sdl.Rect) bool {
-	return cell.W >= charCellChromeMinPx && cell.H >= charCellChromeMinPx
-}
 
 // themeStemCharTaken / themeStemCharSelector are AOCharButton's optional overlay images (aocharbutton.cpp:17 and :23).
 // A theme shipping neither keeps AsyncAO's own treatment. Stems name T1 theme:// textures, spelled as the file on disk.
@@ -63,7 +47,7 @@ const (
 	themeStemCharSelector = "char_selector"
 )
 
-// charGridPlan is the one set of cell metrics both tabs (Characters and Wardrobe) lay out on, so they cannot desync.
+// charGridPlan is the char-select grid's cell metrics.
 // A plain value: it is passed per cell and must never reach the heap.
 type charGridPlan struct {
 	// view is the scrolling viewport in window pixels, the clip for the cell loop. Themed: char_buttons intersected

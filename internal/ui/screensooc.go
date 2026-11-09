@@ -872,21 +872,3 @@ func (a *App) drawAreaList(r sdl.Rect, canvasInk bool) {
 		c.Label(r.X+4, r.Y+6, "No areas match your search.", ColTextDim)
 	}
 }
-
-// wardrobeFolders lists the distinct folder names in the current menu in first-seen order (the wardrobe's
-// top-level folder icons); a folder exists exactly while a character is filed in it.
-func (a *App) wardrobeFolders() []string {
-	var out []string
-	seen := map[string]struct{}{}
-	for _, f := range a.iniFolders {
-		if f == "" {
-			continue
-		}
-		if _, dup := seen[f]; dup {
-			continue
-		}
-		seen[f] = struct{}{}
-		out = append(out, f)
-	}
-	return out
-}

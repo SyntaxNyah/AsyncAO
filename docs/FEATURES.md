@@ -705,7 +705,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - Settings shows a live chatbox preview with the applied colors.
 - **Floating Extras box** (the "★ Extras" button / **Ctrl+X**): a legacy AO2
   `courtroom_design.ini` has no element keys for AsyncAO's own features
-  (Wardrobe, Jukebox, Background, Theater, Pair, Evidence, Login, Settings, …),
+  (Jukebox, Background, Theater, Pair, Evidence, Login, Settings, …),
   so when a theme drives the courtroom layout they'd be unreachable. Pressing
   **★ Extras** (pinned bottom-left) — or **Ctrl+X** — opens a **non-blocking
   floating box** of all of them: the courtroom, chat and logs stay live
@@ -1422,8 +1422,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   cycle, music stop (`~stop.mp3` fake-track request, courtroom.cpp
   music_stop), log jump, screenshot (`screenshots/` beside the exe).
   **Per-menu shortcuts** jump straight to a menu without opening the Extras box:
-  Characters / Wardrobe / Jukebox / Background / Evidence / Pairing on
-  **Ctrl+5..0**, Call-mod / UI-chrome / Settings on Ctrl+O / F / **,** (comma —
+  Characters / Jukebox / Background / Evidence / Pairing on
+  **Ctrl+5, 7, 8, 9, 0**, Call-mod / UI-chrome / Settings on Ctrl+O / F / **,** (comma —
   Ctrl+Z stays free for the layout editor's undo). **Random
   character** (webAO `/randomchar` — swap to a uniformly-random FREE character)
   on **Ctrl+R**, also a "Random char" button in the Extras box. All rebindable
@@ -1466,7 +1466,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   track it always did, and the music URL is still built from it. The same short
   name is used on the "Now playing:" line, in the IC "*has played a song*" line
   and in the jukebox's Recently-played rows, so the three can't disagree.
-- **Jukebox playlist** (Wardrobe → **Jukebox** tab): a library of the music
+- **Jukebox playlist** (its own window: **Extras ▸ Jukebox…**, the Extras box or **Ctrl+7**): a library of the music
   links DJs/CMs `/play` in OOC (YouTube/Discord/etc.), organized into named
   playlists (folders) so you click instead of paste. Per song: a labelled
   **Play** button (clicking the song title plays it too — both send `/play
@@ -1640,8 +1640,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
     the favourites.
   - The ★ itself, to curate from anywhere in the grid.
 
-  Favourites are **per character and persisted** (kept across a settings reset,
-  like your wardrobe). They're keyed by the emote's **position, not its name** —
+  Favourites are **per character and persisted** (kept across a settings reset). They're keyed by the emote's **position, not its name** —
   emote labels and talking sprites *duplicate* within a character (Apollo has
   three distinct "normal" emotes that share a sprite), so a name key would merge
   them into one star. **Zero render cost**: a star toggle rebuilds a small lookup
@@ -1649,7 +1648,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   guard compare (verified 0 allocs/op), the box draws only while open, and the
   always-on render loop (`render.Viewport`) is untouched.
 - **Sprite preview magnifier**: every sprite preview pop-up (character select,
-  wardrobe, emote hover, background picker) has **− / + zoom controls** along
+  emote hover, background picker) has **− / + zoom controls** along
   its bottom OR the **mouse wheel** (in and out) over the box; past 1× the
   preview becomes a **magnifying glass** — move the mouse over it to pan around
   the magnified sprite and inspect pixel detail. **Left-drag the box** to move
@@ -1676,9 +1675,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   as often — showed a cell icon that loaded fine beside a preview box that stayed
   empty forever. The preview now reads the hovered character's char.ini and falls
   back to its **first real emote**, so every pack previews. A pack that does have
-  `normal` is unchanged and still costs a single probe. (The wardrobe / iniswap
-  grid and the pair menu already recovered this way; character select was the one
-  surface that didn't.)
+  `normal` is unchanged and still costs a single probe.
 - **Reposition sprites by dragging** (Settings → General, **default OFF**): when
   enabled, drag any character in the viewport to move them (the override sticks
   per character; right-click a sprite to reset it, or "Reset all moved sprites"
@@ -1709,10 +1706,6 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   with the Settings checkbox. Persisted. Suppressed in the same per-frame
   sprite-override pass (one pref read, then the existing short-circuit) — the
   render gate is untouched.
-- **★ favourite a character from Character Select**: a star on each character
-  icon adds it straight to your **per-server Wardrobe** (LemmyAO-style), so it
-  rides along on every connect. One click on, one click off; the Wardrobe tab
-  and courtroom Wardrobe menu show the same stars.
 - **Auto-login toast** (Settings → General, **ON by default**): when a saved
   auto-login fires on join, a one-shot in-app toast **and a desktop
   notification** name who/where you signed in as (masked in streamer mode), so
@@ -1720,11 +1713,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   want the popup. The login lines still send paced, one at a time (so a
   two-step Akashi prompt is answered in order).
 - **Background picker** (courtroom Background button): a thumbnail grid of
-  every background, modeled on the wardrobe menu. AO has no "list
+  every background. AO has no "list
   backgrounds" packet, so the set is discovered by fetching the asset
   host's `background/` directory and parsing its autoindex
-  (nginx/apache/caddy) — same idea as iniswap.txt seeding the wardrobe;
-  the current + last-seen backgrounds always seed it so it's never empty.
+  (nginx/apache/caddy); the current + last-seen backgrounds always seed it so it's never empty.
   The discovered list is **cached per server** (like the char list), so the
   next session's picker and slideshow show it **instantly** while a fresh
   listing refreshes in the background.
@@ -1738,12 +1730,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   scroll, instead of thrashing the cache and flickering. (Small-background
   servers fit everything and show every thumbnail.)
 - **Favorite backgrounds** (the ★ on each picker cell): pin the backgrounds
-  you use, exactly like the wardrobe star. Favorites are **saved per server**,
+  you use. Favorites are **saved per server**,
   float to the top of the list, and a **"Favorites only"** checkbox filters the
   grid to just them — so your go-to scenes are one click away even on a host
-  with no directory listing. Click the star again to unpin. Your favorites also
-  show up in the **Wardrobe's Backgrounds section** (below), where you can sort
-  them into folders and change the room to one with a click.
+  with no directory listing. Click the star again to unpin.
 - **Background slideshow** (Settings → **OFF by default**): when the courtroom
   is **idle** (no message on stage), the stage cycles through the server's
   backgrounds every few seconds (configurable, 3–600 s) as ambiance. It's a
@@ -1837,63 +1827,6 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Force character names** (Settings, off by default): show every speaker's
   **character** name instead of their custom showname, in both the chatbox and
   the IC log — true-roleplay immersion and anti-impersonation for casing.
-- **Per-server wardrobe**: custom character lists no longer carry
-  between servers; the pre-split collection migrates once to the first
-  server joined after updating.
-- **Wardrobe folders** (app-drawer style): folders are real objects you open,
-  not just filters. At the top level the grid leads with a **folder icon** per
-  category; **click one to open it** (the grid then shows only that folder's
-  characters) and a **‹ All folders** button takes you back. **Drag a character
-  cell onto a folder icon to file it**; drag it onto the back button to take it
-  out again. To make a new folder, type its name in the **New folder** box — a
-  folder icon appears immediately so you can drop the first character onto it
-  (the folder becomes permanent once it has a member). A plain click still
-  wears the character; a small drag threshold tells a click from a drag. Other
-  ways to file: **right-click → "move to folder"** (the only cross-folder move
-  once you're inside one; this menu also has **× Remove from wardrobe**),
-  **number keys 1-9** (file the hovered character into that-numbered folder,
-  0 = take out), or add with `folder/char`. **Search spans every folder.**
-  Folders are per server.
-- **Removing things**: the **★** on a cell removes that character from the
-  wardrobe (or unstars a background); right-click a character → **× Remove from
-  wardrobe**. **Delete a whole folder** with the **×** that appears on a folder
-  icon when you hover it — a confirmation then offers **"Delete + N items"**
-  (removes the folder's characters/backgrounds from your favorites) or **"Keep
-  items"** (just dissolves the folder, leaving everything unfiled). A folder
-  also disappears on its own once nothing is filed under it.
-- **Three wardrobe sections — Characters, Backgrounds, Iniswaps**: tabs at the
-  top of the Wardrobe switch between them. **Characters** is *your* curated set
-  only — the iniswaps you've starred or filed into folders — so it stays clean
-  instead of listing the whole server. **Iniswaps** is a flat browse of the
-  server's `iniswap.txt` **only** — favourites that aren't on the server's list
-  don't show here, they stay on Characters: search it, hover to preview, click
-  to try one on, and hit **★** to add it to your Characters wardrobe (where you
-  can then file it into folders). A server that publishes no `iniswap.txt` just
-  shows a note and an empty list (nothing to fetch). Both grids render from the
-  same backing list with the same indices, so switching tabs never repaints the
-  wrong thumbnail (the index-keyed icon cache stays valid).
-  The Backgrounds section uses the *same* navigable folders: drag a background
-  onto a folder icon to file it, open a folder to see inside, and click a
-  background to change the room to it (`/bg`). Its ★ removes a background from
-  favorites. Favorites are added by starring in the Background picker; the
-  section shows a hint pointing there when it's empty. Background folders are
-  saved per server, just like character folders.
-- **Per-server character keybinds**: a key badge on each wardrobe cell
-  binds a plain key (press A → wear that character instantly); fires
-  only with no text field focused. Right-click the badge to clear.
-- **Quick-swap (Ctrl+J by default)**: cycles through this server's wardrobe
-  characters and wears the next one, wrapping around — a fast way to flip
-  between your starred cast without opening the menu. It advances from
-  whatever you're wearing now, so the cycle stays predictable even after a
-  manual pick. The key is rebindable in Settings → Hotkeys (and listed in the
-  F1 cheat sheet); an empty wardrobe just shows a hint.
-- **Try-before-wear preview**: hovering a wardrobe character pops the usual
-  sprite preview, but now you can **flip through that character's emotes**
-  right in the preview box — the `<` `>` buttons or the Left/Right arrow keys
-  cycle them, with a caption naming each one. It reads the character's emote
-  list from the char.ini that was already warmed on hover (no extra download),
-  so you can see a character's range *before* committing to wear them. Nothing
-  is sent — wearing in the courtroom only affects your own next line anyway.
 - **Settings export/import**: Export writes the complete preferences
   file (knobs, favorites, wardrobes, keybinds, learned formats) beside
   the exe; Import = arm the button and drop the .json — applied on

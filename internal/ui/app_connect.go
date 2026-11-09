@@ -196,9 +196,6 @@ func (a *App) connectWith(name, wsURL string, conn *protocol.Conn, err error) {
 	a.serverName = name
 	a.serverKey = wsURL
 	a.connAt = time.Now()
-	// The first server joined after the per-server wardrobe split inherits the old flat collection.
-	a.d.Prefs.ClaimLegacyWardrobe(wsURL)
-	a.refreshCharKeys()
 	a.refreshShownameKeys()
 	a.refreshICPhraseKeys()
 	a.syncLoginBuffers() // settings/dialog boxes show this server's creds
@@ -337,12 +334,8 @@ func (a *App) Disconnect() {
 	a.closeActiveTab()
 	a.resetSessionState()
 	a.selServer, a.descLines = -1, nil
-	// Drain in-flight fetches so stale payloads can't land later.
-	select {
-	case <-a.iniRes:
-	default:
-	}
 	a.bgPick.show = false
+	// Drain in-flight fetches so stale payloads can't land later.
 	select {
 	case <-a.bgPick.res:
 	default:
@@ -1076,7 +1069,6 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 	a.d.Manager.SetOffline(true)
 	a.sess = courtroom.NewRehearsalSession(info.Origin, info.Chars)
 	a.rebuildAssetOrigin()
-	a.refreshCharKeys()
 	a.refreshShownameKeys()
 	a.refreshICPhraseKeys()
 	a.themeBound = info.Theme // rehearsal wears the server's bound theme too
@@ -1186,7 +1178,7 @@ func (a *App) maybeProbeCasing() {
 // exists, so Auto stays lowercase unless lowercase 404s. Two icon formats per casing; the burst is one-time per server
 // (the sanctioned exception to one probe per asset). Background goroutine: touches only the result channel.
 func (a *App) probeCasing(host, name, origin string) {
-	ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), smallFetchTimeout)
 	defer cancel()
 	winner := courtroom.CharCaseLower
 	for _, cc := range []uint8{courtroom.CharCaseLower, courtroom.CharCaseFirstCap, courtroom.CharCaseTitle} {
@@ -1345,7 +1337,7 @@ func seedOriginFormats(mgr *assets.Manager, prefs *config.AssetPreferences, orig
 	if host == "" {
 		return seedResult{status: seedSkipped}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), smallFetchTimeout)
 	defer cancel()
 	data, err := mgr.FetchManifest(ctx, origin)
 	if err != nil {
@@ -1515,11 +1507,9 @@ func (a *App) enterCourtroom() {
 	if a.sess == nil {
 		return
 	}
-	// Fresh entry from char select: a wardrobe pick rides in as pendingIni; a plain pick starts clean and the side
-	// waits on the new char.ini. Tab reactivation must not run these: activateTab calls buildRoom directly so the
-	// parked iniswap and /pos override survive.
-	a.iniChar = a.pendingIni
-	a.pendingIni = ""
+	// Fresh entry from char select starts clean and the side waits on the new char.ini. Tab reactivation must not run
+	// these: activateTab calls buildRoom directly so the parked iniswap and /pos override survive.
+	a.iniChar = ""
 	a.sidePref = ""
 	a.charDefaultSide = "" // a fresh character declares its own default; the old one must not outlive it
 	// A fresh entry or character switch starts at the first emote. Reactivation skips this so each tab keeps its emote

@@ -917,7 +917,6 @@ func (a *App) applyPrefsToState() {
 	a.uiScalePct = a.d.Prefs.Load().UIScalePct
 	a.ctx.SetUIScale(a.UIScale())
 	a.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
-	a.refreshCharKeys()
 	a.applyThemeAsync()
 	a.applyAudioVolumes()
 	if a.room != nil {

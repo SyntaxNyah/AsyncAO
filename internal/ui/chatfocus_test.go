@@ -117,7 +117,7 @@ func TestTypingClaimRefusesWhereTheKeyBelongsToSomethingElse(t *testing.T) {
 		{"a Ctrl chord", func(a *App) { a.ctx.ctrlHeld = true }},
 		{"an Alt chord (a relocated bind namespace)", func(a *App) { a.ctx.altHeld = true }},
 		{"a modal fence is up", func(a *App) { a.ctx.modalOn = true }},
-		{"a key-bind capture is armed", func(a *App) { a.bindingFor = "Judge" }},
+		{"a key-bind capture is armed", func(a *App) { a.shownameBindFor = "Judge" }},
 		{"the layout editor owns the keyboard", func(a *App) { a.layoutEdit = true }},
 		{"the classic editor owns the keyboard", func(a *App) { a.classicEdit = true }},
 		{"the IC field is not on screen", func(a *App) { a.ctx.drawnFieldSeq = nil }},
@@ -157,7 +157,7 @@ func TestBounceFocusToICQueuesRatherThanAssigns(t *testing.T) {
 	}
 	// …and while a bind capture owns the next key.
 	d := focusTestApp()
-	d.bindingFor = "Judge"
+	d.shownameBindFor = "Judge"
 	d.bounceFocusToIC()
 	if d.ctx.focusNext != "" {
 		t.Error("the bounce must be a no-op while a key-bind capture is armed")
@@ -295,7 +295,7 @@ func TestBareBindKeyRequiresAlt(t *testing.T) {
 		a := &App{ctx: &Ctx{}, macroBind: -1}
 		a.ctx.keyPressed, a.ctx.altHeld, a.ctx.ctrlHeld = tc.key, tc.alt, tc.ctrl
 		if tc.arm {
-			a.bindingFor = "Judge"
+			a.shownameBindFor = "Judge"
 		}
 		if got := a.bareBindKey(); got != tc.want {
 			t.Errorf("%s: bareBindKey = %v, want %v", tc.name, got, tc.want)
@@ -341,9 +341,8 @@ func TestBindChipLabelIsTheOnlyWayToSpellAChip(t *testing.T) {
 			t.Errorf("bindChipLabel(%q) = %q, the bare key: that press only types into the IC box now", key, got)
 		}
 	}
-	// The wardrobe grid paints one of these per bound cell on every frame the
-	// char-select screen is up, so the single-character case — every real bind —
-	// must not allocate. `"Alt+" + s` does; the table lookup does not.
+	// Bind lists paint one of these per bound row on every frame they are up, so
+	// the single-character case — every real bind — must not allocate. `"Alt+" + s` does; the table lookup does not.
 	if n := testing.AllocsPerRun(bindChipAllocRuns, func() {
 		_ = bindChipLabel("m", false, arming, unbound)
 	}); n != 0 {

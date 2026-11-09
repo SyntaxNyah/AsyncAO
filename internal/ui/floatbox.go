@@ -93,8 +93,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 		a.extrasWidgetCache = []extrasWidget{
 			{"Character", "Open character select", hotkeyCharMenu, func() { a.screen = ScreenCharSelect }},
 			{"Random char", "Swap to a random free character", hotkeyRandomChar, func() { a.randomChar() }},
-			{"Wardrobe", "Iniswap — borrow another character's look", hotkeyWardrobe, func() { a.openIniswap() }},
-			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
+			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openJukebox() }},
 			{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
 			{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.toggleEvidence() }},
 			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
@@ -180,7 +179,7 @@ func (a *App) blockingCourtPopup() bool {
 	// by footprint, and adding one would make extrasSurfaceLive false and disable its own fence.
 	// Not courtroomModalUp's set: this adds classicEdit and omits showSfxBrowser, which would hide the panels too.
 	// Ask courtroomModalUp whether drawCourtroomModals will take the screen.
-	return a.showIni || a.bgPick.show ||
+	return a.showJukebox || a.bgPick.show ||
 		a.classicEdit
 }
 
@@ -192,7 +191,7 @@ func (a *App) courtModalOpen() bool {
 
 // capturingKey reports whether any key-bind capture is armed; they use Esc to cancel.
 func (a *App) capturingKey() bool {
-	return a.bindingFor != "" || a.shownameBindFor != "" || a.jukeBindFor != "" ||
+	return a.shownameBindFor != "" || a.jukeBindFor != "" ||
 		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed || a.macroBind >= 0
 }
 
@@ -255,8 +254,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showReactPicker = false
 	case a.bgPick.show:
 		a.bgPick.show = false
-	case a.showIni:
-		a.showIni = false
+	case a.showJukebox:
+		a.closeJukebox()
 	case a.showTimer:
 		a.showTimer = false
 	case a.toolboxPinned && a.toolboxPieces:
@@ -296,11 +295,6 @@ func (a *App) closeTopOverlay() bool {
 		a.closeSpritePreview()
 	case a.theaterOn: // theater mode's "Esc exits" — handled here so it beats the leave-server shortcut
 		a.setTheater(false)
-	// Char-select wardrobe popups close before that screen's own Esc can fire.
-	case a.wardDelFolder != "":
-		a.wardDelFolder = ""
-	case a.iniMenuChar != "":
-		a.iniMenuChar = ""
 	default:
 		return false
 	}

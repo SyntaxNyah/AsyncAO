@@ -58,9 +58,6 @@ var (
 	ColTierYellow = sdl.Color{R: 222, G: 205, B: 58, A: 255} // ws only: insecure
 	ColTierBlack  = sdl.Color{R: 10, G: 10, B: 10, A: 255}   // legacy: unsupported
 	ColStar       = sdl.Color{R: 255, G: 215, B: 0, A: 255}  // favorites
-	// Wardrobe/background folder icons; not theme-overridden, so kept out of defaultKitColors.
-	ColFolder   = sdl.Color{R: 60, G: 72, B: 98, A: 255}
-	ColFolderHi = sdl.Color{R: 80, G: 98, B: 132, A: 255}
 )
 
 // textKey keys the label cache by font pointer, so scaled fonts coexist with the chrome fonts in one cache.

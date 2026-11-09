@@ -39,14 +39,12 @@ const (
 	hotkeyTheater     = "theater"
 	hotkeyLogin       = "login"
 	hotkeyMuteSFX     = "mute_sfx"
-	hotkeyQuickSwap   = "quick_swap"
 	hotkeyEmoteCycle  = "emote_cycle"
 	hotkeyPinNote     = "pin_note"
 	hotkeyFriendHi    = "friend_toggle"
 	hotkeyExtras      = "extras"
 	// Jump straight to an Extras menu, which a legacy AO2 theme has no button for.
 	hotkeyCharMenu      = "char_menu"
-	hotkeyWardrobe      = "wardrobe"
 	hotkeyJukebox       = "jukebox"
 	hotkeyBackground    = "background"
 	hotkeyEvidence      = "evidence"
@@ -98,14 +96,12 @@ var hotkeyDefs = []struct {
 	{hotkeyTheater, "Theater mode", "t"},
 	{hotkeyLogin, "Server login (saved creds)", "g"},
 	{hotkeyMuteSFX, "Mute sound effects", "{"},
-	{hotkeyQuickSwap, "Quick-swap character (cycle wardrobe)", "j"},
 	{hotkeyEmoteCycle, "Cycle emote (next)", "e"},
 	{hotkeyPinNote, "Pin hovered log line to notes", "n"},
 	{hotkeyFriendHi, "Toggle friend highlights", "u"},
 	{hotkeyExtras, "Open the Extras menu (AsyncAO features box)", "x"},
 	// Direct menu shortcuts on Ctrl+5..0.
 	{hotkeyCharMenu, "Menu: Characters", "5"},
-	{hotkeyWardrobe, "Menu: Wardrobe", "6"},
 	{hotkeyJukebox, "Menu: Jukebox", "7"},
 	{hotkeyBackground, "Menu: Background", "8"},
 	{hotkeyEvidence, "Menu: Evidence", "9"},
@@ -180,43 +176,6 @@ func (a *App) hotkeyConflictKeys() map[string]bool {
 	return out
 }
 
-// refreshCharKeys re-reads this server's character keybinds into the lookup caches; only on connect and bind edits.
-func (a *App) refreshCharKeys() {
-	a.charKeys = a.d.Prefs.Load().CharKeyBinds(a.serverKey)
-	if len(a.charKeys) == 0 {
-		a.charKeysRev = nil
-		return
-	}
-	a.charKeysRev = make(map[string]string, len(a.charKeys))
-	for k, ch := range a.charKeys {
-		a.charKeysRev[ch] = k
-	}
-}
-
-// charKeyFor reports the key bound to a character on this server; "" is none.
-func (a *App) charKeyFor(char string) string { return a.charKeysRev[char] }
-
-// pollCharBind completes an armed wardrobe key-capture: the next plain keypress binds; Esc or any click cancels.
-// The arming click cannot self-cancel: this runs in the update phase, before the wardrobe arms bindingFor in render.
-func (a *App) pollCharBind() {
-	if a.bindingFor == "" {
-		return
-	}
-	c := a.ctx
-	if c.escPressed || c.clicked {
-		a.bindingFor = ""
-		return
-	}
-	if c.keyPressed == 0 {
-		return
-	}
-	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
-	a.d.Prefs.SetCharKeyBind(a.serverKey, key, a.bindingFor)
-	a.pushDebug(fmt.Sprintf("key %q now wears %s (this server only)", key, a.bindingFor))
-	a.bindingFor = ""
-	a.refreshCharKeys()
-}
-
 // bareBindKey returns the keycode the user-assignable key namespaces may act on this frame (Alt+<key>), or 0.
 // Typing claims the IC input on the first character (chatfocus.go), so these cannot fire on a bare letter.
 // Alt because Ctrl is fully claimed (hotkeyDefs) and Shift is text.
@@ -230,18 +189,7 @@ func (a *App) bareBindKey() sdl.Keycode {
 	return c.keyPressed
 }
 
-// handleCharKeys wears a bound character on Alt+<bound key>; a capture in flight still owns the key.
-func (a *App) handleCharKeys() {
-	key := a.bareBindKey()
-	if key == 0 {
-		return
-	}
-	if name := a.charKeys[strings.ToLower(sdl.GetKeyName(key))]; name != "" {
-		a.wearFromMenu(name)
-	}
-}
-
-// handleEmoteKeys picks the emote in number-key position N on Alt+1..9, unless the digit is a character keybind.
+// handleEmoteKeys picks the emote in number-key position N on Alt+1..9.
 func (a *App) handleEmoteKeys() {
 	if a.d.Prefs.Load().DisableAltEmoteRow {
 		return // the user removed the Alt+1..9 number row; the digits are plain text again
@@ -249,9 +197,6 @@ func (a *App) handleEmoteKeys() {
 	key := a.bareBindKey()
 	if key < sdl.K_1 || key > sdl.K_9 || a.emotePerPage <= 0 {
 		return
-	}
-	if a.charKeys[strings.ToLower(sdl.GetKeyName(key))] != "" {
-		return // a character keybind owns this digit
 	}
 	// Map through the visible list (favs-only filters it), so the keys pick what that grid cell shows.
 	a.refreshEmoteView()
@@ -318,7 +263,6 @@ func (a *App) handleHotkeys() {
 		return // Ctrl+Z / Ctrl+Y belong to the armed layout editor
 	}
 	if !a.handleMacroKeys() && !a.handleJukeboxKeys() && !a.handleShownameKeys() && !a.handleICPhraseKeys() && !a.handleStylePresetKeys() {
-		a.handleCharKeys()
 		a.handleEmoteKeys()
 	}
 	key := a.ctx.hotkey
@@ -366,8 +310,6 @@ func (a *App) handleHotkeys() {
 		a.loginNow()
 	case a.hotkeyFor(hotkeyMuteSFX):
 		a.toggleSFXMute()
-	case a.hotkeyFor(hotkeyQuickSwap):
-		a.quickSwapNext()
 	case a.hotkeyFor(hotkeyEmoteCycle):
 		a.cycleEmote(1)
 	case a.hotkeyFor(hotkeyFriendHi):
@@ -392,11 +334,8 @@ func (a *App) handleHotkeys() {
 		a.toggleExtrasBox()
 	case a.hotkeyFor(hotkeyCharMenu):
 		a.screen = ScreenCharSelect
-	case a.hotkeyFor(hotkeyWardrobe):
-		a.openIniswap()
 	case a.hotkeyFor(hotkeyJukebox):
-		a.openIniswap()
-		a.wardSection = wardSectionJukebox
+		a.openJukebox()
 	case a.hotkeyFor(hotkeyBackground):
 		a.openBgPicker()
 	case a.hotkeyFor(hotkeyEvidence):
@@ -485,26 +424,6 @@ func (a *App) toggleFavEmoteBox() {
 	} else {
 		a.warnLine = "Favourite-emotes box hidden"
 	}
-	a.warnAt = time.Now()
-}
-
-// quickSwapNext wears the next starred character on this server, from whatever is worn now, wrapping.
-func (a *App) quickSwapNext() {
-	ring, _, _ := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.serverKey), nil)
-	if len(ring) == 0 {
-		a.warnLine = "Quick-swap: no wardrobe characters yet — star some with ★ in the Wardrobe"
-		a.warnAt = time.Now()
-		return
-	}
-	next := 0 // current char not in the ring (or nothing worn) → start at the first
-	for i, n := range ring {
-		if strings.EqualFold(n, a.iniChar) {
-			next = (i + 1) % len(ring)
-			break
-		}
-	}
-	a.wearFromMenu(ring[next])
-	a.warnLine = fmt.Sprintf("Quick-swap: %s (%d/%d)", ring[next], next+1, len(ring))
 	a.warnAt = time.Now()
 }
 
@@ -842,7 +761,6 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 					}
 					if c.ClickedIn(row) {
 						a.hkCapture = e.action // the next keypress binds this action
-						a.bindingFor = ""      // don't also arm a character keybind
 						c.focusID = ""         // the capture owns that keypress
 					}
 					if c.rightClicked && c.hovering(row) {

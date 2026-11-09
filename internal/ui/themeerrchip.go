@@ -31,9 +31,7 @@ func (a *App) themeErrChipActive() bool {
 }
 
 // themeErrChipRect is the chip's rect in the menu-bar band, right-aligned; ok=false means draw nothing this frame.
-// It is the outermost item, so the other chips measure against menuBarRightContentLeft, not the window.
-// Clearance is measured against the menu titles alone: the Iniswap chip's rect asks this function, so measuring
-// against that chip would recurse forever.
+// It keeps clear of the menu titles or drops.
 func (a *App) themeErrChipRect(w int32) (sdl.Rect, bool) {
 	if !a.themeErrChipActive() || !a.menuBarPaints() {
 		return sdl.Rect{}, false
@@ -49,15 +47,6 @@ func (a *App) themeErrChipRect(w int32) (sdl.Rect, bool) {
 		return sdl.Rect{}, false
 	}
 	return r, true
-}
-
-// menuBarRightContentLeft is the left edge of everything right-anchored in the band outside the caller;
-// it is the window width when nothing is.
-func (a *App) menuBarRightContentLeft(w int32) int32 {
-	if r, ok := a.themeErrChipRect(w); ok {
-		return r.X
-	}
-	return w
 }
 
 // menuBarTitlesRight is the right edge of the menu titles alone, which themeErrChipRect keeps clear of.

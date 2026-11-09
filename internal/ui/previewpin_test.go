@@ -84,7 +84,7 @@ func TestTogglePreviewPinClearsBoth(t *testing.T) {
 }
 
 // TestDismissPreviewOnClickRespectsThePinAndDisarmsTheDwell pins the five close
-// paths the recon found: the background pickers, the two wardrobe grids and the
+// paths the recon found: the background pickers, the two wardrobe grids (since removed) and the
 // AO2 THEMED emote grid all dismissed with a raw `a.previewBase = ""`, which
 // ignored the pin AND skipped closeSpritePreview — so the trigger's dwell id was
 // never cleared and the already-elapsed hover re-opened the box the very next

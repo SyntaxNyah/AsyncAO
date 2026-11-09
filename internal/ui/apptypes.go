@@ -165,24 +165,17 @@ type sessionState struct {
 	// --- char select ---
 	charSearch string
 	charScroll int32
-	charTab    int // charTabServer | charTabWardrobe (grid contents swap)
 	// charShowTaken is AO2's char_taken filter checkbox (charselect.cpp:99 seeds it checked; :360-364 hides taken
 	// characters when cleared). Not persisted. Only the themed canvas draws it, so classic passes true.
 	charShowTaken bool
 	// charListSel is the roster index highlighted in the themed name column, -1 for none; it outlines the matching
-	// grid cell. Reset on a tab switch because the tabs index different slices.
+	// grid cell.
 	charListSel int
 	// charListScroll is the name column's own scroll offset.
 	charListScroll int32
-	// wardrobeMembers is the lowercased wardrobe set for the current server, rebuilt only when the server or
-	// wardrobe generation changes (ensureWardrobeMembers).
-	wardrobeMembers    map[string]bool
-	wardrobeMembersFor string // serverKey the set was built for
-	wardrobeMembersGen uint64 // config.WardrobeGeneration() it was built at
 	// Lowered-query memos for the per-frame search filters.
 	charQ loweredCache
 	pairQ loweredCache
-	iniQ  loweredCache
 	// iconAsk[i] is when char i's icon was last demanded by the visible grid.
 	iconAsk []time.Time
 	// charLower caches lowercased char names for the search filter; invalidated on EventCharsUpdated.
@@ -350,12 +343,10 @@ type sessionState struct {
 	emoteChoices         []string
 	emoteChoicesForName  string
 	emoteChoicesForCount int
-	// iniswap_dropdown's option list, same guarded cache. The wardrobe guard is a generation counter because
-	// WardrobeList clones.
+	// iniswap_dropdown's option list, same guarded cache.
 	iniswapChoices        []string
 	iniswapChoicesForChar string
 	iniswapChoicesWorn    string
-	iniswapChoicesGen     uint64
 	// SFX Browser: an opt-in modal with favourites, per-row preview and a free-text sound name. It picks into the
 	// same
 	// sfxChoiceIdx override (find-or-append).
@@ -491,17 +482,11 @@ type sessionState struct {
 	noteCache    []string // rev-keyed Lines() snapshot
 	noteCacheRev int64
 
-	// --- character keybinds (per server) ---
-	// bindingFor is the character a wardrobe key-capture is armed for ("" = none); charKeys/charKeysRev cache this
-	// server's binds, refreshed on connect and edits only.
-	bindingFor  string
-	hkCapture   string            // settings Controls tab: hotkey id a key-capture is armed for ("" = none)
-	charKeys    map[string]string // key name → character
-	charKeysRev map[string]string // character → key name (badges)
+	hkCapture string // settings Controls tab: hotkey id a key-capture is armed for ("" = none)
 
 	// --- showname keybinds (global) ---
 	// shownameBindFor is the showname a Settings key-capture is armed for ("" = none); shownameKeys/Rev cache the
-	// global binds, refreshed like charKeys.
+	// global binds, refreshed on edits only.
 	shownameBindFor string
 	shownameKeys    map[string]string // key name → showname
 	shownameKeysRev map[string]string // showname → key name (badges)
@@ -612,67 +597,11 @@ type sessionState struct {
 	// The evidence image picker is the merged local asset source browser (demobrowser.go + mergebrowse.go,
 	// purposeEvidenceImage).
 
-	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
-	iniChar      string   // active override folder ("" = picked character)
-	pendingIni   string   // wear this once PV confirms (char-select joins)
-	iniServer    []string // the server's iniswap.txt names (may be empty)
-	iniList      []string // merged menu: wardrobe first, then server extras
-	iniWardrobe  []bool   // parallel to iniList: wardrobe membership (star)
-	iniServerMem []bool   // parallel to iniList: is in the server's iniswap.txt (Iniswaps tab filter)
-	iniLower     []string // lowercased names for the search filter
-	iniFolders   []string // parallel to iniList: each entry's folder ("" = unsorted)
-	// iniHoverIDs caches each wardrobe cell's HoverPreview id ("iniswap:"+name), parallel to iniList, like
-	// charHoverIDs.
-	// Rebuilt with the list (rebuildIniMenu).
-	iniHoverIDs []string
-	// A wardrobe star toggle is deferred until after the grid loop: it rebuilds and shrinks the slices the loop
-	// ranges over.
-	iniFavPending    string // char to toggle ("" = none)
-	iniFavPendingAdd bool   // true = add to wardrobe, false = remove
-	iniListErr       string
-	iniBusy          bool
-	showIni          bool
-	showReset        bool // factory-reset confirmation pop-up (Settings)
-	iniSearch        string
-	iniAdd           string   // "add folder to wardrobe" input
-	iniSwapMode      bool     // Characters tab: click iniswaps instead of switching char (off=switch; per session)
-	iniFolder        string   // open wardrobe folder ("" = top level/root, else folder name)
-	iniNewFold       string   // "new folder" text input
-	iniMenuChar      string   // wardrobe char with an open "move to folder" menu ("" = none)
-	iniMenuAt        [2]int32 // that menu's top-left (cursor at right-click)
-	iniHoverChar     string   // wardrobe char under the cursor this frame (number-key quick-file)
-	// Drag-to-file: drag a character cell onto a folder chip. iniDragChar is armed on press; iniDragging flips once
-	// the move passes iniDragThreshold and then suppresses the wear-click.
-	iniDragChar     string
-	iniDragStart    [2]int32
-	iniDragging     bool
-	iniPrevDown     bool // mouse-held tracker for press detection in the modal
-	iniPressed      bool // mouse went down this frame (computed per frame)
-	iniScroll       int32
-	iniBrowseScroll int32       // separate scroll for the Iniswaps (browse-all) tab
-	iniAsk          []time.Time // demand pacing stamps, parallel to iniList
-	// iniBase is the Iniswaps tab's "From your base" source: the server roster plus character folders under the local
-	// mounts. It is separate from iniList (iniswapbase.go) because iniList is the wardrobe's index-keyed store, and
-	// merging a large roster would flood that grid and invalidate every cached icon page.
-	iniBase iniBaseBrowser
-
-	// wardSection selects the open wardrobe tab (wardSectionCharacters / wardSectionBackgrounds).
-	wardSection int
-	// wardDelFolder is the folder a delete confirmation is open for ("" = none).
-	wardDelFolder string
-	// Backgrounds section: bgFavList is the favourites in one stable order (FavBackgroundList); navigation filters by
-	// predicate and never rebuilds the list, so the index-keyed bgFavPages cache stays valid. bgFavPages is its own
-	// cache, never shared with bgPick.pages (different index space). Nulled only in rebuildBgFav.
-	bgFavList     []string
-	bgFavLower    []string // lowercased, parallel — search
-	bgFavFolders  []string // folder per favourite, parallel — nav filter
-	bgFavFolder   string   // open background folder ("" = top level)
-	bgFavNewFold  string   // "new folder" text input (Backgrounds section)
-	bgFavSearch   string
-	bgFavScroll   int32
-	bgFavAsk      []time.Time // demand pacing stamps, parallel to bgFavList
-	bgFavPages    []*render.TexturePage
-	bgFavPagesGen uint64
+	// iniChar is the worn iniswap folder ("" = the picked character).
+	iniChar string
+	// showJukebox is the Jukebox window; showReset the factory-reset confirmation (Settings).
+	showJukebox bool
+	showReset   bool
 
 	// bgPick is the "change background" modal (background/ autoindex grid).
 	bgPick bgPicker
@@ -868,28 +797,18 @@ type lobbyFetch struct {
 	err     error
 }
 
-type iniswapFetch struct {
-	key   string // serverKey the fetch was made for (tab-switch guard)
-	names []string
-	// bgs is the background/ autoindex fetched alongside the txt (nil without a listing): pollIniswap filters
-	// background folder names out of the iniswap list, since some servers publish one combined file.
-	bgs []string
-	err error
-}
-
 type charINIFetch struct {
 	key string // serverKey the fetch was made for (tab-switch guard)
 	ini *courtroom.CharINI
 	err error
 }
 
-// previewEmoteFetch is one previewed character's emote list for the try-before-wear cycle; char guards against
-// a newer hover landing first.
+// previewEmoteFetch is one previewed character's emote list for the char-select portrait; char guards against a newer
+// hover landing first.
 type previewEmoteFetch struct {
-	key    string
-	char   string
-	anims  []string // per-emote animation name (sprite stem)
-	labels []string // per-emote display comment (caption)
+	key   string
+	char  string
+	anims []string // per-emote animation name (sprite stem)
 }
 
 // manifestFetch is one extensions.json autodetect result. status carries the raw outcome (applied / absent /

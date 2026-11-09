@@ -23,7 +23,7 @@ var glossaryEntries = []glossaryEntry{
 	{"WTCE", "Witness Testimony / Cross Examination: the splash animations a judge plays to begin testimony or cross-examination (and the Guilty / Not Guilty verdicts)."},
 	{"Pos — Position", "Where your character stands: wit (witness), def (defense), pro (prosecution), jud (judge), hld/hlp (helpers), jur (jury), sea (seance). Set it with the Pos dropdown or /pos."},
 	{"Area", "A room on the server. One server hosts many areas; switch in the Areas tab. Each has its own background, music and players."},
-	{"Iniswap", "Borrowing another character's sprites and sounds while keeping your own name — AsyncAO's Wardrobe does this for you without editing any files."},
+	{"Iniswap", "Borrowing another character's sprites and sounds while keeping your own name."},
 	{"Pairing", "Sharing the stage with another character so two sprites appear side by side. Set it up in the Pair panel."},
 	{"Evidence", "Images with descriptions attached to the case (a knife, a photo…). 'Presenting' one shows it to the whole room."},
 	{"Showname", "The name shown over your chatbox. It can differ from the character's real name; many servers let you set it freely."},

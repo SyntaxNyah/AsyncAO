@@ -49,59 +49,6 @@ func TestInputSnapshotOrder(t *testing.T) {
 	}
 }
 
-// TestParseIniswapList pins the iniswap.txt contract: one folder name per
-// line, CRLF tolerated, blanks skipped, case-insensitive dedupe, bounded
-// by iniswapListCap, sorted case-insensitively for the menu.
-func TestParseIniswapList(t *testing.T) {
-	data := []byte("zeta\r\n\r\n  aigis  \r\namong us_red\nAigis\namong us_red\n\n")
-	got := parseIniswapList(data)
-	want := []string{"aigis", "among us_red", "zeta"}
-	if len(got) != len(want) {
-		t.Fatalf("parsed %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("parsed %v, want %v", got, want)
-		}
-	}
-
-	// Cap holds against a hostile file.
-	var huge []byte
-	for i := 0; i < iniswapListCap+500; i++ {
-		huge = append(huge, []byte(fmt.Sprintf("char%06d\n", i))...)
-	}
-	if got := parseIniswapList(huge); len(got) != iniswapListCap {
-		t.Fatalf("cap = %d entries, want %d", len(got), iniswapListCap)
-	}
-}
-
-// TestFilterServerIniswaps pins the wardrobe's background filter (playtest:
-// a server's combined iniswap.txt put its whole background/ dir in the
-// Iniswaps grid). Exclusion = live autoindex ∪ remembered names, matched
-// case-insensitively; with neither list the input passes through untouched.
-func TestFilterServerIniswaps(t *testing.T) {
-	names := func() []string { return []string{"Aigis", "uminekobeach", "Zeta", "HigurashiSchoolDay"} }
-
-	if got := filterServerIniswaps(names(), nil, nil); len(got) != 4 {
-		t.Fatalf("no background lists → pass through, got %v", got)
-	}
-	got := filterServerIniswaps(names(), []string{"UminekoBeach"}, []string{"higurashischoolday"})
-	want := []string{"Aigis", "Zeta"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("filtered = %v, want %v (live ∪ warm, case-insensitive)", got, want)
-	}
-
-	// The poll path applies the filter before the merge, so the backgrounds
-	// stay out of BOTH the Iniswaps grid and the Characters section's extras.
-	a := testTabApp(t)
-	a.iniRes = make(chan iniswapFetch, 1)
-	a.iniRes <- iniswapFetch{names: names(), bgs: []string{"uminekobeach", "higurashischoolday"}}
-	a.pollIniswap()
-	if len(a.iniServer) != 2 || a.iniServer[0] != "Aigis" || a.iniServer[1] != "Zeta" {
-		t.Fatalf("pollIniswap must drop background names, iniServer = %v", a.iniServer)
-	}
-}
-
 // TestParseAutoindexDirs pins the background-listing parser: trailing-slash
 // hrefs only (folders), parent/self/absolute/external/sort links skipped,
 // files skipped, percent-decoded, case-insensitively de-duplicated, sorted.
@@ -190,32 +137,6 @@ func TestSelectAllChordArms(t *testing.T) {
 	c.BeginFrame(time.Millisecond)
 	if !c.selectAll {
 		t.Fatal("select-all must persist across frames until consumed")
-	}
-}
-
-// TestWardrobeAction pins the switch-vs-iniswap decision for a Characters-tab
-// click: switch to a free server character by default, but fall back to an
-// iniswap when iniswap mode is ticked, when the slot is taken, or when the name
-// isn't a character on this server.
-func TestWardrobeAction(t *testing.T) {
-	cases := []struct {
-		name        string
-		iniswapMode bool
-		slot        int
-		taken       bool
-		want        wardrobeAct
-	}{
-		{"free server char switches", false, 3, false, actSwitch},
-		{"iniswap mode overrides switch", true, 3, false, actIniswap},
-		{"taken slot falls back to iniswap", false, 3, true, actIniswap},
-		{"unknown name falls back to iniswap", false, -1, false, actIniswap},
-		{"iniswap mode + unknown name", true, -1, false, actIniswap},
-	}
-	for _, tc := range cases {
-		if got := wardrobeAction(tc.iniswapMode, tc.slot, tc.taken); got != tc.want {
-			t.Errorf("%s: wardrobeAction(%v,%d,%v) = %v, want %v",
-				tc.name, tc.iniswapMode, tc.slot, tc.taken, got, tc.want)
-		}
 	}
 }
 
@@ -394,30 +315,6 @@ func TestNameColorNoAlloc(t *testing.T) {
 		name := nm
 		if n := testing.AllocsPerRun(100, func() { _ = nameColor(name, 0.6, 0.9) }); n != 0 {
 			t.Errorf("nameColor(%q) allocs = %v, want 0", name, n)
-		}
-	}
-}
-
-// TestMergeWardrobe pins the wardrobe-first menu: client favourites sort
-// case-insensitively up front (starred), server iniswap.txt entries follow
-// minus case-insensitive duplicates of wardrobe entries. inServer marks which
-// entries are in the server list — a favourite that ISN'T a server iniswap
-// ("quagmire" here) is false, so the Iniswaps tab won't show it.
-func TestMergeWardrobe(t *testing.T) {
-	names, stars, inServer := mergeWardrobe(
-		[]string{"Zeta", "aigis", "quagmire"},
-		[]string{"AIGIS", "bread", "zeta", "shrek"},
-	)
-	wantNames := []string{"aigis", "quagmire", "Zeta", "bread", "shrek"}
-	wantStars := []bool{true, true, true, false, false}
-	wantServer := []bool{true, false, true, true, true} // quagmire favourited but not on the server
-	if len(names) != len(wantNames) {
-		t.Fatalf("merged %v, want %v", names, wantNames)
-	}
-	for i := range wantNames {
-		if names[i] != wantNames[i] || stars[i] != wantStars[i] || inServer[i] != wantServer[i] {
-			t.Fatalf("entry %d = %q star=%v server=%v, want %q/%v/%v",
-				i, names[i], stars[i], inServer[i], wantNames[i], wantStars[i], wantServer[i])
 		}
 	}
 }

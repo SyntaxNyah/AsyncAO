@@ -312,8 +312,8 @@ func (a *App) drawBgPanel(w, h int32) {
 	c.popClip(clipPrev, clipHad)
 
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h, false, "") // background preview: no emote-name caption
-		a.dismissPreviewOnClick()            // pin-aware, and disarms the trigger's dwell id
+		a.drawSpritePreview(w, h, "") // background preview: no emote-name caption
+		a.dismissPreviewOnClick()     // pin-aware, and disarms the trigger's dwell id
 	}
 }
 

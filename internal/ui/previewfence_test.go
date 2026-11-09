@@ -90,7 +90,7 @@ func TestPreviewFenceBlocksRowBeneath(t *testing.T) {
 // draw-vs-fence agreement rule: a fence over pixels nothing painted eats clicks,
 // which is the mirror image of the leak being fixed. It also pins the mark
 // fallback — with nothing published, the box's owner-suspend must suspend NOTHING,
-// or a preview drawn on a pass that never fences (char select, the wardrobe) would
+// or a preview drawn on a pass that never fences (char select) would
 // become immune to the menu bar's open pane above it.
 func TestPreviewFencePublishesNothingWhenNoBox(t *testing.T) {
 	for _, tc := range []struct {

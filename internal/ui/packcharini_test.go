@@ -154,8 +154,6 @@ func TestReloadFromFoldersForgetsEveryParsedINI(t *testing.T) {
 	a.charMetaCache = map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
 	a.previewChar = "witch"
 	a.previewAnims = []string{"stale"}
-	a.previewLabels = []string{"Stale"}
-	a.previewEmoteIdx = 3
 	a.iniWarmed = "witch"
 
 	a.reloadFromFolders()
@@ -163,7 +161,7 @@ func TestReloadFromFoldersForgetsEveryParsedINI(t *testing.T) {
 	if len(a.charMetaCache) != 0 {
 		t.Errorf("charMetaCache survived a source change (%v) — every speaker keeps their pre-edit ini", a.charMetaCache)
 	}
-	if a.previewChar != "" || a.previewAnims != nil || a.previewLabels != nil || a.previewEmoteIdx != 0 {
+	if a.previewChar != "" || a.previewAnims != nil {
 		t.Errorf("the preview kept its latch (%q/%v) — re-hovering the same character redraws the pre-edit emotes",
 			a.previewChar, a.previewAnims)
 	}

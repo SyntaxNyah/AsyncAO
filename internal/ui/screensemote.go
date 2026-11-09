@@ -53,7 +53,7 @@ func (a *App) drawSpritePreviewFallback(themed bool) {
 	}
 	// Set before drawing: the flag clears once per frame, so a second call in the frame does not draw the box again.
 	a.emoteGridDrewPreview = true
-	a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName())
+	a.drawSpritePreview(a.winW, a.winH, a.previewedEmoteName())
 	if themed {
 		a.dismissPreviewOnClick()
 		return
@@ -184,7 +184,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 
 	if a.previewBase != "" {
 		// Clamp to the window, not the stage: the box is draggable anywhere.
-		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
+		a.drawSpritePreview(a.winW, a.winH, a.previewedEmoteName()) // ARM 2: caption the emote name
 		a.closeSpritePreviewOnLeave()
 		a.emoteGridDrewPreview = true // tell drawSpritePreviewFallback to stand down
 	}

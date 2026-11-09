@@ -882,13 +882,6 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 		a.screen = ScreenCharSelect
 	}
 	x += 106
-	wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
-	if c.Button(wr, "Wardrobe") {
-		a.openIniswap()
-	}
-	c.Border(wr, ColAccent)
-	c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
-	x += 96
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
 		a.openBgPicker()
 	}
@@ -1010,13 +1003,6 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 		if c.Button(r, "Character") {
 			a.screen = ScreenCharSelect
 		}
-	}
-	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
-		if c.Button(r, "Wardrobe") {
-			a.openIniswap()
-		}
-		c.Border(r, ColAccent)
-		c.Tooltip(r, "Wardrobe / iniswap — swap your character's sprites & emotes")
 	}
 	if r, ok := a.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
 		if c.Button(r, "Restyle") {
@@ -1384,4 +1370,21 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		}
 	}
 	return send
+}
+
+// scaleControl draws one "Name − +" layout knob, stepping *value within [min, max] and saving the layout; returns the
+// next x.
+func (a *App) scaleControl(x, y int32, name string, value *int, step, min, max int) int32 {
+	c := a.ctx
+	x += c.Label(x, y+6, name, ColTextDim) + 4
+	if c.Button(sdl.Rect{X: x, Y: y, W: 22, H: btnH}, "-") && *value-step >= min {
+		*value -= step
+		a.saveLayout()
+	}
+	x += 24
+	if c.Button(sdl.Rect{X: x, Y: y, W: 22, H: btnH}, "+") && *value+step <= max {
+		*value += step
+		a.saveLayout()
+	}
+	return x + 30
 }

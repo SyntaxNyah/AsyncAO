@@ -226,7 +226,7 @@ evicted background/desk re-demands on the same cadence, and the viewport
 holds the last-resident scenery (`syncAnimSticky`) until the replacement
 texture actually lands — a position flip never blanks the viewport.
 
-Hovering any character cell (either grid, the wardrobe too) warms its
+Hovering any character cell warms its
 char.ini through the decode-free raw lane (`Manager.PrefetchRaw`:
 pool-bounded, inflight-deduped, T2 + disk), so the eventual pick loads
 its emote list from memory instead of paying an RTT.
@@ -571,39 +571,13 @@ so a release hit-tests where it actually happened.
   fills (chat box, taken overlay, selection highlight) actually blend —
   SDL's default NONE silently rendered them opaque.
 
-## Wardrobe & iniswap (custom characters)
+## Iniswap (custom characters)
 
-The courtroom's Wardrobe button opens a modal char-select-grade grid
-merging two sources, wardrobe first:
-
-1. **The wardrobe** — the user's own favourites, persisted in prefs
-   (`WardrobeCap` 1024) **across sessions and across servers** (folder
-   names are server-agnostic; assets resolve against the current
-   origin). Stars on each cell toggle membership; an add box accepts any
-   folder name, so no server list is required at all.
-2. **`<asset origin>/iniswap.txt`** — one character folder per line —
-   the server-curated set, merged underneath minus wardrobe duplicates
-   (case-insensitive).
-
-Neither occupies a server slot. Every layer reuses the existing fast
-path, nothing bespoke:
-
-- the txt rides `FetchRaw` (T2 + disk cached, singleflight) on a
-  goroutine; parse is bounded (`iniswapListCap` 4096), case-insensitively
-  deduped + sorted, lowercase names precomputed for the search filter;
-- icons are ordinary `AssetTypeCharIcon` traffic: same paced demand
-  (shared `demandAsset` budget/cadence), same 64 px decode thumbnails,
-  same 404 cache — the **list-character pipeline is untouched**, the menu
-  is just a second consumer of it;
-- hover previews and, once picked, live sprites go through the normal
-  name-chain (`(a)X`/`(b)X` → bare `X`).
-
-Picking an entry only swaps the active folder: outgoing `MS` carries the
-custom name in `char_name` (AO2-Client `set_iniswap` semantics — servers
-relay the folder, receivers stream it like any speaker), and the emote
-list reloads from the custom `char.ini`. Re-picking a list character or
-disconnecting clears the override; an in-flight txt fetch is drained on
-disconnect so a stale list can't land after reconnecting elsewhere.
+`setIniswap` wears any character folder without taking a server slot: outgoing `MS` carries the folder in
+`char_name` (AO2-Client `set_iniswap` semantics — servers relay it, receivers stream it like any speaker), and the
+emote list reloads from that folder's `char.ini`. Picking a character or disconnecting clears it. The theme's
+`iniswap_dropdown` lists the player's own character and the folder worn now. The Wardrobe that browsed and saved
+folders was removed for a redesign; `docs/WARDROBE_REMOVED.md` lists what it did.
 
 ## Lobby data
 

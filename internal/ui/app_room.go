@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"time"
 
@@ -1253,321 +1252,6 @@ func (a *App) setIniswap(name string) {
 	a.loadCharINI()
 }
 
-// wardrobeAct is the resolved action for clicking a Characters-tab favourite.
-type wardrobeAct int
-
-const (
-	actSwitch  wardrobeAct = iota // take the character's slot (a real char change)
-	actIniswap                    // wear its look without taking a slot
-)
-
-// wardrobeAction switches by default, and iniswaps only in iniswap mode, for a non-server name (slot < 0), or if taken.
-func wardrobeAction(iniswapMode bool, slot int, taken bool) wardrobeAct {
-	if iniswapMode || slot < 0 || taken {
-		return actIniswap
-	}
-	return actSwitch
-}
-
-// charSlotByName finds the character whose folder matches case-insensitively, or -1.
-func (a *App) charSlotByName(name string) int {
-	want := strings.ToLower(strings.TrimSpace(name))
-	for i := range a.sess.Chars {
-		if strings.ToLower(a.sess.Chars[i].Name) == want {
-			return i
-		}
-	}
-	return -1
-}
-
-// wardrobeClick switches to a favourite or iniswaps it per wardrobeAction, with a toast when a switch falls back.
-func (a *App) wardrobeClick(name string) {
-	a.showIni = false
-	if a.room == nil {
-		// Char-select Wardrobe tab: same decision as the courtroom path below.
-		slot := -1
-		taken := false
-		if a.sess != nil {
-			slot = a.charSlotByName(name)
-			taken = slot >= 0 && a.sess.Chars[slot].Taken
-		}
-		if wardrobeAction(a.iniSwapMode, slot, taken) == actSwitch {
-			a.pickCharacter(slot)
-			return
-		}
-		a.wearFromMenu(name)
-		return
-	}
-	slot := a.charSlotByName(name)
-	taken := slot >= 0 && a.sess.Chars[slot].Taken
-	if wardrobeAction(a.iniSwapMode, slot, taken) == actSwitch {
-		a.pickCharacter(slot) // CC → PV → EventCharPicked → enterCourtroom (iniswap clears)
-		return
-	}
-	if !a.iniSwapMode { // a switch was wanted but impossible — say why, don't swap silently
-		switch {
-		case slot < 0:
-			a.warnLine = name + " isn't a character on this server — worn as an iniswap"
-		default:
-			a.warnLine = name + " is taken — worn as an iniswap"
-		}
-		a.warnAt = time.Now()
-	}
-	a.wearFromMenu(name)
-}
-
-// wearFromMenu handles a wardrobe pick; on char select an iniswap still needs a server character, so claim the first
-// free one and wear the custom when PV confirms (enterCourtroom applies pendingIni).
-func (a *App) wearFromMenu(name string) {
-	a.showIni = false
-	if a.room != nil {
-		a.setIniswap(name)
-		a.screen = ScreenCourtroom
-		return
-	}
-	free := -1
-	for i := range a.sess.Chars {
-		if !a.sess.Chars[i].Taken {
-			free = i
-			break
-		}
-	}
-	if free < 0 {
-		a.warnLine = "No free character slots to host an iniswap — every slot is taken"
-		a.warnAt = time.Now()
-		return
-	}
-	a.pendingIni = name
-	a.pickCharacter(free) // rehearsal resolves locally
-}
-
-func (a *App) openIniswap() {
-	a.showIni = true
-	a.ensureIniList()
-	if a.wardSection == wardSectionBackgrounds {
-		a.rebuildBgFav() // favourites may have changed since this section last drew
-	}
-}
-
-// ensureIniList makes the wardrobe menu current: prefs render at once, and iniswap.txt merges in when its fetch lands.
-func (a *App) ensureIniList() {
-	a.rebuildIniMenu() // wardrobe is local: usable before (or without) the txt
-	if a.iniServer != nil || a.iniBusy || a.urls.Origin() == "" {
-		return
-	}
-	a.iniBusy = true
-	a.iniListErr = ""
-	url := a.urls.Origin() + iniswapFileName
-	bgURL := a.urls.BackgroundsRoot()
-	key := a.serverKey
-	mgr := a.d.Manager
-	ch := a.iniRes
-	go func() {
-		// A malformed autoindex in parseAutoindexDirs must degrade, never crash off-thread.
-		defer func() {
-			if r := recover(); r != nil {
-				writeCrashLog("iniswap list goroutine panic: ", r)
-				ch <- iniswapFetch{key: key, err: fmt.Errorf("iniswap list failed: %v", r)}
-			}
-		}()
-		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
-		defer cancel()
-		data, err := mgr.FetchRaw(ctx, url)
-		if err != nil {
-			ch <- iniswapFetch{key: key, err: err}
-			return
-		}
-		names := parseIniswapList(data)
-		// Fetched only to filter the list; a host with no listing is not an error (nil).
-		var bgs []string
-		if bgData, bgErr := mgr.FetchRaw(ctx, bgURL); bgErr == nil {
-			bgs = parseAutoindexDirs(bgData)
-		}
-		ch <- iniswapFetch{key: key, names: names, bgs: bgs}
-	}()
-}
-
-func (a *App) pollIniswap() {
-	select {
-	case res := <-a.iniRes:
-		if res.key == a.serverKey {
-			a.applyIniswap(&a.sessionState, res)
-			a.rebuildIniMenu()
-			return
-		}
-		// Landed after a tab switch: left undelivered, the parked tab stays busy and never fetches its list again.
-		for _, tab := range a.tabs {
-			if tab.state.serverKey == res.key && tab.state.iniBusy {
-				a.applyIniswap(&tab.state, res)
-				return
-			}
-		}
-	default:
-	}
-}
-
-func (a *App) applyIniswap(s *sessionState, res iniswapFetch) {
-	s.iniBusy = false
-	if res.err != nil {
-		s.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
-		s.iniServer = nil
-		return
-	}
-	s.iniServer = filterServerIniswaps(res.names, res.bgs,
-		a.d.Prefs.Load().ServerWarmInfoFor(res.key).Backgrounds)
-}
-
-// rebuildIniMenu merges the menu: wardrobe favourites first, then server entries not already in the wardrobe.
-func (a *App) rebuildIniMenu() {
-	names, fromWardrobe, inServer := mergeWardrobe(a.d.Prefs.Load().WardrobeList(a.serverKey), a.iniServer)
-	a.iniList = names
-	a.iniWardrobe = fromWardrobe
-	a.iniServerMem = inServer
-	a.iniLower = make([]string, len(names))
-	folders := a.d.Prefs.Load().WardrobeFolderMap(a.serverKey)
-	a.iniFolders = make([]string, len(names))
-	a.iniHoverIDs = make([]string, len(names))
-	for i, n := range names {
-		lower := strings.ToLower(n)
-		a.iniLower[i] = lower
-		a.iniFolders[i] = folders[lower] // "" when unsorted / not filed
-		a.iniHoverIDs[i] = iniHoverIDPrefix + n
-	}
-	a.iniAsk = nil
-	// cachedPage keys icons by index without checking the URL, so a same-length reorder would paint the wrong icon.
-	a.iniPages = nil
-}
-
-// iniHoverIDPrefix keeps wardrobe hover ids apart from the Characters grid's: the wardrobe modal can show over it.
-const iniHoverIDPrefix = "iniswap:"
-
-// iniHoverID is wardrobe entry i's cached hover id; out of range it rebuilds, since a draw loop must not panic.
-func (a *App) iniHoverID(i int) string {
-	if i >= 0 && i < len(a.iniHoverIDs) {
-		return a.iniHoverIDs[i]
-	}
-	if i < 0 || i >= len(a.iniList) {
-		return iniHoverIDPrefix
-	}
-	return iniHoverIDPrefix + a.iniList[i]
-}
-
-// applyPendingFav applies a deferred star toggle; must run after the grid loop, since it resizes the slices it ranges.
-func (a *App) applyPendingFav() {
-	if a.iniFavPending == "" {
-		return
-	}
-	name := a.iniFavPending
-	a.iniFavPending = ""
-	if a.iniFavPendingAdd {
-		a.d.Prefs.AddWardrobe(a.serverKey, name)
-	} else {
-		a.d.Prefs.RemoveWardrobe(a.serverKey, name)
-	}
-	a.rebuildIniMenu()
-}
-
-// ensureWardrobeMembers rebuilds the server's lowercased wardrobe set on change, reusing the map to avoid allocating.
-func (a *App) ensureWardrobeMembers() {
-	gen := a.d.Prefs.WardrobeGeneration()
-	if a.wardrobeMembers != nil && a.wardrobeMembersFor == a.serverKey && a.wardrobeMembersGen == gen {
-		return
-	}
-	if a.wardrobeMembers == nil {
-		a.wardrobeMembers = make(map[string]bool)
-	} else {
-		clear(a.wardrobeMembers)
-	}
-	for _, name := range a.d.Prefs.Load().WardrobeList(a.serverKey) {
-		a.wardrobeMembers[strings.ToLower(name)] = true
-	}
-	a.wardrobeMembersFor = a.serverKey
-	a.wardrobeMembersGen = gen
-}
-
-// mergeWardrobe lists favourites first (starred), then server entries they did not cover, case-insensitively.
-func mergeWardrobe(wardrobe, server []string) (names []string, stars, inServer []bool) {
-	names = make([]string, 0, len(wardrobe)+len(server))
-	stars = make([]bool, 0, len(wardrobe)+len(server))
-	inServer = make([]bool, 0, len(wardrobe)+len(server))
-	serverSet := make(map[string]struct{}, len(server))
-	for _, n := range server {
-		serverSet[strings.ToLower(n)] = struct{}{}
-	}
-	seen := make(map[string]struct{}, len(wardrobe))
-	sort.SliceStable(wardrobe, func(i, j int) bool {
-		return strings.ToLower(wardrobe[i]) < strings.ToLower(wardrobe[j])
-	})
-	for _, n := range wardrobe {
-		key := strings.ToLower(n)
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		names = append(names, n)
-		stars = append(stars, true)
-		_, srv := serverSet[key]
-		inServer = append(inServer, srv) // a favourite that's also a server iniswap
-	}
-	for _, n := range server {
-		if _, dup := seen[strings.ToLower(n)]; dup {
-			continue
-		}
-		names = append(names, n)
-		stars = append(stars, false)
-		inServer = append(inServer, true)
-	}
-	return names, stars, inServer
-}
-
-// filterServerIniswaps drops background folder names, since some servers publish one combined txt.
-// A real character sharing a background's name is hidden from the grids but can still be worn by name.
-func filterServerIniswaps(names, liveBgs, warmBgs []string) []string {
-	if len(liveBgs) == 0 && len(warmBgs) == 0 {
-		return names
-	}
-	bgSet := make(map[string]struct{}, len(liveBgs)+len(warmBgs))
-	for _, b := range liveBgs {
-		bgSet[strings.ToLower(b)] = struct{}{}
-	}
-	for _, b := range warmBgs {
-		bgSet[strings.ToLower(b)] = struct{}{}
-	}
-	kept := names[:0] // in place: names is pollIniswap's own parse result
-	for _, n := range names {
-		if _, isBg := bgSet[strings.ToLower(n)]; !isBg {
-			kept = append(kept, n)
-		}
-	}
-	return kept
-}
-
-// parseIniswapList parses one character folder per line: deduped case-insensitively, capped and sorted.
-func parseIniswapList(data []byte) []string {
-	lines := strings.Split(string(data), "\n")
-	names := make([]string, 0, len(lines))
-	seen := make(map[string]struct{}, len(lines))
-	for _, line := range lines {
-		name := strings.TrimSpace(line)
-		if name == "" {
-			continue
-		}
-		key := strings.ToLower(name)
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		names = append(names, name)
-		if len(names) >= iniswapListCap {
-			break
-		}
-	}
-	sort.SliceStable(names, func(i, j int) bool {
-		return strings.ToLower(names[i]) < strings.ToLower(names[j])
-	})
-	return names
-}
-
 // cachedPage resolves a grid cell's texture page through a generation-keyed cache: evictions bump the generation
 // and textures are destroyed only after that, so pointers are valid while it holds.
 func (a *App) cachedPage(pages *[]*render.TexturePage, gen *uint64, n, idx int, base string) (*render.TexturePage, bool) {
@@ -1640,37 +1324,28 @@ func (a *App) warmCharINI(name string) {
 	a.d.Manager.PrefetchRaw(a.charINIURL(name), network.PriorityLow) // raw text: char.ini
 }
 
-// previewEmoteCap bounds one previewed character's emote cycle (hard rule 4).
+// previewEmoteCap bounds one previewed character's parsed emote list (hard rule 4).
 const previewEmoteCap = 256
 
 // previewIdleAnim is the conventional resting pose both preview surfaces probe first on hover (webAO URL convention);
 // packs without it are corrected from their char.ini.
 const previewIdleAnim = "normal"
 
-// ensurePreviewEmotes' cycle argument.
-const (
-	previewEmoteNav      = true  // wardrobe: drives the ‹ › try-before-wear navigator
-	previewEmotePortrait = false // char-select grid: one hover portrait, no navigator
-)
-
 // ensurePreviewEmotes loads a previewed character's emote list once, parsing off-thread into previewEmoteRes.
-func (a *App) ensurePreviewEmotes(name string, cycle bool) {
+func (a *App) ensurePreviewEmotes(name string) {
 	if name == "" || name == a.previewChar || a.urls.Origin() == "" {
 		return
 	}
 	a.previewChar = name
-	a.previewEmoteCycle = cycle
 	a.previewAnims = nil
-	a.previewLabels = nil
-	a.previewEmoteIdx = 0
 	url := a.charINIURL(name)
 	key := a.serverKey
 	mgr := a.d.Manager
 	ch := a.previewEmoteRes
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), smallFetchTimeout)
 		defer cancel()
-		// Layered: a character from the user's own pack must cycle their emotes, not the server's.
+		// Layered: a character from the user's own pack must show their emotes, not the server's.
 		data, err := mgr.FetchRaw(ctx, url)
 		if err != nil {
 			return
@@ -1680,15 +1355,13 @@ func (a *App) ensurePreviewEmotes(name string, cycle bool) {
 			return
 		}
 		anims := make([]string, 0, len(ini.Emotes))
-		labels := make([]string, 0, len(ini.Emotes))
 		for i, e := range ini.Emotes {
 			if i >= previewEmoteCap {
 				break
 			}
 			anims = append(anims, e.Anim)
-			labels = append(labels, e.Comment)
 		}
-		ch <- previewEmoteFetch{key: key, char: name, anims: anims, labels: labels}
+		ch <- previewEmoteFetch{key: key, char: name, anims: anims}
 	}()
 }
 
@@ -1701,19 +1374,11 @@ func (a *App) pollPreviewEmotes() {
 			return
 		}
 		a.previewAnims = res.anims
-		a.previewLabels = res.labels
-		a.previewEmoteIdx = 0
 		if len(res.anims) == 0 {
 			return
 		}
-		if !a.previewEmoteCycle {
-			// Char-select portrait: the box outlives the trigger cell, so a late parse must correct it here.
-			a.correctPortraitPreview(res.char)
-			return
-		}
-		if a.previewBase == a.urls.Emote(res.char, previewIdleAnim, courtroom.EmoteIdle) {
-			a.setPreviewEmote(0)
-		}
+		// The box outlives the trigger cell, so a late parse must correct it here.
+		a.correctPortraitPreview(res.char)
 	default:
 	}
 }
@@ -1750,20 +1415,6 @@ func (a *App) correctPortraitPreview(name string) {
 	}
 	a.setCharPortraitPreview(name)
 }
-
-// setPreviewEmote points the preview box at emote i (wrapping), in the talk (b) pose.
-func (a *App) setPreviewEmote(i int) {
-	n := len(a.previewAnims)
-	if n == 0 || a.previewChar == "" {
-		return
-	}
-	a.previewEmoteIdx = ((i % n) + n) % n
-	anim := a.previewAnims[a.previewEmoteIdx]
-	a.previewBase = a.urls.Emote(a.previewChar, anim, courtroom.EmoteTalk)
-	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(a.previewChar, anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview cycle)
-}
-
-func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.previewEmoteIdx + delta) }
 
 // clampEmoteSel keeps a still-valid emote index and row across a reload, and otherwise zeroes both.
 func clampEmoteSel(idx, row, n int) (int, int) {

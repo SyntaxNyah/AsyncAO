@@ -112,7 +112,7 @@ func (a *App) charMetaFetchOne(url, char string) {
 	ub := a.urls // captured too: the goroutine must not read a.urls after spawn
 	resCh := a.charMetaRes
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), smallFetchTimeout)
 		defer cancel()
 		res := charMetaFetch{url: url, showname: char} // no ini ⇒ get_showname's unreadable-ini answer
 		// Layered: a user testing their own character from a mounted folder must see the ini they are editing.

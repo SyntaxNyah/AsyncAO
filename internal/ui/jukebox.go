@@ -171,7 +171,35 @@ func (a *App) jukePasteMerge() {
 	a.jukeWarn(fmt.Sprintf("Merged %d new link(s) from the clipboard.", n))
 }
 
-func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
+// jukeboxCloseW is the Close button's width in the window's title row.
+const jukeboxCloseW = 90
+
+// drawJukeboxPanel is the Jukebox window: a title row with Close, then the library.
+func (a *App) drawJukeboxPanel(w, h int32) {
+	c := a.ctx
+	// Clear of the app-chrome band: the menu bar and tab strip paint after the screens and would cover the panel's top.
+	chromeH := a.topChromeH()
+	panel := sdl.Rect{X: pad * 3, Y: chromeH + pad*3, W: w - pad*6, H: h - chromeH - pad*6}
+	c.Fill(panel, ColPanel)
+	c.Border(panel, ColAccent)
+	c.Heading(panel.X+pad, panel.Y+8, "Jukebox", ColText)
+	if c.Button(sdl.Rect{X: panel.X + panel.W - jukeboxCloseW - pad, Y: panel.Y + 8, W: jukeboxCloseW, H: btnH}, "Close") {
+		a.closeJukebox()
+		return
+	}
+	a.drawJukeboxBody(panel, w, h)
+}
+
+// openJukebox shows the Jukebox window.
+func (a *App) openJukebox() { a.showJukebox = true }
+
+// closeJukebox hides the window and cancels a key capture it armed.
+func (a *App) closeJukebox() {
+	a.showJukebox = false
+	a.jukeBindFor = ""
+}
+
+func (a *App) drawJukeboxBody(panel sdl.Rect, w, h int32) {
 	c := a.ctx
 	if a.juke == nil {
 		c.Label(panel.X+pad, panel.Y+50, "Loading jukebox…", ColTextDim)
@@ -583,7 +611,6 @@ func (a *App) drawJukeKeyBadge(r sdl.Rect, bound, target string) {
 	c.Tooltip(r, "Bind a key (click, then press a key) — it fires on "+bareBindChordPrefix+"that key. Right-click clears.")
 	if c.hovering(r) {
 		if c.clicked {
-			a.bindingFor = "" // don't also arm a character keybind
 			a.jukeBindFor = target
 			c.focusID = "" // the capture owns the next keypress
 		} else if c.rightClicked && bound != "" {

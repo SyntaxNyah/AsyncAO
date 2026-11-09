@@ -4,6 +4,18 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## Unreleased
+
+### Before you update
+- **The Wardrobe is gone** while it is redesigned: its window, the Wardrobe
+  button and Ctrl+6, the Iniswap chip in the menu bar, the Wardrobe tab and ★
+  on Character Select, Quick-swap (Ctrl+J) and character key binds. Your saved
+  favourites, folders and key binds are kept for the new version.
+- A theme's iniswap dropdown still works; it now lists your own character and
+  the one you are wearing.
+- **The Jukebox has its own window**: Extras ▸ Jukebox… in the menu bar, the
+  Extras box, or its hotkey (Ctrl+7).
+
 ## v2.1.0-rc.5 - 2026-11-09
 
 The fifth pre-release of v2.1.0, for graphics drivers that freeze.

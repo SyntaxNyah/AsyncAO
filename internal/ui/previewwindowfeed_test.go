@@ -146,7 +146,7 @@ func TestDetachedPreviewSuppressesTheInAppBox(t *testing.T) {
 		t.Fatal("setup: toggle did not detach")
 	}
 	a.previewFrameRect = sdl.Rect{X: 1, Y: 2, W: 3, H: 4} // poison: must be cleared, not left stale
-	a.drawSpritePreview(800, 600, false, "")
+	a.drawSpritePreview(800, 600, "")
 	if a.previewFrameRect != (sdl.Rect{}) {
 		t.Errorf("drawSpritePreview left a hit rect (%+v) while detached — the in-app box must not draw at all", a.previewFrameRect)
 	}
@@ -163,7 +163,7 @@ func TestDrawSpritePreviewReattachedDrawsAgain(t *testing.T) {
 	if a.previewIsDetached() {
 		t.Fatal("setup: did not re-attach")
 	}
-	a.drawSpritePreview(800, 600, false, "")
+	a.drawSpritePreview(800, 600, "")
 	if a.previewFrameRect.W <= 0 || a.previewFrameRect.H <= 0 {
 		t.Errorf("previewFrameRect = %+v after re-attaching with a ready sprite — the box must draw", a.previewFrameRect)
 	}
@@ -524,7 +524,7 @@ func TestClosingTheDetachedWindowWithItsOwnXReconciles(t *testing.T) {
 	}
 	// The pop-out button's whole state is previewIsDetached(); drawing the
 	// box must work again exactly as if the user had used the toggle.
-	a.drawSpritePreview(800, 600, false, "")
+	a.drawSpritePreview(800, 600, "")
 	if a.previewFrameRect.W <= 0 {
 		t.Error("the in-app box did not resume drawing after the window's own close")
 	}
