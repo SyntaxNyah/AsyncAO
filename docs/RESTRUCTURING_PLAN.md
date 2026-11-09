@@ -146,9 +146,13 @@ in **Status**. Update Status in the same commit that completes a step.
       Font database (proposed 2026-10-31, Qt's QFontDatabase as the model): one off-thread index of family, style and
       coverage, fonts opened only when used, `AddFolder` for system, user, theme and pack folders. Replaces the curated
       lists, `fontCensus` and file-stem matching; `platform.Fonts` supplies the starting folders. Its own testing round
-- [ ] 6. Config API: `Set*` forwarder removal; engine option structs; engine stops importing config
-- [ ] 7. Feature loop (jukebox → notebook → … → courtroom screen), extract then move
-- [ ] 8. Remaining lower-layer work (Settings grouping, Manager `Source`, render debug sink)
+- [ ] 6. Config API: typed-key foundation (saver package, store, `Declare`, loading pass, live
+      import; learned formats move to `assets`; presets redesigned; Part 3 "Config: typed keys");
+      engine option structs; engine stops importing config
+- [ ] 7. Feature loop (jukebox → notebook → … → courtroom screen), extract then move; each
+      settings group moves to typed keys with the feature that owns it
+- [ ] 8. Remaining lower-layer work (delete the old `Settings` machinery, Manager `Source`, render
+      debug sink)
 - [ ] 9. Fold `cmd/asyncao-cache` into the client with its own UI (needs a mature uikit)
 
 Diagrams live in the shared diagram page, not in this file:
@@ -538,10 +542,122 @@ call it are owned or moved, so moved code is touched once:
   theme fit + pan); moving those into `normalizeSettings` also clamps them on load, a
   behaviour change for step 6 to decide. The ~7 ui re-clamps feed labels and local widget
   state before any setter runs, so they stay until the ranged widgets of steps 4-5.
-  Delete pure single-caller `Set*` forwarders, keep setters that carry logic or have ≥3
-  callers (C5), before the first feature move.
+  The remaining setters are not trimmed one by one: typed keys replace them a settings group
+  at a time (next section).
 - `assets.Manager` forwarders: removed before studio/settings (their main callers) are owned.
 - Session writes (4 sites) become methods with the feature that writes them.
+
+### Config: typed keys (decided 2026-11-09)
+Architecture diagrams, code samples marked better/same/worse, and the measurements:
+https://claude.ai/artifact/7nQpXcraDGuxCFpNigroaZ. Options compared and the review history:
+https://claude.ai/artifact/74Qti95nfoXjDcHaVogsLq.
+
+- **Keys.** Every setting is one package variable in `internal/config/opt`, named with its
+  settings tab as a prefix, one file per tab (`opt/sprites.go`, `opt/audio.go`, …):
+  `var SpritesWait = config.Declare(config.GroupPowerUser, config.Spec[time.Duration]{Name: "spriteWaitMs", Default: spritesWaitDefault, Range: config.Range(spritesWaitMin, spritesWaitMax), Codec: config.Millis})`.
+  `Declare` needs a group and records the key in a registry filled while packages initialise
+  (rule 12 exemption, amended 2026-11-09). A key points to its own description, which holds its
+  index; indexes are never saved. Defaults and ranges are named constants beside the key (`mnd`
+  flags `Range(50, 200)`).
+- **Two calls.** `config.Get(prefs, opt.SpritesWait)` and `config.Set(prefs, opt.SpritesWait, v)`,
+  one line per value; there is no batch call. A key's range and `Check` run on every `Set` and on
+  load. Values that always change together (layout scales, window size, volumes, preview
+  rectangle, box style) are one key holding a small struct; the first load reads their old
+  separate keys through a converter that takes several old names. Per-server state is one key
+  holding a read-only map keyed by server (today's `serverWarm` shape on disk), changed with
+  `Get`, `With` and `Set`.
+- **Only the main thread writes settings, with no exceptions.** So reads need no snapshot, and
+  `Set` is a plain copy-and-swap with no lock: nothing else writes. The stall check doesn't
+  write; it restarts the client with `-renderer-stalled`, and the new client's main thread
+  records the CPU renderer. Lists and maps are read-only value types (`config.List`,
+  `config.Map`) returned by `Get`; today only a comment prevents callers editing shared data
+  (settings.go:325).
+- **Storage.** The store swaps a pointer to an immutable snapshot holding `[maxKeys]any` of `*T`
+  (`maxKeys` = 512). Measured: 0.74 ns per read, inlined, no allocation, against 0.42 ns for
+  today's field; a `Set` copies the 8 KB array, about 1.1 µs. Checking the key's description
+  (below) adds a little to each read; not measured yet.
+- **Compile errors:** unknown key, wrong read type, wrong set type, a `Declare` without a group,
+  a keyed literal of a key's hidden fields, writing into a list read from the store. A
+  zero-value key (`var k config.Key[int]`) does compile: Go can't forbid it.
+- **Unusable keys read their default and warn in the UI; the client keeps running.** That covers
+  a zero-value key, a key past `maxKeys`, and a second key with a name already taken (the first
+  keeps the name; the duplicate is never saved). A stored value that does not decode as its
+  key's type also falls back to the default with a warning. A test in `opt` asserts the problem
+  list is empty, so CI catches these before release. The registry doesn't close when a store is
+  created; `config`'s own tests declare their keys in an internal test registry.
+- **Keys hold data only:** name, default, range, `Check`, aliases, storage format, group, a
+  `Secret` flag for values such as server passwords, and a "needs restart" flag for settings that
+  only take effect on the next start (renderer, caches). No labels, units or help text: UI wording
+  stays in the UI so it can be translated. A group `GroupContent` (favourites, layout profiles,
+  theme rect overrides, open tabs, wardrobe, server state) is kept by Reset Settings; Reset All
+  clears it and `learned.json`.
+- **Engine packages don't import config** (a `depguard` rule: only `internal/ui` and
+  `cmd/asyncao`). Only `assets` reads settings at run time, in three places: the format policy,
+  `PreferAnimated` and `DeskFollowManifest`. It takes small read functions in its constructor,
+  built once in `main.go`; the format policy is built there with `config.Derive`, which names
+  its input keys, rebuilds only when one of them changes, and replaces `FormatGeneration`.
+  Per-key change counters replace `WardrobeGeneration`. `media`, `network` and `render` only use
+  constants and types, which move to the packages that own them.
+- **Learned formats leave preferences.** The resolver's table is the only copy, saved to
+  `learned.json`, with a cap on hosts (rule 4). The `WarmFromPrefs` calls (11 in `ui`, 1 in
+  `assets`) go, and so does the full settings copy on every learned format.
+- **One saver package** (temp file, fsync, rename; one writer goroutine; a buffered-1 dirty
+  channel) is shared by the settings store, jukebox, notebook and learned formats. It writes a
+  snapshot it already holds, so readers and writers never wait. It also keeps today's behaviour:
+  a corrupt file is renamed aside and reported, save errors go to an error hook, and closing
+  flushes pending changes on exit.
+- **The file holds only the values that differ from their default,** and starts with
+  `"format": 2`. Untouched keys follow the current default, so a default change needs no
+  migration and the 8 `…Migrated` markers go. Accepted cost: an older build shows its own
+  defaults for keys the player never changed, and may rerun its old migrations. `Alias` lists
+  old names; when old and new are both present the new one wins, and only the new one is
+  written. Unknown keys from a newer build are kept and written back, except retired ones
+  (`learnedFormats` and the old markers), which are dropped.
+- **Moving from today's file.** A file without `"format"` is a full dump from before the change.
+  On that first start, the old file is copied to `prefs.backup-v1.json`, which is never deleted
+  automatically, so no old setting or learned format is lost. Then a value equal to the current
+  default, or to a declared `OldDefault`, counts as unchanged, and the file is rewritten in the
+  new format.
+- **Import and export stay, reworked.** Export writes the settings file without `Secret` values.
+  Import reads and checks a file off the main thread through the normal loading pass (ranges,
+  aliases, types), then the main thread `Set`s each value live; keys flagged "needs restart" are
+  listed in the UI. Today's staged import, and the saver's "stop" switch it needs, go.
+  Learned-format import and export become resolver features. Open: whether the full export keeps
+  content (favourites, wardrobe, server state) and leaves out machine-specific keys (renderer,
+  window size and position, local folder paths, proxy) under a proposed `Local` flag.
+- **Presets are being redesigned separately (in progress).** Today a preset is a full settings
+  copy applied on the next start: applying one wipes favourites, wardrobe and server state changed
+  since it was saved, erases saved server passwords (they were stripped on save), and the preset
+  list is read from disk every frame while the Power user tab is open (settingspower.go:723).
+  Direction so far: scoped presets (the player ticks which tabs a preset covers) applied live, never
+  holding secrets, machine-specific values, session state or content; wardrobe pages become a
+  native wardrobe feature rather than presets.
+- **While old and new coexist (steps 6–7)** there is one store and one file. The store's snapshot
+  also holds the remaining `Settings` struct as one value; the saver writes the struct's fields
+  and the keys' values into one JSON object, and loading fills both from it. Both are written
+  only on the main thread, so they never disagree.
+- **What goes:** the 304-field `Settings` struct, its getters and setters, `normalizeSettings`,
+  `normalizeSnapshot`, the presence pass, `settings_clone.go`, `genclone` and `WarmFromPrefs`.
+  Hand-written lines stay about even (key declarations replace the plumbing); the 2,288 generated
+  lines go.
+
+Prototype before step 6 starts (open in the design so far): read-only values that contain
+slices and maps (`ServerWarmInfo`: friends, wardrobe, character lists, folder maps), equality for
+"differs from default" on those values, the `Secret` flag, per-key change counters, the copy cost
+of `With` on a large server map, and writing layout-editor changes when a drag ends rather than
+every frame.
+
+Rollout:
+1. Step 6: rework import and export (live import); presets per their own design; the saver
+   package; `assets` takes its read
+   functions and owns learned formats (`learned.json`); engine packages stop importing config;
+   then the store, `Declare`, the registry and the loading pass (with the backup and
+   `"format": 2`), landing with the first settings tab.
+2. Step 7: one settings tab per commit, with the feature that owns it: declare its keys, remove
+   its fields from `Settings`, move every caller. No forwarders, so a setting never has two
+   copies.
+3. Step 8: with the last tab moved, delete the old machinery and regenerate the goldens (the
+   setter-by-setter golden list is removed).
 
 ---
 
@@ -588,7 +704,7 @@ call it are owned or moved, so moved code is touched once:
    `SetScale` and the scale overrides); RmlUi layout (RML/RCSS); nine-slice, aspect-fit,
    scroll container, text layout; shared widgets; the single text-colour palette in the
    engine. Each screen is moved onto RmlUi in its own commit.
-6. **Config API first** (C2): delete pure single-caller `Set*` forwarders (C5 keeps the rest);
+6. **Config API first** (C2): the typed-key foundation (Part 3 "Config: typed keys", rollout 1);
    engine option structs (`client.Options`, `courtroom.Visuals/Timing`, `ViewportOptions`) built
    by App; engine packages stop importing config (`network` → `config.FavoriteServer` moves).
 7. **Feature loop.** For each feature, in this order: jukebox (proves a global feature),
@@ -612,9 +728,9 @@ call it are owned or moved, so moved code is touched once:
    Draw, NoteMusic, SaveFromChat, Clear, Close`; call sites app.go, app_frame.go:499/501,
    qol.go:420, app_connect.go:746, screensooc.go:572, screenswardrobe.go:168/191,
    settingstabs.go:1250; files jukebox.go, jukebox_fav.go, music_history.go + their tests.
-8. **Remaining lower-layer work** (Part 5b) that doesn't touch ui call sites: `Settings` domain
-   grouping via embedding (JSON unchanged, proven by the goldens), the internal `Source` chain in
-   `assets.Manager`, render debug sink injection.
+8. **Remaining lower-layer work** (Part 5b) that doesn't touch ui call sites: delete the old
+   `Settings` machinery once the last settings group uses typed keys (Part 3 "Config: typed
+   keys", rollout 3), the internal `Source` chain in `assets.Manager`, render debug sink injection.
 9. **Fold the cache tool into the client.** `cmd/asyncao-cache` (stats, inspect, prune, warm for
    the T3 disk cache) becomes part of the client once uikit has matured: its own screen, opened
    from Settings or with a command-line flag on `asyncao`, then the separate command is deleted.
@@ -708,7 +824,7 @@ New names follow Part 2c (common names only).
 | Object | Problem | Change | Lands |
 |---|---|---|---|
 | `assets.Manager` (69 methods, one file) | god type: fetch core + 3 source kinds (mount/archive/local) + miss memo + decoder knob forwarders (`SetSpriteCap`, `SetAnimated*`, `SetTextureCompression`, `SetAdaptiveLatencyMultiple`) + disk admin forwarders (`ClearDisk`, `PurgeCorrupt`, `DiskRoot`, `SetDiskBudget`, `SetDiskCompression`, `DiskStats`) | delete the forwarders; ui gets `*DecoderPool`, `*DiskCache` and `*Client` injected (Deps) and calls them directly. The three byte sources become one injected `Source` interface (mount layer, archive, network) walked in order, which removes `serveFromMount`/`packBytes`/`FetchRawLayered`/`ResolveRawLayered` duplication. Manager keeps the prefetch/resolve/deliver core. | after the App split (needs ui call sites moved first) |
-| `config.AssetPreferences` + `Settings` (179 + 144 methods, 312 fields) | 87 `Set*` wrappers around `Update`; clamps applied in three layers | Clamps live in `normalizeSettings` only. Pure single-caller `Set*` forwarders are deleted; setters that carry logic or have ≥3 callers stay (C5). `Settings` is grouped into embedded domain structs that mirror the Settings tabs (Audio, Chat, Theme, Network, Export, Layout, …). Embedding keeps both the JSON and `s.Field` access flat, so the load/setter goldens prove nothing changed. `genclone` is taught embedded structs. | helper phase (clamp layering) + after the settings feature moves (grouping) |
+| `config.AssetPreferences` + `Settings` (179 + 144 methods, 312 fields) | 87 `Set*` wrappers around `Update`; clamps applied in three layers | Replaced by typed keys (Part 3 "Config: typed keys", decided 2026-11-09): one `Declare` per setting in `internal/config/opt` (tab-prefixed names), only `config.Get`/`config.Set`, only the main thread writes, one saver package shared by preferences, jukebox, notebook and learned formats, and a file that holds only changed values. `Settings`, its methods, `normalizeSettings` and `genclone` are deleted at the end. (Superseded: grouping `Settings` into embedded structs.) | foundation in step 6; one settings group per commit in step 7; deletion in step 8 |
 | `courtroom.Courtroom` (63 fields, ~29 exported knobs) | knob soup set field by field; resolvers assigned after construction | `NewCourtroom(Deps{URLs, Manager, Session, Audio, Blips, Chars, Assets, Env}, Options{Visuals, Timing, Waits})` plus `SetVisuals/SetTiming`. Resolvers injected through the constructor. Exported knob fields become unexported. | with studio/split (room factory built by App) |
 | ui resolver adapters (`roomAssetResolver`, `roomCharResolver`, `roomBlipResolver`, `envResolver`, each wrapping `*App`) | micro types that exist only to reach App | deleted. The char-meta cache object implements `CharResolver` + `BlipResolver`, the viewport binding in App implements `AssetResolver`, and the room factory injects them. | with the charmeta/composer moves |
 | `courtroom.Session` (exported data bag, 313 reads, 4 writes) | writes from outside | the 4 ui write sites become methods. Reads stay as fields: it is plain data, and KISS says no getter wall. | with the features that write them |
@@ -726,7 +842,8 @@ New names follow Part 2c (common names only).
 
 ### Sequence impact
 API changes that touch ui call sites land just before the features calling them (Part 4 step 6a).
-The rest (Settings grouping, Manager `Source` internals, render debug sink) is Part 4 step 7.
+The rest (deleting the old `Settings` machinery, Manager `Source` internals, render debug sink) is
+Part 4 step 8.
 The goldens, race tests and zero-allocation tests prove behaviour is unchanged.
 
 ## Part 5c — Where I disagreed with the requirements (decisions recorded)
@@ -735,6 +852,8 @@ Decided: **C1 accepted** (extract into types first, then move into sub-packages)
 **C3 accepted** (DI only where it pays), **C4 rejected** (Settings grouping stays in the plan),
 **C5 accepted** (keep setters with logic or ≥3 callers), **C6 replaced** by the user's choice:
 `helper` is a library split into category packages (`value`, `text`, `parse`).
+For config, C4 and C5 are superseded by typed keys (2026-11-09, Part 3 "Config: typed keys"):
+`Settings` is replaced rather than grouped, and its setters go with it.
 
 **C1. "Sub-packages now" → propose: extract each feature into a type first, move it into a sub-package when it is self-contained.**
 - *Cost of "now".* No feature can move until uikit is out: ~90 private Ctx members across

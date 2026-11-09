@@ -85,8 +85,10 @@ add TCP framing back.
     config range is clamped in `normalizeSettings` only. DI is constructor
     injection where an object has ≥2 implementations (test fakes count) or
     crosses a boundary; no setters after construction except documented cycle
-    breaks; no mutable package globals (`sync.Once` registries and constant
-    tables excepted); `cmd/asyncao/main.go` is the single composition root.
+    breaks; no mutable package globals (`sync.Once` registries, constant
+    tables, and registries filled only while packages initialise and never
+    changed afterwards, such as config keys, excepted); `cmd/asyncao/main.go`
+    is the single composition root.
 13. **Common names only.** Identifiers, comments, commit messages and docs use
     the plain words a developer new to the project would expect — no invented
     jargon or metaphors (not "seam", "lift", "ratchet", "latch", "census",
@@ -140,7 +142,7 @@ heap corruption.
 |---|---|---|
 | `internal/safepath` | the ONE copy of the zip-slip / symlink / `..` / depth guards (shared by mounts and theme bundles) | no |
 | `internal/netproxy` | the socket factory: opens every outbound connection (direct or through an HTTP proxy) by the one configuration | no |
-| `internal/config` | preferences + debounced atomic saver; favorites; local mounts | no |
+| `internal/config` | preferences + debounced atomic saver; favorites; local mounts; the Wardrobe's `wardrobe.json` | no |
 | `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
 | `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), request priority, master list + tiers + direct connect | no |
 | `internal/assets` | AssetType enum, lock-free resolver (learned formats), `Manager` over `internal/media` (the bridge), the player's folders as a media source, decode pool (magic-byte sniffing), WebP/AVIF CGO binding + fallback, Markov prefetcher | no (decoder is SDL-free by rule) |
@@ -153,6 +155,7 @@ heap corruption.
 | `internal/sdl`, `ttf`, `mix` | our cgo binding to SDL3, SDL3_ttf and SDL3_mixer (Go-style names, Rect/event/display conversion at the boundary) | **yes** |
 | `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL3_mixer audio | **yes** |
 | `internal/ui` | immediate-mode kit + screens (lobby/phone book, char select, courtroom, settings, about) | **yes** |
+| `internal/ui/wardrobe` | what the Wardrobe window lists: filtering, sorting and grouping saved characters, and parsing the server's `iniswaps.ini` | no |
 | `internal/platform`, `platform/host` | what the machine is and can do (no SDL); process setup, SDL startup, hardware and shutdown (host only) | host only |
 | `internal/platform/toast` | desktop notifications: WinRT toasts under AsyncAO's own AppUserModelID and icon on Windows, none elsewhere until SDL 3.6 | no |
 | `cmd/asyncao` | flags, composition root, main loop | **yes** |
