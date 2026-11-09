@@ -137,13 +137,13 @@ type wardrobeWindow struct {
 	newName    string
 	deleting   string
 
-	dragKind              int
-	dragID                string
-	dragging              bool
-	pressX, pressY        int32
-	dropKind              int
-	dropID                string
-	dropUnfiled, dropOver bool
+	dragKind       int
+	dragID         string
+	dragging       bool
+	pressX, pressY int32
+	dropKind       int
+	dropID         string
+	dropOver       bool
 
 	serverFor  string
 	serverList []string

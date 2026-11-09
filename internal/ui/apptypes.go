@@ -188,8 +188,6 @@ type sessionState struct {
 	// Generation-keyed texture page caches: while the store generation is unchanged, redraws do no LRU lookups.
 	iconPages    []*render.TexturePage
 	iconPagesGen uint64
-	iniPages     []*render.TexturePage
-	iniPagesGen  uint64
 	// Emote button art (off/on) uses the same generation-keyed cache.
 	emoteBtnOff    []*render.TexturePage
 	emoteBtnOffGen uint64
