@@ -48,6 +48,8 @@ const (
 	wardSearchW    int32 = 280
 	wardSearchMinW int32 = 140
 	wardSortW      int32 = 170
+	// wardSortArrowW is the room a sort segment keeps for its direction arrow.
+	wardSortArrowW int32 = 14
 	wardSwatch     int32 = 22
 	wardChoice     int32 = 30
 	wardCheckPx    int32 = 18
@@ -279,6 +281,7 @@ func (a *App) drawWardrobePanel(w, h int32) {
 	ward := &a.ward
 	defer c.popPanelFont(c.pushPanelFont(a.elemChromeFont(elemWardrobe, DefaultScalePct)))
 	ward.iconPx = int32(a.d.Prefs.Load().WardrobeIconPx())
+	ward.nameAbove = a.d.Prefs.Load().WardrobeNameAbove
 	rgb := a.d.Prefs.Load().WardrobeAccentRGB()
 	ward.accent = sdl.Color{R: uint8(rgb >> 16), G: uint8(rgb >> 8), B: uint8(rgb), A: 255}
 	ward.selected = mixColor(wcPanel, ward.accent, wardSelectedMix)
@@ -414,8 +417,28 @@ func (a *App) setWardrobeSource(s wardrobe.Source) {
 	ward.source, ward.sel, ward.scroll = s, "", 0
 	ward.confirmRemove, ward.nickOpen, ward.moveMenu = false, false, false
 	if s == wardrobe.SourceServer && (ward.sort == wardrobe.SortCustom || ward.sort == wardrobe.SortFolder) {
-		ward.sort = wardrobe.SortName
+		ward.sort, ward.reverse = wardrobe.SortName, false
 	}
+}
+
+// pickWardrobeSort switches to sort s, or flips the direction when s is already the sort; the saved custom order is
+// never changed, so Custom brings it back.
+func (a *App) pickWardrobeSort(s wardrobe.Sort) {
+	ward := &a.ward
+	if ward.sort == s {
+		ward.reverse = !ward.reverse
+	} else {
+		ward.sort, ward.reverse = s, false
+	}
+	ward.scroll = 0
+}
+
+// wardSortArrow is the direction arrow's icon: up for a sort's own order, down for reversed.
+func (a *App) wardSortArrow() int {
+	if a.ward.reverse {
+		return iconShapeArrowDown
+	}
+	return iconShapeArrowUp
 }
 
 // drawWardrobeFolderIcon paints a folder's image, else its icon in its colour.
@@ -897,7 +920,7 @@ func (a *App) drawWardrobeSort(r sdl.Rect, minLeft int32) sdl.Rect {
 	const lead = "Sort"
 	groupW := c.TextWidth(lead) + 2*wardPanelPad + int32(len(wardrobeSortSegs)+1)*wardOutline
 	for _, l := range wardrobeSortSegs {
-		groupW += a.wardButtonW(l)
+		groupW += a.wardButtonW(l) + wardSortArrowW
 	}
 	right := r.X + r.W - 2*wardPanelPad
 	if right-groupW >= minLeft {
@@ -907,10 +930,22 @@ func (a *App) drawWardrobeSort(r sdl.Rect, minLeft int32) sdl.Rect {
 		x := track.X + c.TextWidth(lead) + 2*wardPanelPad
 		for i, l := range wardrobeSortSegs {
 			s := wardrobeSorts[i]
-			seg := sdl.Rect{X: x, Y: track.Y + (track.H-wardSegH)/2, W: a.wardButtonW(l), H: wardSegH}
+			seg := sdl.Rect{X: x, Y: track.Y + (track.H-wardSegH)/2, W: a.wardButtonW(l) + wardSortArrowW, H: wardSegH}
 			enabled := ward.source == wardrobe.SourceUser || (s != wardrobe.SortCustom && s != wardrobe.SortFolder)
-			if a.wardSegment(seg, l, ward.sort == s, enabled) {
-				ward.sort, ward.scroll = s, 0
+			on := ward.sort == s
+			if !on {
+				if a.wardSegment(seg, l, false, enabled) {
+					a.pickWardrobeSort(s)
+				}
+			} else {
+				if a.wardSegment(seg, "", true, enabled) {
+					a.pickWardrobeSort(s)
+				}
+				lx := seg.X + (seg.W-c.TextWidth(l)-wardSortArrowW)/2
+				c.Label(lx, seg.Y+(seg.H-a.wardLineH())/2, l, wcAccentInk)
+				arrow := sdl.Rect{X: lx + c.TextWidth(l) + wardSortArrowW - wardCheckIcon, Y: seg.Y + (seg.H-wardCheckIcon)/2, W: wardCheckIcon, H: wardCheckIcon}
+				c.Icon(a.wardSortArrow(), arrow, wcAccentInk)
+				c.Tooltip(seg, "Click again to reverse the order")
 			}
 			if !enabled {
 				c.Tooltip(seg, "The server list keeps the server's order and has no folders")
@@ -920,6 +955,12 @@ func (a *App) drawWardrobeSort(r sdl.Rect, minLeft int32) sdl.Rect {
 		return track
 	}
 	sortR := sdl.Rect{X: right - wardSortW, Y: r.Y + (r.H-btnH)/2, W: wardSortW, H: btnH}
+	dirR := sdl.Rect{X: sortR.X - wardRowGap - wardToggleW, Y: sortR.Y, W: wardToggleW, H: btnH}
+	if a.wardButton(dirR, "", wbNormal) {
+		ward.reverse, ward.scroll = !ward.reverse, 0
+	}
+	c.Icon(a.wardSortArrow(), sdl.Rect{X: dirR.X + (dirR.W-wardCheckIcon)/2, Y: dirR.Y + (dirR.H-wardCheckIcon)/2, W: wardCheckIcon, H: wardCheckIcon}, wcText)
+	c.Tooltip(dirR, "Reverse the order")
 	labels, first := wardrobeSortLabels, 0
 	if ward.source == wardrobe.SourceServer {
 		labels, first = wardrobeServerSortLabels, 1
@@ -931,9 +972,9 @@ func (a *App) drawWardrobeSort(r sdl.Rect, minLeft int32) sdl.Rect {
 		}
 	}
 	if next, changed := c.Dropdown("wardsort", sortR, labels, cur); changed {
-		ward.sort, ward.scroll = wardrobeSorts[first+next], 0
+		a.pickWardrobeSort(wardrobeSorts[first+next])
 	}
-	return sortR
+	return sdl.Rect{X: dirR.X, Y: sortR.Y, W: sortR.X + sortR.W - dirR.X, H: sortR.H}
 }
 
 // wardrobeReorderable reports whether cards can be dragged to reorder right now.
@@ -1059,7 +1100,11 @@ func (a *App) drawWardrobeItem(idx int, it wardrobe.Item, r sdl.Rect) {
 			fill = wcHover
 		}
 		c.RoundRect(r, wardRadCard, wardOutline, fill, edge)
-		icon = sdl.Rect{X: r.X + (r.W-ward.iconPx)/2, Y: r.Y + wardPanelPad + wardOutline, W: ward.iconPx, H: ward.iconPx}
+		iconY := r.Y + wardPanelPad + wardOutline
+		if ward.nameAbove {
+			iconY = r.Y + r.H - wardPanelPad - wardOutline - ward.iconPx
+		}
+		icon = sdl.Rect{X: r.X + (r.W-ward.iconPx)/2, Y: iconY, W: ward.iconPx, H: ward.iconPx}
 	}
 	a.drawWardrobeCharIcon(idx, it, icon)
 	if ward.listView {
@@ -1081,6 +1126,13 @@ func (a *App) drawWardrobeItem(idx int, it wardrobe.Item, r sdl.Rect) {
 	} else {
 		textW := r.W - wardPanelPad
 		textY := icon.Y + icon.H + wardPanelPad - wardRowGap
+		if ward.nameAbove {
+			// Mirrored: the text block sits on the icon, so the name rises when the real name goes under it.
+			textY = icon.Y - wardPanelPad + wardRowGap - lh
+			if it.HasNickname {
+				textY -= lh - wardRowGap
+			}
+		}
 		nameW := min(c.TextWidth(it.Name), textW)
 		c.LabelClipped(r.X+(r.W-nameW)/2, textY, textW, it.Name, wcText)
 		if it.HasNickname {

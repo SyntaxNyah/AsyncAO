@@ -106,6 +106,39 @@ func TestBuildSorts(t *testing.T) {
 	}
 }
 
+func TestBuildReverseTurnsTheOrderAroundWithoutTouchingTheSavedOrder(t *testing.T) {
+	on := onServerOf()
+	saved := slices.Clone(testEntries)
+	rev := Query{Folder: AllFolders, Reverse: true}
+	if got := chars(Build(testEntries, testFolders, nil, on, rev)); !slices.Equal(got, []string{"Judge", "Godot", "Phoenix (AJ)", "Phoenix"}) {
+		t.Errorf("custom reversed: %v", got)
+	}
+	rev.Sort = SortName
+	if got := chars(Build(testEntries, testFolders, nil, on, rev)); !slices.Equal(got, []string{"Phoenix", "Phoenix (AJ)", "Judge", "Godot"}) {
+		t.Errorf("name reversed: %v", got)
+	}
+	if !slices.EqualFunc(saved, testEntries, func(a, b config.WardrobeEntry) bool { return a.Char == b.Char }) {
+		t.Fatalf("Build reordered the saved entries: %+v", testEntries)
+	}
+	if got := chars(Build(testEntries, testFolders, nil, on, Query{Folder: AllFolders})); !slices.Equal(got, []string{"Phoenix", "Phoenix (AJ)", "Godot", "Judge"}) {
+		t.Errorf("custom after a reversed view: %v", got)
+	}
+}
+
+func TestBuildReverseFolderSortReversesTheGroups(t *testing.T) {
+	groups := Build(testEntries, testFolders, nil, onServerOf(), Query{Folder: AllFolders, Sort: SortFolder, Reverse: true})
+	var order []string
+	for _, g := range groups {
+		order = append(order, g.Folder)
+	}
+	if !slices.Equal(order, []string{Unfiled, "f2", "f1"}) {
+		t.Fatalf("group order %v", order)
+	}
+	if got := chars(groups[len(groups)-1:]); !slices.Equal(got, []string{"Phoenix", "Phoenix (AJ)", "Godot"}) {
+		t.Errorf("names inside a folder reversed: %v", got)
+	}
+}
+
 func TestBuildGroupsByFolderInFolderOrder(t *testing.T) {
 	groups := Build(testEntries, testFolders, nil, onServerOf(), Query{Folder: AllFolders, Sort: SortFolder})
 	var order []string

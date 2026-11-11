@@ -1227,6 +1227,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.WardrobeIconPxVal != o.WardrobeIconPxVal {
 		return false
 	}
+	if s.WardrobeNameAbove != o.WardrobeNameAbove {
+		return false
+	}
 	if s.WardrobeAccentVal != o.WardrobeAccentVal {
 		return false
 	}

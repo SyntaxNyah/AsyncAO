@@ -60,6 +60,8 @@ const (
 	iconShapeCheck
 	iconShapeSwap
 	iconShapeSearch
+	iconShapeArrowUp
+	iconShapeArrowDown
 	iconShapeCount
 )
 
@@ -100,12 +102,14 @@ var shapeIcons = [iconShapeCount]shapeIcon{
 		{pts: []vec2{{6, 4}, {16, 4}}}, {pts: []vec2{{6, 9}, {16, 9}}}, {pts: []vec2{{6, 14}, {16, 14}}},
 		{fill: true, pts: circlePts(vec2{2.6, 4}, 1.1)}, {fill: true, pts: circlePts(vec2{2.6, 9}, 1.1)}, {fill: true, pts: circlePts(vec2{2.6, 14}, 1.1)},
 	}},
-	iconShapePencil: {12, []shapePart{{closed: true, pts: []vec2{{2, 10}, {2.6, 7.6}, {8, 2.2}, {9.8, 4}, {4.4, 9.4}}}}},
-	iconShapeCross:  {12, []shapePart{{pts: []vec2{{2.5, 2.5}, {9.5, 9.5}}}, {pts: []vec2{{9.5, 2.5}, {2.5, 9.5}}}}},
-	iconShapePlus:   {14, []shapePart{{pts: []vec2{{7, 2}, {7, 12}}}, {pts: []vec2{{2, 7}, {12, 7}}}}},
-	iconShapeCheck:  {10, []shapePart{{pts: []vec2{{2, 5.2}, {4, 7.2}, {8, 2.8}}}}},
-	iconShapeSwap:   {10, []shapePart{{pts: []vec2{{1.5, 3.5}, {8, 3.5}, {6.3, 1.8}}}, {pts: []vec2{{8.5, 6.5}, {2, 6.5}, {3.7, 8.2}}}}},
-	iconShapeSearch: {14, []shapePart{{closed: true, pts: circlePts(vec2{6, 6}, 4.2)}, {pts: []vec2{{9.2, 9.2}, {12.5, 12.5}}}}},
+	iconShapePencil:    {12, []shapePart{{closed: true, pts: []vec2{{2, 10}, {2.6, 7.6}, {8, 2.2}, {9.8, 4}, {4.4, 9.4}}}}},
+	iconShapeCross:     {12, []shapePart{{pts: []vec2{{2.5, 2.5}, {9.5, 9.5}}}, {pts: []vec2{{9.5, 2.5}, {2.5, 9.5}}}}},
+	iconShapePlus:      {14, []shapePart{{pts: []vec2{{7, 2}, {7, 12}}}, {pts: []vec2{{2, 7}, {12, 7}}}}},
+	iconShapeCheck:     {10, []shapePart{{pts: []vec2{{2, 5.2}, {4, 7.2}, {8, 2.8}}}}},
+	iconShapeSwap:      {10, []shapePart{{pts: []vec2{{1.5, 3.5}, {8, 3.5}, {6.3, 1.8}}}, {pts: []vec2{{8.5, 6.5}, {2, 6.5}, {3.7, 8.2}}}}},
+	iconShapeSearch:    {14, []shapePart{{closed: true, pts: circlePts(vec2{6, 6}, 4.2)}, {pts: []vec2{{9.2, 9.2}, {12.5, 12.5}}}}},
+	iconShapeArrowUp:   {10, []shapePart{{pts: []vec2{{5, 8.5}, {5, 1.5}}}, {pts: []vec2{{2, 4.5}, {5, 1.5}, {8, 4.5}}}}},
+	iconShapeArrowDown: {10, []shapePart{{pts: []vec2{{5, 1.5}, {5, 8.5}}}, {pts: []vec2{{2, 5.5}, {5, 8.5}, {8, 5.5}}}}},
 }
 
 func concatPts(runs ...[]vec2) []vec2 {

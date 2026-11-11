@@ -1,6 +1,6 @@
 package ui
 
-// Settings ▸ General ▸ Wardrobe: the Wardrobe window's font, text size and icon size. Font and text size are the
+// Settings ▸ General ▸ Wardrobe: the Wardrobe window's font, text size, icon size and name placement. Font and text size are the
 // "wardrobe" panel font, so they also show in Theme ▸ Font and size per panel.
 
 import (
@@ -86,7 +86,35 @@ func (a *App) drawWardrobeSettings(y, w int32) int32 {
 	c.Tooltip(sdl.Rect{X: pad + panelFontLabelW, Y: y, W: x - pad - panelFontLabelW, H: btnH},
 		"Character icons are 40 × 40; the larger sizes double or triple them. The List view keeps them at 40.")
 	y += btnH + wardSetRowGap
+	y = a.drawWardrobeNamePlacement(y)
 	return a.drawWardrobeAccentPicker(y)
+}
+
+// drawWardrobeNamePlacement picks whether a grid card's name goes under its icon or above it.
+func (a *App) drawWardrobeNamePlacement(y int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	c.Label(pad, y+wardSetLabelY, "Name", ColText)
+	above := a.d.Prefs.Load().WardrobeNameAbove
+	x := pad + panelFontLabelW
+	for _, ch := range [...]struct {
+		above bool
+		label string
+	}{{false, "Below icon"}, {true, "Above icon"}} {
+		r := sdl.Rect{X: x, Y: y, W: wardSetChoiceW, H: btnH}
+		bg, fg := ColPanel, ColText
+		if ch.above == above {
+			bg, fg = ColAccent, ColBackground
+		}
+		if c.ButtonCol(r, ch.label, bg, ColPanelHi, ColAccent, fg) && ch.above != above {
+			next := ch.above
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.WardrobeNameAbove = next })
+		}
+		x += wardSetChoiceW + wardSetGap
+	}
+	c.Tooltip(sdl.Rect{X: pad + panelFontLabelW, Y: y, W: x - pad - panelFontLabelW, H: btnH},
+		"Where a card's name sits in the Grid view; the List view always shows it beside the icon.")
+	return y + btnH + wardSetRowGap
 }
 
 // drawWardrobeAccentPicker is the Wardrobe's highlight colour: selections, the active buttons, focused fields and

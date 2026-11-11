@@ -74,6 +74,8 @@ type Query struct {
 	// Search is matched, ignoring case, against the shown name and the character folder.
 	Search string
 	Sort   Sort
+	// Reverse turns the order around, folders included; the saved custom order itself never changes.
+	Reverse bool
 }
 
 // Item is one card or row.
@@ -141,6 +143,9 @@ func Build(entries []config.WardrobeEntry, folders []config.WardrobeFolder, serv
 	case SortLastWorn:
 		slices.SortStableFunc(items, byLastWorn)
 	}
+	if q.Reverse {
+		slices.Reverse(items)
+	}
 	if sortBy != SortFolder {
 		return []Group{{Items: items}}
 	}
@@ -152,6 +157,9 @@ func Build(entries []config.WardrobeEntry, folders []config.WardrobeFolder, serv
 	}
 	if g := folderGroup(items, Unfiled); len(g.Items) > 0 {
 		groups = append(groups, g)
+	}
+	if q.Reverse {
+		slices.Reverse(groups)
 	}
 	return groups
 }

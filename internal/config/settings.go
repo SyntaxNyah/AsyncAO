@@ -259,6 +259,8 @@ type Settings struct {
 	ViewportExactW    int  `json:"viewportExactW"`
 	OOCScalePct       int  `json:"oocScalePercent"`
 	WardrobeIconPxVal int  `json:"wardrobeIconPx,omitempty"`
+	// WardrobeNameAbove puts a grid card's name above its icon instead of below.
+	WardrobeNameAbove bool `json:"wardrobeNameAbove,omitempty"`
 	// WardrobeAccentVal is the Wardrobe's highlight colour, packed 0xRRGGBB; 0 is the default blue.
 	WardrobeAccentVal            int                       `json:"wardrobeAccent,omitempty"`
 	CustomChromeHex              [7]string                 `json:"customChrome"`
