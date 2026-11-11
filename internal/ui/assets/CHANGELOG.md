@@ -4,6 +4,26 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.0-rc.7 - 2026-11-11
+
+The seventh pre-release of v2.1.0, with Wardrobe changes players asked for.
+
+### Wardrobe
+- **Reverse a sort**: click the sort that's already on (Custom, Name, Last
+  worn or Folder) to turn the order around. An arrow on the button shows the
+  direction. When the sort is a dropdown, the arrow button beside it does the
+  same.
+- **Your own order is safe**: sorting only changes what's shown, so clicking
+  Custom brings back the order you dragged the cards into.
+- **Name above the icon**: Settings ▸ General ▸ Wardrobe ▸ Name ▸ **Above
+  icon** moves the name over the icon on Grid cards. The List view keeps it
+  beside the icon.
+- **Open it from Character Select**: the **Wardrobe** button is back, next to
+  Privacy, or in the top-right corner under an AO2 theme.
+- **Wear from Character Select**: before you've picked a character, wearing a
+  saved character as an iniswap takes the first free character and enters
+  the courtroom wearing it. If every character is taken, it tells you.
+
 ## v2.1.0-rc.6 - 2026-11-09
 
 The sixth pre-release of v2.1.0, with a rebuilt Wardrobe.
