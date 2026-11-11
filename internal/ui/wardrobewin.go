@@ -55,6 +55,7 @@ type wardrobeViewKey struct {
 	rev        int64
 	source     wardrobe.Source
 	sort       wardrobe.Sort
+	reverse    bool
 	folder     string
 	search     string
 	serverKey  string
@@ -87,8 +88,10 @@ type wardrobeWindow struct {
 	store    *config.Wardrobe
 	storeRes chan *config.Wardrobe
 
-	source   wardrobe.Source
-	sort     wardrobe.Sort
+	source wardrobe.Source
+	sort   wardrobe.Sort
+	// reverse turns the shown order around; clicking the active sort again flips it.
+	reverse  bool
 	folder   string
 	search   string
 	listView bool
@@ -101,9 +104,11 @@ type wardrobeWindow struct {
 
 	// iconPx is the grid's character icon size this frame, and accent and selected the highlight colour and a
 	// selected card's fill, all from Settings.
-	iconPx   int32
-	accent   sdl.Color
-	selected sdl.Color
+	iconPx int32
+	// nameAbove puts a grid card's name above its icon, from Settings.
+	nameAbove bool
+	accent    sdl.Color
+	selected  sdl.Color
 
 	pages        []*render.TexturePage
 	pagesGen     uint64
@@ -116,6 +121,11 @@ type wardrobeWindow struct {
 	rows         []wardrobeDrawerRow
 	countLabel   string
 	groupHeads   []string
+
+	// wearAfter is the iniswap to wear once the server gives us wearSlot, picked from Character Select with no
+	// character yet.
+	wearAfter string
+	wearSlot  int
 
 	sel           string
 	confirmRemove bool
@@ -363,7 +373,7 @@ func (a *App) refreshWardrobeView() {
 	}
 	a.wardrobeSlot("") // refresh the slot table first, so the key below sees its size
 	key := wardrobeViewKey{
-		rev: w.store.Rev(), source: w.source, sort: w.sort, folder: w.folder, search: w.search,
+		rev: w.store.Rev(), source: w.source, sort: w.sort, reverse: w.reverse, folder: w.folder, search: w.search,
 		serverKey: a.serverKey, slots: w.slotsN, serverList: len(w.serverList),
 	}
 	if key == w.key && w.flat != nil {
@@ -377,7 +387,7 @@ func (a *App) refreshWardrobeView() {
 	}
 	onServer := func(c string) bool { return a.wardrobeSlot(c) >= 0 }
 	w.groups = wardrobe.Build(w.entries, w.folders, w.serverList, onServer,
-		wardrobe.Query{Source: w.source, Folder: w.folder, Search: w.search, Sort: w.sort})
+		wardrobe.Query{Source: w.source, Folder: w.folder, Search: w.search, Sort: w.sort, Reverse: w.reverse})
 	w.flat = w.flat[:0]
 	w.groupHeads = w.groupHeads[:0]
 	for _, g := range w.groups {
@@ -453,11 +463,54 @@ func (a *App) wardrobeSwitch(char string) {
 	a.pickCharacter(slot) // CC → PV → enterCourtroom, which clears any worn iniswap
 }
 
-// wardrobeWear wears char as an iniswap without taking a slot.
-func (a *App) wardrobeWear(char string) {
+// wardrobeWear wears char as an iniswap without taking its slot, and reports whether it did. With no character yet it
+// takes the first free slot and wears char once the server confirms it (applyWardrobeWear).
+func (a *App) wardrobeWear(char string) bool {
+	if a.room == nil {
+		slot := a.wardrobeFreeSlot()
+		if slot < 0 {
+			a.wardWarn("Every character is taken, so there's none to wear " + char + " over")
+			return false
+		}
+		a.markWardrobeWorn(char)
+		a.closeWardrobe()
+		a.ward.wearAfter, a.ward.wearSlot = char, slot // set before the pick: rehearsal enters the courtroom at once
+		a.pickCharacter(slot)
+		return true
+	}
 	a.markWardrobeWorn(char)
 	a.closeWardrobe()
 	a.setIniswap(char)
+	if a.screen == ScreenCharSelect {
+		a.screen = ScreenCourtroom
+	}
+	return true
+}
+
+// wardrobeFreeSlot is the first character nobody is using, or -1.
+func (a *App) wardrobeFreeSlot() int {
+	if a.sess == nil {
+		return -1
+	}
+	for i := range a.sess.Chars {
+		if !a.sess.Chars[i].Taken {
+			return i
+		}
+	}
+	return -1
+}
+
+// applyWardrobeWear wears the iniswap wardrobeWear queued, once the server gave us the slot it asked for; any other
+// entry drops it.
+func (a *App) applyWardrobeWear() {
+	w := &a.ward
+	if w.wearAfter == "" {
+		return
+	}
+	if a.sess.MyCharID == w.wearSlot {
+		a.setIniswap(w.wearAfter)
+	}
+	w.wearAfter = ""
 }
 
 // wardrobeUseChoice is what double-click does with a character: switch when its slot exists, is free and isn't ours,
@@ -484,8 +537,9 @@ func (a *App) wardrobeUse(char string) {
 		a.wardWarn("Switched to " + char)
 		return
 	}
-	a.wardrobeWear(char)
-	a.wardWarn(char + why + ", so it's worn as an iniswap")
+	if a.wardrobeWear(char) {
+		a.wardWarn(char + why + ", so it's worn as an iniswap")
+	}
 }
 
 func (a *App) markWardrobeWorn(char string) {

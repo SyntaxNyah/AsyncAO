@@ -215,7 +215,30 @@ func (a *App) drawCharSelectControlsIn(lay *charSelectLayoutCache, g charGridPla
 		}
 	}
 	a.drawCharSelectPageArrows(lay, g)
+	// AO2 themes have no Wardrobe button, so it sits in the canvas's top-right corner.
+	if a.charSelectReady() {
+		a.charSelectWardrobeButton(sdl.Rect{X: lay.clip.X + lay.clip.W - pad - charSelectWardrobeW, Y: lay.clip.Y + pad, W: charSelectWardrobeW, H: btnH})
+	}
 	return false
+}
+
+// Character Select's Wardrobe button width, and the gap between header buttons.
+const (
+	charSelectWardrobeW int32 = 110
+	charSelectGap       int32 = 8
+)
+
+// charSelectReady reports whether the server has sent its character list.
+func (a *App) charSelectReady() bool {
+	return a.sess != nil && a.sess.Phase() == courtroom.PhaseReady
+}
+
+// charSelectWardrobeButton opens the Wardrobe from Character Select.
+func (a *App) charSelectWardrobeButton(r sdl.Rect) {
+	if a.ctx.Button(r, "Wardrobe") {
+		a.openWardrobe()
+	}
+	a.ctx.Tooltip(r, "Your saved characters: switch to one, or wear it as an iniswap")
 }
 
 // drawCharSelectPageArrows wires char_select_left / char_select_right.

@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/ui/wardrobe"
 )
 
@@ -205,5 +207,33 @@ func TestListFontNamesAndSuggestions(t *testing.T) {
 	}
 	if want := []string{"Segoe UI", "Comic Sans MS"}; !slices.Equal(got, want) {
 		t.Fatalf("suggestions for \"s\" = %v, want names starting with it first: %v", got, want)
+	}
+}
+
+func TestWardrobeWearWithNoCharacterTakesAFreeSlotFirst(t *testing.T) {
+	const freeSlot = 1
+	a := emotePreviewFollowTestApp(t) // entering the courtroom fetches the char.ini, so it needs a real Manager
+	a.iniChar = ""
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})
+	a.d.Viewport = render.NewViewport(nil)
+	const charINILoads = 2 // entering and then wearing each load a char.ini, and nothing polls them here
+	a.charINIres = make(chan charINIFetch, charINILoads)
+	a.sess.Chars[0].Taken = true
+	a.room, a.screen = nil, ScreenCharSelect
+	if !a.wardrobeWear("Godot") {
+		t.Fatal("a free slot exists, so wearing must go ahead")
+	}
+	if a.sess.MyCharID != freeSlot || a.activeCharName() != "Godot" {
+		t.Fatalf("slot %d wearing %q, want slot %d wearing Godot", a.sess.MyCharID, a.activeCharName(), freeSlot)
+	}
+}
+
+func TestWardrobeWearWithEveryCharacterTakenWearsNothing(t *testing.T) {
+	a := wardrobeTestApp(t)
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.sess.Chars[0].Taken = true
+	a.room, a.screen = nil, ScreenCharSelect
+	if a.wardrobeWear("Godot") || a.ward.wearAfter != "" || a.warnLine == "" {
+		t.Fatalf("no free slot: wore anyway or said nothing (queued %q, warning %q)", a.ward.wearAfter, a.warnLine)
 	}
 }

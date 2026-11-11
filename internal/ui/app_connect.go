@@ -1519,4 +1519,5 @@ func (a *App) enterCourtroom() {
 	// re-stages the old speaker's sprite. Tab reactivation keeps it.
 	a.sess.LastIC = nil
 	a.buildRoom()
+	a.applyWardrobeWear()
 }

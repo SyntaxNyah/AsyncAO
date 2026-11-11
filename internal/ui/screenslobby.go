@@ -587,6 +587,10 @@ func (a *App) drawCharSelect(w, h int32) {
 	a.drawCharSelectBackdrop(w, h, csLay)
 	// Drain preview parses here, or the goroutine blocks on its result channel and the portrait stays empty.
 	a.pollPreviewEmotes()
+	if a.ward.show {
+		a.drawWardrobePanel(w, h)
+		return
+	}
 	// Content starts below the app-chrome band.
 	hdrY := a.topChromeH() + pad
 
@@ -641,6 +645,10 @@ func (a *App) drawCharSelect(w, h int32) {
 		if c.Button(sdl.Rect{X: rightX, Y: hdrY, W: privW, H: btnH}, "Privacy") {
 			a.prevScreen = ScreenCharSelect
 			a.openHelp(1)
+		}
+		if a.charSelectReady() {
+			rightX -= charSelectGap + charSelectWardrobeW
+			a.charSelectWardrobeButton(sdl.Rect{X: rightX, Y: hdrY, W: charSelectWardrobeW, H: btnH})
 		}
 	}
 	if a.sess == nil {
