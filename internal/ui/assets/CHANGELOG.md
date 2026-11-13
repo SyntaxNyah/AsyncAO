@@ -21,6 +21,9 @@ Character Select.
 - **The selected emote button shows its picture**: a character with no
   `_on` button art showed an empty button for the emote you entered on,
   until you picked another one.
+- **Sprites sit where AO2 puts them**: a sprite's width is now rounded the
+  way AO2 rounds it, so at some window sizes it no longer sits one pixel to
+  the right.
 
 ## v2.1.0-rc.7 - 2026-11-11
 
