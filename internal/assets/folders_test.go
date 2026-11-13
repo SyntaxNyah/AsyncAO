@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"image/color"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -259,6 +260,29 @@ func TestFileDroppedInAfterAMissIsFoundOnRecheck(t *testing.T) {
 	}
 	if n := pr.hitsFor("/base/characters/witch/char.ini"); n != asked {
 		t.Errorf("the web was asked again (%d → %d) for a file the folder now holds", asked, n)
+	}
+}
+
+// A server's extensions.json describes the server's files; a .png sprite in the player's folder is still found, and
+// the server is asked for nothing it doesn't list.
+func TestFolderSpriteIsFoundInAFormatTheServerDoesNotList(t *testing.T) {
+	const spritePx = 4
+	pr := newPackRig(t,
+		map[string]string{"/base/" + ManifestFileName: `{"emote_extensions": [".webp"]}`},
+		map[string]string{"characters/witch/normal.png": string(encodePNG(t, spritePx, spritePx, color.White))},
+	)
+	if _, err := pr.rig.manager.FetchManifest(context.Background(), pr.origin); err != nil {
+		t.Fatal(err)
+	}
+	base := pr.base("characters/witch/normal")
+	pr.rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	if d := nextDecoded(t, pr.rig.manager, base); d.Err != nil {
+		t.Fatalf("the folder's .png was not used: %v", d.Err)
+	}
+	for _, ext := range []string{".webp", ".png"} {
+		if n := pr.hitsFor("/base/characters/witch/normal" + ext); n != 0 {
+			t.Errorf("the server was asked %d time(s) for normal%s, which the folder holds", n, ext)
+		}
 	}
 }
 

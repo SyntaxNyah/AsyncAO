@@ -98,17 +98,35 @@ func (b *CandidateBuilder) Build(key Key, name string) []File {
 	return files
 }
 
-// at lists name under prefix with host's formats; an exact name is already one file.
+// EveryFormat lists one name in every format, in the built-in order, for the player's own files: a host's list and
+// what has worked on it describe that host's files, not theirs.
+func EveryFormat(key Key, name string) []File {
+	return inFormats(key.Class, key.Origin, name, defaultOrder(key.Class))
+}
+
+// at lists name under prefix with host's formats.
 func (b *CandidateBuilder) at(class Class, host, prefix, name string) []File {
+	return inFormats(class, prefix, name, b.order(host, class))
+}
+
+// inFormats lists name under prefix in each format of order; an exact name is already one file.
+func inFormats(class Class, prefix, name string, order []string) []File {
 	if class == ClassExact {
 		return []File{File(prefix + name)}
 	}
-	order := b.order(host, class)
 	files := make([]File, 0, len(order))
 	for _, ext := range order {
 		files = append(files, File(prefix+name+ext))
 	}
 	return files
+}
+
+// defaultOrder is the built-in order for a class.
+func defaultOrder(class Class) []string {
+	if class == ClassSFX || class == ClassBlips {
+		return defaultAudioOrder
+	}
+	return defaultImageOrder
 }
 
 // originOf is the key's own origin, or for a key holding a whole URL, the longest origin known to contain it, then its host.
@@ -131,10 +149,7 @@ func (b *CandidateBuilder) originOf(key Key) string {
 // order is the host's own list when it published one, which it expects to be used as written.
 // Without one, what has worked goes first, then the built-in order.
 func (b *CandidateBuilder) order(origin string, class Class) []string {
-	defaults := defaultImageOrder
-	if class == ClassSFX || class == ClassBlips {
-		defaults = defaultAudioOrder
-	}
+	defaults := defaultOrder(class)
 	h := b.origins[origin]
 	if h == nil {
 		return defaults

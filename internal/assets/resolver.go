@@ -57,10 +57,8 @@ type formatListCache struct {
 type Resolver struct {
 	table   atomic.Pointer[learnedTable]
 	formats atomic.Pointer[formatListCache]
-	// packFormats is formats for local mount folders; a separate snapshot because the contents differ.
-	packFormats atomic.Pointer[formatListCache]
-	prefs       *config.AssetPreferences
-	pool        sync.Pool // *Candidates
+	prefs   *config.AssetPreferences
+	pool    sync.Pool // *Candidates
 
 	learnedHits   atomic.Int64
 	learnedMisses atomic.Int64
@@ -202,21 +200,6 @@ func (r *Resolver) formatList(t AssetType) []string {
 		fresh.lists[tt] = r.prefs.Load().FormatList(tt.Name())
 	}
 	r.formats.Store(fresh)
-	return fresh.lists[t]
-}
-
-// PackFormatList returns the full chain for local mounts: a pack has no learned formats and need not
-// match the server, so a stock .png pack would otherwise always miss.
-func (r *Resolver) PackFormatList(t AssetType) []string {
-	gen := r.prefs.FormatGeneration()
-	if cached := r.packFormats.Load(); cached != nil && cached.gen == gen {
-		return cached.lists[t]
-	}
-	fresh := &formatListCache{gen: gen}
-	for tt := AssetType(0); tt < AssetTypeCount; tt++ {
-		fresh.lists[tt] = fullProbeChain(r.prefs, tt)
-	}
-	r.packFormats.Store(fresh)
 	return fresh.lists[t]
 }
 

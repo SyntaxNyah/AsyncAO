@@ -54,12 +54,13 @@ func newMediaBridge(m *Manager) *mediaBridge {
 		pin:     newSceneryPin(),
 	}
 	b.folders = newBridgeFolders(m)
-	cfg := media.Config{Candidates: b.builder.Build, Found: b.builder.Found, Finished: b.finished, Compute: b.compute}
+	cfg := media.Config{Candidates: b.builder.Build, AllFormats: media.EveryFormat, Found: b.builder.Found,
+		Finished: b.finished, Compute: b.compute}
 	b.remote = media.NewRemoteSource(ctx, bridgeFetcher{m}, media.DefaultMissingTTL, time.Now)
 	cfg.Chains = map[media.Place]*media.Chain{media.PlaceServer: media.NewChain(
 		media.Entry{Source: bridgeMemory{m.t2, b.pin, m}},
 		media.Entry{Source: bridgeDisk{b.disk, m.t2, b.pin, m}, Pool: b.diskP},
-		media.Entry{Source: b.folders, Pool: b.diskP},
+		media.Entry{Source: b.folders, Pool: b.diskP, AllFormats: true},
 		media.Entry{Source: bridgeRemote{b.remote, b}, Pool: b.network},
 	)}
 	cfg.Formats = map[media.Kind]media.Format{media.KindImage: bridgeImage{b}, media.KindSound: bridgeSound{b}}

@@ -4,6 +4,9 @@ package media
 type Entry struct {
 	Source Source
 	Pool   *Pool
+	// AllFormats marks the player's own files: the source is asked for every format, not the server's list, and what
+	// it finds teaches the server's order nothing.
+	AllFormats bool
 }
 
 // Chain is the fixed lookup order for one place.
@@ -20,12 +23,19 @@ type location struct {
 	file  File
 }
 
+// nameFiles is one name's files: the server's formats, and every format for the AllFormats sources.
+type nameFiles struct{ server, all []File }
+
 // locations lists where one name's files may be, in the order to ask: copies a source has, then copies no source
 // knows about yet, each in source order; a copy a source knows is absent is left out. Any copy of a name wins, as AO2's
 // get_real_path asks every mount for one name (path_functions.cpp:399).
-func (c *Chain) locations(files []File) []location {
+func (c *Chain) locations(name nameFiles) []location {
 	var held, unknown []location
 	for i, e := range c.entries {
+		files := name.server
+		if e.AllFormats {
+			files = name.all
+		}
 		for _, f := range files {
 			switch e.Source.Has(f) {
 			case Yes:

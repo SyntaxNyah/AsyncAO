@@ -157,7 +157,7 @@ func TestFileFromASourceBecomesReady(t *testing.T) {
 	src.put("a", []byte("hello"))
 	disk := NewPool("disk", testWorkers, 0)
 	defer disk.Close()
-	m := newRig(t, &fakeFormat{}, Entry{src, disk})
+	m := newRig(t, &fakeFormat{}, Entry{Source: src, Pool: disk})
 
 	a := m.Get(image("a"), Now, 0)
 	waitFinal(t, a)
@@ -171,7 +171,7 @@ func TestRepeatAsksShareOneAssetAndOneRead(t *testing.T) {
 	src.put("a", []byte("x"))
 	disk := NewPool("disk", testWorkers, 0)
 	defer disk.Close()
-	m := newRig(t, &fakeFormat{}, Entry{src, disk})
+	m := newRig(t, &fakeFormat{}, Entry{Source: src, Pool: disk})
 
 	var wg sync.WaitGroup
 	got := make([]*Asset, testCallers)
@@ -195,7 +195,7 @@ func TestRepeatAsksShareOneAssetAndOneRead(t *testing.T) {
 }
 
 func TestMissingEverywhereEnds(t *testing.T) {
-	m := newRig(t, &fakeFormat{}, Entry{newFakeSource("disk"), nil})
+	m := newRig(t, &fakeFormat{}, Entry{Source: newFakeSource("disk"), Pool: nil})
 	a := m.Get(image("nowhere"), Now, 0)
 	waitFinal(t, a)
 	if a.State() != Missing || !IsMissing(a.Err()) {
@@ -209,7 +209,7 @@ func TestStaleEntryFallsThroughToNextSource(t *testing.T) {
 	good.put("a", []byte("real"))
 	pool := NewPool("disk", testWorkers, 0)
 	defer pool.Close()
-	m := newRig(t, &fakeFormat{}, Entry{stale, pool}, Entry{good, pool})
+	m := newRig(t, &fakeFormat{}, Entry{Source: stale, Pool: pool}, Entry{Source: good, Pool: pool})
 
 	a := m.Get(image("a"), Now, 0)
 	waitFinal(t, a)
@@ -227,7 +227,7 @@ func TestBadCopyDoesNotHideTheNextSource(t *testing.T) {
 	server.put("a", []byte("good"))
 	pool := NewPool("disk", testWorkers, 0)
 	defer pool.Close()
-	m := newRig(t, &fakeFormat{bad: map[string]bool{"broken": true}}, Entry{pack, pool}, Entry{server, pool})
+	m := newRig(t, &fakeFormat{bad: map[string]bool{"broken": true}}, Entry{Source: pack, Pool: pool}, Entry{Source: server, Pool: pool})
 
 	a := m.Get(image("a"), Now, 0)
 	waitFinal(t, a)
@@ -242,7 +242,7 @@ func TestKnownCopyBeatsAskingAnEarlierUnknownSource(t *testing.T) {
 	disk.put("a", []byte("local"))
 	pool := NewPool("disk", testWorkers, 0)
 	defer pool.Close()
-	m := newRig(t, &fakeFormat{}, Entry{remote, pool}, Entry{disk, pool})
+	m := newRig(t, &fakeFormat{}, Entry{Source: remote, Pool: pool}, Entry{Source: disk, Pool: pool})
 
 	a := m.Get(image("a"), Now, 0)
 	waitFinal(t, a)
@@ -269,9 +269,9 @@ func TestHungHostHoldsOnlyItsOwnWorkers(t *testing.T) {
 	defer compute.Close()
 	m := NewManager(Config{
 		Chains: map[Place]*Chain{
-			PlaceServer: NewChain(Entry{hung, network}),
-			PlacePacks:  NewChain(Entry{healthy, network}),
-			PlaceTheme:  NewChain(Entry{cached, nil}),
+			PlaceServer: NewChain(Entry{Source: hung, Pool: network}),
+			PlacePacks:  NewChain(Entry{Source: healthy, Pool: network}),
+			PlaceTheme:  NewChain(Entry{Source: cached, Pool: nil}),
 		},
 		Formats:    map[Kind]Format{KindImage: &fakeFormat{}},
 		Candidates: oneFile,
@@ -309,7 +309,7 @@ func TestNowGoesAheadOfWaitingLaterWork(t *testing.T) {
 		src.put(File(rune('a'+i)), []byte("later"))
 	}
 	src.put("message", []byte("now"))
-	m := newRig(t, format, Entry{src, nil})
+	m := newRig(t, format, Entry{Source: src, Pool: nil})
 
 	waitingWork := make([]*Asset, later)
 	for i := range waitingWork {
@@ -343,7 +343,7 @@ func TestClaimLimitHoldsLaterDecodesButNotNow(t *testing.T) {
 	compute := NewPool("compute", testWorkers, 0)
 	defer compute.Close()
 	m := NewManager(Config{
-		Chains:     map[Place]*Chain{PlaceServer: NewChain(Entry{src, nil})},
+		Chains:     map[Place]*Chain{PlaceServer: NewChain(Entry{Source: src, Pool: nil})},
 		Formats:    map[Kind]Format{KindImage: format},
 		Candidates: oneFile,
 		Compute:    compute,
@@ -379,7 +379,7 @@ const testSettle = 20 * time.Millisecond
 func TestMainThreadResultsWaitForFinish(t *testing.T) {
 	src := newFakeSource("memory")
 	src.put("a", []byte("pixels"))
-	m := newRig(t, &fakeFormat{onMain: true}, Entry{src, nil})
+	m := newRig(t, &fakeFormat{onMain: true}, Entry{Source: src, Pool: nil})
 
 	a := m.Get(image("a"), Now, 0)
 	var got any
@@ -405,7 +405,7 @@ func TestForgetAsksAgain(t *testing.T) {
 	src.put("a", []byte("x"))
 	disk := NewPool("disk", testWorkers, 0)
 	defer disk.Close()
-	m := newRig(t, &fakeFormat{}, Entry{src, disk})
+	m := newRig(t, &fakeFormat{}, Entry{Source: src, Pool: disk})
 
 	first := m.Get(image("a"), Now, 0)
 	waitFinal(t, first)
@@ -427,7 +427,7 @@ func TestLaterIsRefusedAtTheCapButNowIsNot(t *testing.T) {
 	compute := NewPool("compute", testWorkers, 0)
 	defer compute.Close()
 	m := NewManager(Config{
-		Chains:     map[Place]*Chain{PlaceServer: NewChain(Entry{src, nil})},
+		Chains:     map[Place]*Chain{PlaceServer: NewChain(Entry{Source: src, Pool: nil})},
 		Formats:    map[Kind]Format{KindImage: &fakeFormat{}},
 		Candidates: oneFile,
 		Compute:    compute,
@@ -454,7 +454,7 @@ func TestLoadWaitsOffMainAndRefusesOnMain(t *testing.T) {
 	compute := NewPool("compute", testWorkers, 0)
 	defer compute.Close()
 	m := NewManager(Config{
-		Chains:       map[Place]*Chain{PlaceServer: NewChain(Entry{src, nil})},
+		Chains:       map[Place]*Chain{PlaceServer: NewChain(Entry{Source: src, Pool: nil})},
 		Formats:      map[Kind]Format{KindImage: &fakeFormat{}},
 		Candidates:   oneFile,
 		Compute:      compute,
@@ -495,7 +495,7 @@ func TestEveryRequestEnds(t *testing.T) {
 	}
 	disk := NewPool("disk", testWorkers, 0)
 	defer disk.Close()
-	m := newRig(t, &fakeFormat{bad: bad}, Entry{src, disk})
+	m := newRig(t, &fakeFormat{bad: bad}, Entry{Source: src, Pool: disk})
 
 	var wg sync.WaitGroup
 	for range testCallers {

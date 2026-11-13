@@ -114,7 +114,7 @@ func newRemoteRig(t *testing.T, files map[string][]byte) *remoteRig {
 	net := NewPool("network", testRemotePool, 0)
 	compute := NewPool("compute", testWorkers, 1)
 	m := NewManager(Config{
-		Chains:     map[Place]*Chain{PlaceServer: NewChain(Entry{remote, net})},
+		Chains:     map[Place]*Chain{PlaceServer: NewChain(Entry{Source: remote, Pool: net})},
 		Formats:    map[Kind]Format{KindImage: &fakeFormat{}},
 		Candidates: builder.Build,
 		Found:      builder.Found,
@@ -357,7 +357,7 @@ func heldRig(t *testing.T) (*Manager, *fakeFormat, []*Asset) {
 	for i := range later {
 		src.put(File(fmt.Sprintf("l%d", i)), []byte("later"))
 	}
-	m := newRig(t, format, Entry{src, nil})
+	m := newRig(t, format, Entry{Source: src, Pool: nil})
 	var all []*Asset
 	for i := range later {
 		all = append(all, m.Get(image(fmt.Sprintf("l%d", i)), Later, 0))
@@ -404,7 +404,7 @@ func TestWithdrawDuringAStepEndsWhenItReports(t *testing.T) {
 	src := newFakeSource("memory")
 	src.put("a", []byte("x"))
 	format := &fakeFormat{hold: make(chan struct{})}
-	m := newRig(t, format, Entry{src, nil})
+	m := newRig(t, format, Entry{Source: src, Pool: nil})
 	a := m.Get(image("a"), Now, 0)
 	waitUntil(t, func() bool { return format.started.Load() == 1 })
 	m.Withdraw(a.Key())
@@ -440,7 +440,7 @@ func TestWithdrawOriginLeavesOtherServersAlone(t *testing.T) {
 func TestRunDoesWorkAndReportsOnTheManager(t *testing.T) {
 	pool := NewPool("long", testWorkers, 0)
 	defer pool.Close()
-	m := newRig(t, &fakeFormat{}, Entry{newFakeSource("disk"), nil})
+	m := newRig(t, &fakeFormat{}, Entry{Source: newFakeSource("disk"), Pool: nil})
 	got := make(chan any, 1)
 	m.Run(pool, Later, func() any { return "done" }, func(v any) { got <- v })
 	select {

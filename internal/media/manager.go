@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,6 +25,8 @@ type Config struct {
 	Formats map[Kind]Format
 	// Candidates lists the exact files one name of a key may be, best first; it runs on the Manager's goroutine.
 	Candidates func(Key, string) []File
+	// AllFormats lists them for the AllFormats chain entries; nil gives those entries Candidates' list.
+	AllFormats func(Key, string) []File
 	Compute    *Pool
 	// Found runs on the Manager's goroutine when a key's file turns up, so later searches can try that format first.
 	Found func(Key, File)
@@ -69,7 +72,7 @@ type request struct {
 	// The search only moves forward: names holds each name's files, the file found last time first; name is the next
 	// one to list; left is the current name's copies not yet asked; failed means one of them failed rather than being
 	// absent, so the file may exist and no later name may count.
-	names   [][]File
+	names   []nameFiles
 	name    int
 	left    []location
 	failed  bool
@@ -501,14 +504,32 @@ func (m *Manager) search(r *request) {
 	m.queue(e.Pool, r)
 }
 
-// namesOf lists each name's files in order, after the file the key was found as last time.
-func (m *Manager) namesOf(a *Asset) [][]File {
-	names := make([][]File, 0, len(a.names)+1)
-	if w, ok := m.winners[a.key]; ok {
-		names = append(names, []File{w})
+// namesOf lists each name's files in order, after the file the key was found as last time; that file is asked only of
+// the sources whose list holds it, so a format found in the player's folders never reaches the server.
+func (m *Manager) namesOf(a *Asset) []nameFiles {
+	names := make([]nameFiles, 0, len(a.names)+1)
+	w, won := m.winners[a.key]
+	if won {
+		names = append(names, nameFiles{})
 	}
 	for _, name := range a.names {
-		names = append(names, m.cfg.Candidates(a.key, name))
+		files := nameFiles{server: m.cfg.Candidates(a.key, name)}
+		files.all = files.server
+		if m.cfg.AllFormats != nil {
+			files.all = m.cfg.AllFormats(a.key, name)
+		}
+		names = append(names, files)
+	}
+	if !won {
+		return names
+	}
+	for _, n := range names[1:] {
+		if slices.Contains(n.server, w) {
+			names[0].server = []File{w}
+		}
+		if slices.Contains(n.all, w) {
+			names[0].all = []File{w}
+		}
 	}
 	return names
 }
@@ -575,7 +596,7 @@ func (m *Manager) afterData(r *request) {
 		m.retry(r)
 		return
 	}
-	if m.cfg.Found != nil {
+	if m.cfg.Found != nil && !m.cfg.Chains[r.asset.key.Place].entries[r.entry].AllFormats {
 		m.cfg.Found(r.asset.key, r.file)
 	}
 	// An exact key with one name is one file already, so only a key with formats or names to choose from is remembered.
