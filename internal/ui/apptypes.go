@@ -470,8 +470,9 @@ type sessionState struct {
 	// icReadMark is the IC entry count when last caught up to the bottom; len(icLog)-icReadMark is the "N new" pill
 	// count.
 	icReadMark int
-	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
-	emoteAsk []time.Time
+	// emoteAsk[i] paces demand for emote i's _off button art, emoteOnAsk[i] for its _on art while selected.
+	emoteAsk   []time.Time
+	emoteOnAsk []time.Time
 
 	// --- case notebook (per-server pins) ---
 	notebook     *config.Notebook

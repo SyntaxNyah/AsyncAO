@@ -359,7 +359,7 @@ func (a *App) pollThemeApply() {
 	// Pinned uploads can evict emote-button art from T1; force a fresh demand so the grid heals at once
 	// rather than after demandAsset's retry window (pollCharINI does the same).
 	a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
-	a.emoteAsk, a.emoteIconAsk = nil, nil
+	a.emoteAsk, a.emoteOnAsk, a.emoteIconAsk = nil, nil, nil
 	// Last: it needs the landed geometry and a resize is disruptive; no-op unless a user pick armed this generation.
 	a.maybeResizeToThemeDesign(res.gen)
 	// Also one-shot: the editor can only open over a theme that has applied, which is this landing.

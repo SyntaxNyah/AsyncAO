@@ -458,16 +458,19 @@ func gridRows(h, cellH, gap int32) int32 {
 // drawEmoteImageButton draws one emotions/button<N> cell with _off art, then character icon fallbacks; reports clicks.
 func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool, label string) bool {
 	c := a.ctx
-	base := a.urls.EmoteButton(me, i+1, selected)
-	cache, gen := &a.emoteBtnOff, &a.emoteBtnOffGen
+	var page *render.TexturePage
+	ok := false
 	if selected {
-		cache, gen = &a.emoteBtnOn, &a.emoteBtnOnGen
+		on := a.urls.EmoteButton(me, i+1, true)
+		if page, ok = a.cachedPage(&a.emoteBtnOn, &a.emoteBtnOnGen, len(a.emotes), i, on); !ok {
+			a.demandAsset(&a.emoteOnAsk, len(a.emotes), i, on, assets.AssetTypeEmoteButton) // AssetType: EmoteButton
+		}
 	}
-	page, ok := a.cachedPage(cache, gen, len(a.emotes), i, base)
+	// A selected button without _on art shows its _off art, as AO2 does (aoemotebutton.cpp:51).
 	if !ok {
-		a.demandAsset(&a.emoteAsk, len(a.emotes), i, base, assets.AssetTypeEmoteButton) // AssetType: EmoteButton
-		if selected {
-			page, ok = a.cachedPage(&a.emoteBtnOff, &a.emoteBtnOffGen, len(a.emotes), i, a.urls.EmoteButton(me, i+1, false))
+		off := a.urls.EmoteButton(me, i+1, false)
+		if page, ok = a.cachedPage(&a.emoteBtnOff, &a.emoteBtnOffGen, len(a.emotes), i, off); !ok {
+			a.demandAsset(&a.emoteAsk, len(a.emotes), i, off, assets.AssetTypeEmoteButton) // AssetType: EmoteButton
 		}
 	}
 	if ok && len(page.Frames) > 0 {

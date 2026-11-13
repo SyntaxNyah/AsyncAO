@@ -1247,7 +1247,7 @@ func (a *App) activeCharName() string {
 func (a *App) setIniswap(name string) {
 	a.iniChar = name
 	a.charDefaultSide = "" // the new folder's char.ini decides the default side; until it lands there is none
-	a.emoteAsk = nil
+	a.emoteAsk, a.emoteOnAsk = nil, nil
 	a.emoteIdx, a.emoteRow = 0, 0 // new active folder = new emote list: start at the first
 	a.loadCharINI()
 }
@@ -1495,7 +1495,7 @@ func (a *App) pollCharINI() {
 		a.customName = res.ini.CustomName
 		// Keep the selection across a reactivation reload. A real character change zeroes these before the fetch.
 		a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
-		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
+		a.emoteAsk, a.emoteOnAsk = nil, nil // fresh char: re-demand its button art from scratch
 		// LOW priority sheds under load: the first few emotes' idle sprites.
 		me := a.myCharName()
 		for i, e := range a.emotes {
