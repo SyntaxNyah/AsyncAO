@@ -4,6 +4,24 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.0-rc.7-hotfix1 - 2026-11-13
+
+Fixes for characters from your own folders and for wearing a character from
+Character Select.
+
+### Fixed
+- **Characters in your folders load in any format**: a server's format list
+  (its `extensions.json`) now only decides what's asked of the server. Your
+  folders and .zip packs are searched in every format again, so a PNG
+  character works on a server that lists only WebP. Since rc.1 such a
+  character had no sprites or emote buttons.
+- **Wearing a character from Character Select keeps its emotes**: the
+  character you were given could replace the worn character's emote list,
+  so every message showed the missing-sprite placeholder.
+- **The selected emote button shows its picture**: a character with no
+  `_on` button art showed an empty button for the emote you entered on,
+  until you picked another one.
+
 ## v2.1.0-rc.7 - 2026-11-11
 
 The seventh pre-release of v2.1.0, with Wardrobe changes players asked for.
