@@ -541,7 +541,7 @@ func (a *App) spriteHitRect(vp sdl.Rect, layer *courtroom.SpriteLayer) (sdl.Rect
 	if !ok || page.H == 0 {
 		return sdl.Rect{}, false
 	}
-	scaledW := vp.H * page.W / page.H
+	scaledW := page.WidthAt(vp.H)
 	return sdl.Rect{
 		X: vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/100,
 		Y: vp.Y + vp.H*int32(layer.OffsetY)/100,

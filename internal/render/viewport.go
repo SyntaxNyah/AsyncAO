@@ -1065,7 +1065,7 @@ func (v *Viewport) drawReflection(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 		return
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
-	scaledW := vp.H * page.W / page.H
+	scaledW := page.WidthAt(vp.H)
 	v.reflRect.W = scaledW
 	v.reflRect.H = vp.H
 	v.reflRect.X = vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
@@ -1172,7 +1172,7 @@ func (v *Viewport) drawHeldSprite(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 	if page.H == 0 {
 		return
 	}
-	scaledW := vp.H * page.W / page.H
+	scaledW := page.WidthAt(vp.H)
 	v.dstRect.W = scaledW
 	v.dstRect.H = vp.H
 	v.dstRect.X = vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
@@ -1236,7 +1236,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 
 	// AO2 sizes a layer to the viewport once (courtroom.cpp:778); a zoom emote doesn't rescale it (:3456-3477).
 	h := vp.H
-	w := h * page.W / page.H
+	w := page.WidthAt(h)
 	v.dstRect.W = w
 	v.dstRect.H = h
 	v.dstRect.X = vp.X + (vp.W-w)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor

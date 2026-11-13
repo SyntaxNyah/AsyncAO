@@ -76,6 +76,15 @@ type variantKey struct {
 	split          uint8  // two-tone split row percent (variantPaint only; 0 = one colour)
 }
 
+// WidthAt is the page's width scaled to height h, rounded to the nearest pixel as AO2's QSize scaling is
+// (animationlayer.cpp:255), so a sprite sits where AO2 puts it.
+func (p *TexturePage) WidthAt(h int32) int32 {
+	if p.H == 0 {
+		return 0
+	}
+	return (2*h*p.W + p.H) / (2 * p.H)
+}
+
 // destroy releases every frame texture and variant; render thread only.
 func (p *TexturePage) destroy() {
 	for _, t := range p.Frames {
