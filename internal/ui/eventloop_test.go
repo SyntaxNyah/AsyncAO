@@ -290,6 +290,30 @@ func TestNextWakeDelay(t *testing.T) {
 // leaving it stranded until cursor motion. A nil-ini result takes the default
 // (empty char.ini) branch — enough to exercise the clear + the dirty flag
 // without firing the success path's network prefetch.
+// Wearing an iniswap from Character Select fetches the slot's char.ini and the iniswap's at once; the iniswap's emote
+// list must survive the slot's landing second.
+func TestPollCharINIKeepsTheIniswapsEmotesWhenTheSlotsLandsLater(t *testing.T) {
+	const (
+		slotChar = "ange"
+		worn     = "witch"
+	)
+	a := testTabApp(t)
+	wireEmptyPackManager(t, a) // the success path warms the first sprites
+	a.charINIres = make(chan charINIFetch, 2)
+	a.iniChar = worn
+	a.charINIBusy = true
+	emotesOf := func(anim string) *courtroom.CharINI {
+		return &courtroom.CharINI{Emotes: []courtroom.Emote{{Comment: anim, Anim: anim, Preanim: "-"}}}
+	}
+	a.charINIres <- charINIFetch{key: a.serverKey, char: worn, ini: emotesOf("worn")}
+	a.charINIres <- charINIFetch{key: a.serverKey, char: slotChar, ini: emotesOf("slot")}
+	a.pollCharINI()
+	a.pollCharINI()
+	if len(a.emotes) != 1 || a.emotes[0].Anim != "worn" {
+		t.Fatalf("emotes %v: the slot character's char.ini replaced the iniswap's", a.emotes)
+	}
+}
+
 func TestPollCharINIForcesRedraw(t *testing.T) {
 	a := testTabApp(t)
 	if a.charINIres == nil {
@@ -297,7 +321,7 @@ func TestPollCharINIForcesRedraw(t *testing.T) {
 	}
 	a.charINIBusy = true
 	a.uiDirty = false
-	a.charINIres <- charINIFetch{key: a.serverKey}
+	a.charINIres <- charINIFetch{key: a.serverKey, char: a.activeCharName()}
 	a.pollCharINI()
 	if a.charINIBusy {
 		t.Error("pollCharINI must clear charINIBusy on a matching result")

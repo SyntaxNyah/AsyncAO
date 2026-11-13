@@ -815,7 +815,7 @@ func TestThePreviewPassDoesNotEatThePrimarysCharINI(t *testing.T) {
 	// mid-frame), and that pass is entitled to the result.
 	enterPreviewByButton(t, a)
 	a.emotes = nil
-	a.charINIres <- charINIFetch{key: primaryKey, ini: &courtroom.CharINI{
+	a.charINIres <- charINIFetch{key: primaryKey, char: a.activeCharName(), ini: &courtroom.CharINI{
 		Emotes: []courtroom.Emote{{Comment: "pinnedpass", Anim: "pinnedpass", Preanim: "-"}},
 	}}
 	driveFrames(a, previewDriveFrames)

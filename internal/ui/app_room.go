@@ -1439,12 +1439,12 @@ func (a *App) loadCharINI() {
 		// Layered: a character from the user's own folders must bring its own emote list.
 		data, err := mgr.FetchRaw(context.Background(), url)
 		if err != nil {
-			ch <- charINIFetch{key: key, err: err}
+			ch <- charINIFetch{key: key, char: name, err: err}
 			PushWake() // wake the event-driven loop so Background drains this at idle=0
 			return
 		}
 		ini, err := courtroom.ParseCharINI(data)
-		ch <- charINIFetch{key: key, ini: ini, err: err}
+		ch <- charINIFetch{key: key, char: name, ini: ini, err: err}
 		PushWake() // wake the event-driven loop so Background drains this at idle=0
 	}()
 }
@@ -1455,8 +1455,8 @@ func (a *App) pollCharINI() {
 	}
 	select {
 	case res := <-a.charINIres:
-		if res.key != a.serverKey {
-			return // landed after a tab switch: another server's char.ini
+		if res.key != a.serverKey || res.char != a.activeCharName() {
+			return // another server's or another character's char.ini, landing after a tab switch or a swap
 		}
 		a.charINIBusy = false
 		a.uiDirty = true // the emote list just changed (and "Loading emotes…" must clear): force one redraw, like the character list does on its packet
@@ -1497,7 +1497,7 @@ func (a *App) pollCharINI() {
 		a.emoteIdx, a.emoteRow = clampEmoteSel(a.emoteIdx, a.emoteRow, len(a.emotes))
 		a.emoteAsk, a.emoteOnAsk = nil, nil // fresh char: re-demand its button art from scratch
 		// LOW priority sheds under load: the first few emotes' idle sprites.
-		me := a.myCharName()
+		me := a.activeCharName()
 		for i, e := range a.emotes {
 			if i >= 8 {
 				break

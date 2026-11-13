@@ -798,8 +798,10 @@ type lobbyFetch struct {
 
 type charINIFetch struct {
 	key string // serverKey the fetch was made for (tab-switch guard)
-	ini *courtroom.CharINI
-	err error
+	// char is the folder fetched: an iniswap made while the slot's own char.ini is in flight must not lose to it.
+	char string
+	ini  *courtroom.CharINI
+	err  error
 }
 
 // previewEmoteFetch is one previewed character's emote list for the char-select portrait; char guards against a newer
