@@ -1,7 +1,4 @@
-// Command asyncao-cache is the companion CLI for AsyncAO's T3 disk cache:
-// inspect it, prune it, or pre-seed/warm it from a server's asset origin —
-// all without launching the client. Pure Go (no SDL, no CGO): builds with
-// CGO_ENABLED=0 on any platform.
+// Command asyncao-cache inspects, prunes or warms the T3 disk cache without the client; it builds with no cgo.
 //
 // Usage:
 //
@@ -34,15 +31,16 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
 
 const (
-	// warmBlobMax skips pathological downloads (nothing AO-shaped is
-	// bigger; a 64 MiB "sprite" is a misconfigured server).
+	// warmBlobMax skips downloads too big for anything AO-shaped, such as a misconfigured server's.
 	warmBlobMax = 64 << 20
-	// warmTimeout bounds one fetch.
 	warmTimeout = 20 * time.Second
-	// warmWorkersMax bounds -j (be polite to asset hosts).
+	// warmWorkersMax bounds -j, to be polite to asset hosts.
 	warmWorkersMax = 32
 	// charIconStem mirrors webAO's characters/<name>/char_icon convention.
 	charIconStem = "char_icon"
@@ -94,7 +92,6 @@ func cacheRoot() (string, error) {
 	return root, nil
 }
 
-// walkBlobs visits every blob file under the cache root.
 func walkBlobs(root string, fn func(path string, info os.FileInfo)) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info == nil || info.IsDir() {
@@ -215,7 +212,6 @@ func cmdPrune(args []string) error {
 		}
 	}
 	if *maxBytes > 0 && total > *maxBytes {
-		// Oldest-first until under budget.
 		sort.Slice(blobs, func(i, j int) bool { return blobs[i].mod.Before(blobs[j].mod) })
 		for _, b := range blobs {
 			if total <= *maxBytes {
@@ -264,12 +260,7 @@ func cmdWarm(args []string) error {
 	if len(urls) == 0 {
 		return fmt.Errorf("nothing to warm")
 	}
-	if *workers < 1 {
-		*workers = 1
-	}
-	if *workers > warmWorkersMax {
-		*workers = warmWorkersMax
-	}
+	*workers = value.Clamp(*workers, 1, warmWorkersMax)
 
 	root, err := cacheRoot()
 	if err != nil {
@@ -281,7 +272,7 @@ func cmdWarm(args []string) error {
 	}
 	defer d.Close()
 
-	client := &http.Client{Timeout: warmTimeout}
+	client := newHTTPClient()
 	var okN, missN, failN atomic.Int64
 	jobs := make(chan string)
 	var wg sync.WaitGroup
@@ -318,8 +309,14 @@ func cmdWarm(args []string) error {
 	return nil
 }
 
-// fetch GETs one URL with the size cap; returns (body, status).
-func fetch(client *http.Client, url string) ([]byte, int) {
+// newHTTPClient follows this computer's proxy setting; this tool has no preferences of its own.
+func newHTTPClient() *http.Client { //nolint:forbidigo // built by the socket factory
+	sockets := netproxy.New(platform.SystemProxySettings)
+	sockets.Apply(netproxy.ModeSystem, "", "")
+	return sockets.Current().Client(netproxy.Web, warmTimeout)
+}
+
+func fetch(client *http.Client, url string) ([]byte, int) { //nolint:forbidigo // built by the socket factory
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, 0
@@ -335,10 +332,9 @@ func fetch(client *http.Client, url string) ([]byte, int) {
 	return data, http.StatusOK
 }
 
-// manifestIconExt asks the origin's extensions.json for the char-icon
-// extension, defaulting to .png (webAO behavior without a manifest).
+// manifestIconExt reads the extension from extensions.json, defaulting to .png as webAO does.
 func manifestIconExt(base string) string {
-	client := &http.Client{Timeout: warmTimeout}
+	client := newHTTPClient()
 	data, status := fetch(client, base+"/"+assets.ManifestFileName)
 	if status != http.StatusOK {
 		return ".png"
@@ -350,7 +346,6 @@ func manifestIconExt(base string) string {
 	return m.CharIcon[0]
 }
 
-// readLines loads a file as trimmed, non-empty lines.
 func readLines(path string) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {

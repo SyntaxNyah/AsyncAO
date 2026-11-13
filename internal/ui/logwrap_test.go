@@ -4,10 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // stripSpaces removes ALL whitespace so a wrapped-then-reassembled text can be
@@ -354,13 +353,14 @@ func TestOOCWrapPathologicalMarker(t *testing.T) {
 //
 // The setup is the real one, not a synthetic pick: installing a font chain makes
 // the log set MULTI-face (the chain face + the embedded last resort), which is
-// what takes pickSet off its len==1 fast path — without a custom font there is no
-// divergence to have. The emoji then split the picks apart: no face covers a
-// colour emoji, so the whole PARAGRAPH picks the last-resort face, while its
-// plain rows pick the wide chain face. The old emoji wrap measured every row in
-// the paragraph's face and the rows overflowed by the ratio between the two
-// (OpenDyslexic is ~70% wider than the embedded face at the same size) — exactly
-// the screenshot on the issue.
+// what takes pickSet off its len==1 fast path. Under the old whole-line pick the
+// emoji split the picks apart: no face covers a colour emoji, so the whole
+// PARAGRAPH picked the last-resort face while its plain rows picked the wide chain
+// face, and a wrap measured in the paragraph's face overflowed by the ratio between
+// the two (OpenDyslexic is ~70% wider than the embedded face at the same size) —
+// exactly the screenshot on the issue. The pick now keeps every line on the set's
+// first face (pickFont), so the paragraph and its rows share one face; the rows
+// must still fit.
 func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 	if err := ttf.Init(); err != nil {
 		t.Skipf("SDL_ttf unavailable: %v", err)
@@ -392,8 +392,8 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 	if c.EmojiFont(a.oocPct) == nil {
 		t.Fatal("fixture must load a colour-emoji face, else the emoji wrap branch never runs")
 	}
-	if c.LogFontFor(a.oocPct, motd) == c.LogFontFor(a.oocPct, plain) {
-		t.Fatal("fixture must make the paragraph pick a DIFFERENT face than a plain row")
+	if c.LogFontFor(a.oocPct, motd) != c.LogFontFor(a.oocPct, plain) {
+		t.Error("the paragraph and a plain row picked different faces — the line moved off the set's first face")
 	}
 
 	// The column the OOC list wraps against (its own indent already removed).
@@ -409,7 +409,7 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 		if len([]rune(row)) <= 1 {
 			continue // a lone rune wider than the column can't be split any further
 		}
-		if w := a.logDrawnWidth(elemServerChatlog, a.oocPct, row); w > colW {
+		if w := a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, row, "", false, false); w > colW {
 			t.Errorf("OOC row %d %q draws %d px wide, column is %d — it will overflow", i, row, w, colW)
 		}
 	}
@@ -429,7 +429,7 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 		if len([]rune(row.text)) <= 1 {
 			continue
 		}
-		if w := a.logDrawnWidth(elemICChatlog, a.logPct, row.text); w > colW {
+		if w := a.logDrawnWidthNamed(elemICChatlog, a.logPct, row.text, "", false, false); w > colW {
 			t.Errorf("IC row %d %q draws %d px wide, column is %d — it will overflow", i, row.text, w, colW)
 		}
 	}
@@ -460,7 +460,7 @@ func TestLogWrapBoldSpeakerRowsFitDrawnWidth(t *testing.T) {
 	const speaker = "Crystalwarrior"
 	const probe = speaker + ": map"
 	if bold, plain := a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, probe, speaker, false, true),
-		a.logDrawnWidth(elemServerChatlog, a.oocPct, probe); bold <= plain {
+		a.logDrawnWidthNamed(elemServerChatlog, a.oocPct, probe, "", false, false); bold <= plain {
 		t.Fatalf("fixture must show a bold-name delta: bold %d px, plain %d px for %q", bold, plain, probe)
 	}
 
@@ -487,4 +487,3 @@ func TestLogWrapBoldSpeakerRowsFitDrawnWidth(t *testing.T) {
 		}
 	}
 }
-

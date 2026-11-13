@@ -4,20 +4,16 @@ import (
 	"bytes"
 	"io"
 	"log"
-	"os"
 	"sync"
 )
 
-// debugLogSink captures log.Printf output from the render package and forwards
-// it to a channel that the UI's debug panel can drain. Used for diagnosing
-// issues like loop-point sample rate sniffing without needing a terminal.
+// debugLogSink forwards render package log.Printf output to a channel the debug panel drains.
 type debugLogSink struct {
 	mu   sync.Mutex
 	buf  bytes.Buffer
 	sink chan<- string
 }
 
-// Write implements io.Writer. Called by log.Logger on every log.Printf.
 func (d *debugLogSink) Write(p []byte) (n int, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -33,7 +29,6 @@ func (d *debugLogSink) Write(p []byte) (n int, err error) {
 		if err != nil {
 			return 0, err
 		}
-		// Trim trailing newline and send to UI
 		line = bytes.TrimRight(line, "\r\n")
 		if len(line) > 0 {
 			select {
@@ -46,29 +41,24 @@ func (d *debugLogSink) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+const debugLogBuffer = 64
+
 var (
-	debugLogChan   chan string
-	debugLogOnce   sync.Once
-	originalStderr *os.File
+	// debugLogChan is eager: a lazy write under sync.Once races PollDebugLogs, as Once serializes only writers.
+	debugLogChan = make(chan string, debugLogBuffer)
+	debugLogOnce sync.Once
 )
 
-// EnableDebugLogCapture redirects render package log.Printf to a channel that
-// the UI can drain via PollDebugLogs. Called once at Audio creation time.
+// EnableDebugLogCapture also sends log output to a channel, keeping the log's output (stderr, or the debug log file);
+// called once at Audio creation.
 func EnableDebugLogCapture() {
 	debugLogOnce.Do(func() {
-		debugLogChan = make(chan string, 64) // buffer 64 lines
-		sink := &debugLogSink{sink: debugLogChan}
-		originalStderr = os.Stderr
-		log.SetOutput(io.MultiWriter(sink, originalStderr))
+		log.SetOutput(io.MultiWriter(&debugLogSink{sink: debugLogChan}, log.Writer()))
 	})
 }
 
-// PollDebugLogs drains any pending log lines captured from the render package.
-// Returns all available lines (may be empty). Non-blocking.
+// PollDebugLogs drains pending lines without blocking.
 func PollDebugLogs() []string {
-	if debugLogChan == nil {
-		return nil
-	}
 	var lines []string
 	for {
 		select {

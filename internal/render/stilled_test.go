@@ -46,7 +46,7 @@ func TestReduceAnimatedExcept(t *testing.T) {
 	if !store.ContainsAnimated(activeBase) {
 		t.Error("ContainsAnimated must report true for the active page")
 	}
-	// Contains is the wait-gate probe: a still must still read as resident.
+	// Scenery and the pair partner's wait-gate probe: a still must still read as resident.
 	if !store.Contains(inactiveBase) {
 		t.Error("Contains must report true for a stilled page (wait-gate)")
 	}
@@ -54,6 +54,98 @@ func TestReduceAnimatedExcept(t *testing.T) {
 	// A second pass is idempotent.
 	if n := store.ReduceAnimatedExcept(map[string]bool{activeBase: true}); n != 0 {
 		t.Errorf("second reduction reduced %d pages, want 0", n)
+	}
+}
+
+// TestContainsPlayable: the wait gate must not release on a first frame, a reduced page or nothing at all.
+func TestContainsPlayable(t *testing.T) {
+	const (
+		budget      = 16 << 20
+		frameSize   = 512
+		frames      = 3
+		sourceCount = 3
+		complete    = "srv/characters/uma/(a)complete"
+		reduced     = "srv/characters/uma/(a)reduced"
+		streaming   = "srv/characters/uma/(a)streaming"
+		absent      = "srv/characters/uma/(a)absent"
+		failed      = "srv/characters/uma/(a)failed"
+	)
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+
+	for _, base := range []string{complete, reduced} {
+		if err := store.Upload(base, sizedFixture(frameSize, frames)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store.ReduceAnimatedExcept(map[string]bool{complete: true})
+	if err := store.AppendStream(streaming, streamChunk(0, true, sourceCount)); err != nil {
+		t.Fatal(err)
+	}
+	store.MarkFailed(failed)
+
+	for base, want := range map[string]bool{complete: true, reduced: false, streaming: false, absent: false, failed: true} {
+		if got := store.ContainsPlayable(base); got != want {
+			t.Errorf("ContainsPlayable(%s) = %v, want %v", base, got, want)
+		}
+	}
+	if err := store.AppendStream(streaming, finalizeChunk(sourceCount)); err != nil {
+		t.Fatal(err)
+	}
+	if !store.ContainsPlayable(streaming) {
+		t.Error("a finished stream must be playable")
+	}
+}
+
+// TestStilledStreamPageGrowsBack: a re-decode finds the reduced page already in the oversized map and appends to it.
+func TestStilledStreamPageGrowsBack(t *testing.T) {
+	const (
+		budget      = 16 << 20
+		sourceCount = 2
+		base        = "srv/characters/uma/(a)stream"
+	)
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+
+	if err := store.AppendStream(base, streamChunk(0, true, sourceCount)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendStream(base, streamChunk(1, true, sourceCount)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendStream(base, finalizeChunk(sourceCount)); err != nil {
+		t.Fatal(err)
+	}
+	store.ReduceAnimatedExcept(nil)
+
+	if err := store.AppendStream(base, streamChunk(0, true, sourceCount)); err != nil {
+		t.Fatal(err)
+	}
+	if page, ok := store.Get(base); !ok || !page.Partial {
+		t.Fatal("a re-decode must mark the reduced page as still growing, or a one-shot finishes on a growing page")
+	}
+	if err := store.AppendStream(base, streamChunk(1, true, sourceCount)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendStream(base, finalizeChunk(sourceCount)); err != nil {
+		t.Fatal(err)
+	}
+	page, ok := store.Get(base)
+	if !ok || len(page.Frames) != sourceCount || page.Partial || page.Stilled {
+		t.Fatalf("after the re-decode: ok=%v frames=%d partial=%v stilled=%v", ok, len(page.Frames), page.Partial, page.Stilled)
+	}
+	if !store.ContainsPlayable(base) {
+		t.Fatal("the regrown page must be playable, or the wait gate holds every message that uses it")
 	}
 }
 

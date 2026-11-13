@@ -9,56 +9,36 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/klauspost/compress/zstd"
 )
 
 const (
-	// CacheDirName is the directory under os.UserCacheDir holding all
-	// AsyncAO cache data.
+	// CacheDirName is the directory under os.UserCacheDir holding AsyncAO's cache data.
 	CacheDirName = "AsyncAO"
-	// AssetsSubdir holds the asset blobs inside CacheDirName.
 	AssetsSubdir = "assets"
 
-	// shardPrefixLen is how many hex characters of the key name the shard
-	// subdirectory uses (spec §9: assets/<xx>/<xxhash64-hex>).
+	// shardPrefixLen is how many hex characters name the shard directory: assets/<xx>/<xxhash64-hex>.
 	shardPrefixLen = 2
 
-	// writeQueueCap bounds the async writer queue. When the queue is full,
-	// new writes are dropped (cache writes are best-effort; hot paths never
-	// block on disk — spec §17.2, §17.4).
+	// writeQueueCap bounds the writer queue; when full, writes drop because hot paths never block on disk.
 	writeQueueCap = 256
 
-	// pruneReqCap bounds the coalescing budget-change wake channel. Buffered
-	// cap 1 is load-bearing: a wake sent by SetBudget before the writer reaches
-	// its select must be RETAINED (not dropped) so the request survives the
-	// race — a non-blocking send into a cap-1 buffer keeps at most one pending
-	// prune and coalesces the rest. A larger cap would be pointless (extra
-	// wakes ask for the same sweep); an unbuffered channel would drop wakes
-	// whenever the writer is mid-write. #34: this is what lets a live Settings
-	// budget change — or a change on a read-only session whose writer is parked
-	// on an empty queue — actually enforce the cap instead of waiting for
-	// diskPruneEvery more stores.
+	// pruneReqCap must be 1: a wake before the writer's select must be kept, and extra wakes ask for the same sweep.
 	pruneReqCap = 1
 
 	diskDirPerm    = 0o755
 	diskTmpPattern = "w-*.tmp"
 	hashHexLen     = 16 // xxhash64 → 8 bytes → 16 hex chars
 
-	// diskPruneEvery is how many stored blobs pass between byte-budget sweeps
-	// (the sweep also runs once at open). A directory walk of a multi-GB shard
-	// tree is an occasional background scan on the single writer goroutine —
-	// off every hot path — never a per-write cost. Mirrors the ThumbCache's
-	// thumbPruneEvery idiom (internal/assets/thumbcache.go).
+	// diskPruneEvery is how many stored blobs pass between sweeps; the walk runs only on the writer goroutine.
 	diskPruneEvery = 64
 )
 
-// Key hashes a full asset URL to its on-disk name. Hashing the complete URL
-// (scheme, host, and path) keeps every server's assets in disjoint key
-// space — two servers can never serve each other stale files.
+// Key hashes a full URL to its on-disk name, so two servers can never serve each other stale files.
 func Key(url string) string {
 	var buf [hashHexLen / 2]byte
 	sum := xxhash.Sum64String(url)
@@ -68,22 +48,18 @@ func Key(url string) string {
 	return hex.EncodeToString(buf[:])
 }
 
-// diskWrite is one queued blob operation. del=true removes the blob at path
-// (a corrupt-payload purge); otherwise it writes data. Ordering is preserved
-// by the single FIFO writer, so a write followed by a delete of the same key
-// lands in that order.
+// diskWrite is one queued blob operation; del=true removes the blob, and the single FIFO writer preserves order.
 type diskWrite struct {
 	path string
 	data []byte
 	del  bool
 }
 
-// DiskCache is tier 3: an unbounded (user-clearable) on-disk blob store with
-// a single async writer goroutine. Get is synchronous and intended for
-// network/manager goroutines only — never the render, decode, or resolver
-// paths. Put never blocks and never performs I/O on the caller's goroutine.
+// DiskCache is tier 3: a user-clearable blob store with one writer goroutine.
+// Get is synchronous, never for render, decode or resolver paths; Put never blocks or does I/O.
 type DiskCache struct {
-	root string
+	// root is swapped whole by Relocate while readers and the writer keep running.
+	root atomic.Pointer[string]
 
 	queue     chan diskWrite
 	pruneReq  chan struct{} // coalescing wake: SetBudget signals the writer to sweep now
@@ -98,35 +74,14 @@ type DiskCache struct {
 	writeErrors atomic.Int64
 	dropped     atomic.Int64
 
-	// compress turns on zstd for NEW blobs (Settings toggle, default off).
-	// Reads always sniff the zstd magic, so mixed caches — and toggling
-	// at any time — work forever without migration.
-	compress atomic.Bool
-
-	// budget is the auto-prune byte cap (Settings slider). 0 = UNLIMITED,
-	// the DEFAULT — T3's unboundedness is a deliberate spec exception
-	// (docs/FEATURES.md), so no user's cache is silently deleted by an
-	// update. A positive value makes the writer goroutine sweep the OLDEST
-	// (mtime) blobs past the cap. Read on the writer goroutine only.
+	// budget is the auto-prune byte cap; 0 = unlimited, the default, so no cache is silently deleted.
 	budget atomic.Int64
 
 	onError atomic.Pointer[func(error)]
 }
 
-// zstd compression for the T3 tier: level-1 ("fastest") in the single
-// writer goroutine, and a compressed blob is kept only when it actually
-// shrank — WebP/AVIF sprites are pre-compressed and would only pay the
-// decompress cost on every hit for nothing. INI/JSON/PNG payloads shrink
-// 2–4×. Encoder/decoder with nil writers are documented safe for
-// concurrent EncodeAll/DecodeAll use.
-var (
-	zstdEnc, _ = zstd.NewWriter(nil,
-		zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderConcurrency(1))
-	zstdDec, _ = zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
-)
-
-// zstdMagic is the standard zstd frame header (little-endian 0xFD2FB528);
-// sniffing it makes the on-disk format self-describing.
+// zstdMagic is the zstd frame header (little-endian 0xFD2FB528). Builds before v2.1.0 could compress blobs; a blob
+// still in that form is read as a miss and deleted, so the asset is fetched again.
 var zstdMagic = [4]byte{0x28, 0xB5, 0x2F, 0xFD}
 
 func isZstdBlob(data []byte) bool {
@@ -135,19 +90,7 @@ func isZstdBlob(data []byte) bool {
 		data[2] == zstdMagic[2] && data[3] == zstdMagic[3]
 }
 
-// SetCompression toggles zstd for new writes (live-safe: reads sniff).
-func (d *DiskCache) SetCompression(on bool) { d.compress.Store(on) }
-
-// SetBudget sets the auto-prune byte cap. 0 = UNLIMITED (the default: T3 is a
-// deliberate spec exception, so no cache is silently deleted). A positive cap
-// makes the writer goroutine sweep the OLDEST blobs past it. Live-safe: the
-// writer reads the value each sweep.
-//
-// The store is followed by a coalescing wake so the change is enforced NOW —
-// not only after diskPruneEvery more stores land (and not never, on a
-// read-only session whose writer is parked on the empty queue). The
-// non-blocking send into the cap-1 buffer means SetBudget never blocks and
-// duplicate wakes collapse to one pending sweep.
+// SetBudget sets the byte cap (0 = unlimited) and wakes the writer so it applies even in a read-only session.
 func (d *DiskCache) SetBudget(bytes int64) {
 	d.budget.Store(bytes)
 	select {
@@ -162,36 +105,126 @@ func DefaultDiskRoot() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cache: locating user cache dir: %w", err)
 	}
-	return filepath.Join(dir, CacheDirName, AssetsSubdir), nil
+	return DiskRootIn(dir), nil
 }
 
-// NewDiskCache opens (creating if needed) the disk tier rooted at root and
-// starts its writer goroutine. Call Close to drain pending writes.
-//
-// initialBudget is the auto-prune byte cap the at-open sweep enforces (#34):
-// it is stored BEFORE the writer starts, so writerLoop's first d.prune() reads
-// the real value instead of the atomic's default 0 — this is what makes the
-// "at open" enforcement required by the spec actually fire on whatever a
-// previous session left. 0 = unlimited (the deliberate T3 default). Pass 0
-// from callers that will only ever set the budget live via SetBudget.
+// DiskRootIn is where the cache lives inside a folder the player chose: <dir>/AsyncAO/assets, never dir itself, so
+// clearing, moving or deleting the cache only ever touches AsyncAO's own folder.
+func DiskRootIn(dir string) string {
+	return filepath.Join(dir, CacheDirName, AssetsSubdir)
+}
+
+// ErrRelocateNested refuses a new cache folder inside the old one, or the old inside the new: moving would walk into
+// its own copy, and deleting the old folder would delete the new one.
+var ErrRelocateNested = errors.New("cache: the new folder and the old one are inside each other")
+
+// Relocate moves the cache to newRoot. Reads and writes go there at once; the old blobs are moved over when move is
+// set and deleted when it isn't, then the old folder is removed. A blob still being moved reads as a miss and is
+// fetched again. It walks and copies the old folder, so call it off the render thread (hard rule 2).
+func (d *DiskCache) Relocate(newRoot string, move bool) error {
+	newRoot = filepath.Clean(newRoot)
+	old := d.Root()
+	if newRoot == old {
+		return nil
+	}
+	if within(old, newRoot) || within(newRoot, old) {
+		return ErrRelocateNested
+	}
+	if err := os.MkdirAll(newRoot, diskDirPerm); err != nil {
+		return fmt.Errorf("cache: creating %s: %w", newRoot, err)
+	}
+	d.root.Store(&newRoot)
+	var err error
+	if move {
+		err = moveBlobs(old, newRoot)
+	}
+	if rmErr := os.RemoveAll(old); rmErr != nil && err == nil {
+		err = fmt.Errorf("cache: removing the old folder %s: %w", old, rmErr)
+	}
+	d.SetBudget(d.budget.Load()) // sweep the new folder against the cap
+	return err
+}
+
+// within reports whether path is dir or inside it.
+func within(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// moveBlobs moves every finished blob under from to the same place under to, keeping a blob already there (it is
+// newer). A rename that fails across drives falls back to copying.
+func moveBlobs(from, to string) error {
+	var firstErr error
+	_ = filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || !entry.Type().IsRegular() || filepath.Ext(path) == ".tmp" {
+			return nil
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil {
+			return nil
+		}
+		dst := filepath.Join(to, rel)
+		if _, err := os.Stat(dst); err == nil {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), diskDirPerm); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			return nil
+		}
+		if os.Rename(path, dst) == nil {
+			return nil
+		}
+		if err := copyFile(path, dst); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		return nil
+	})
+	return firstErr
+}
+
+// copyFile copies src to dst through a temp file, so a half-copied blob never looks finished.
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), diskTmpPattern)
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, dst)
+}
+
+// NewDiskCache opens the tier and starts its writer; initialBudget is set first so the at-open sweep sees it.
 func NewDiskCache(root string, initialBudget int64) (*DiskCache, error) {
 	if err := os.MkdirAll(root, diskDirPerm); err != nil {
 		return nil, fmt.Errorf("cache: creating disk cache root %s: %w", root, err)
 	}
 	d := &DiskCache{
-		root:     root,
 		queue:    make(chan diskWrite, writeQueueCap),
 		pruneReq: make(chan struct{}, pruneReqCap),
 		stop:     make(chan struct{}),
 		done:     make(chan struct{}),
 	}
+	d.root.Store(&root)
 	d.budget.Store(initialBudget) // read by the at-open prune below, before any race
 	go d.writerLoop()
 	return d, nil
 }
 
-// SetErrorHook installs fn to receive asynchronous write failures. The
-// default hook logs via the standard logger.
+// SetErrorHook installs fn to receive asynchronous write failures; the default logs.
 func (d *DiskCache) SetErrorHook(fn func(error)) {
 	d.onError.Store(&fn)
 }
@@ -205,49 +238,31 @@ func (d *DiskCache) reportError(err error) {
 	log.Printf("cache: async disk write failed: %v", err)
 }
 
-// Root exposes the cache directory (Settings: open-in-file-manager and
-// size measurement — read-only use).
-func (d *DiskCache) Root() string { return d.root }
+// Root returns the cache directory, for read-only use.
+func (d *DiskCache) Root() string { return *d.root.Load() }
 
 // pathFor maps a URL to its blob path: <root>/<xx>/<xxhash64-hex>.
 func (d *DiskCache) pathFor(url string) string {
 	key := Key(url)
-	return filepath.Join(d.root, key[:shardPrefixLen], key)
+	return filepath.Join(d.Root(), key[:shardPrefixLen], key)
 }
 
-// Get reads the cached blob for url. A zero-length blob is treated as a miss
-// and deleted (defensive: a torn write that survived a crash). Compressed
-// blobs self-identify by the zstd magic and decompress transparently.
+// Get reads the blob for url. A zero-length blob, a torn write from a crash, and a compressed blob from an older
+// build are deleted and treated as a miss.
 func (d *DiskCache) Get(url string) ([]byte, bool) {
 	data, err := os.ReadFile(d.pathFor(url))
-	if err != nil || len(data) == 0 {
+	if err != nil || len(data) == 0 || isZstdBlob(data) {
 		if err == nil {
 			_ = os.Remove(d.pathFor(url))
 		}
 		d.misses.Add(1)
 		return nil, false
 	}
-	if isZstdBlob(data) {
-		raw, derr := zstdDec.DecodeAll(data, nil)
-		if derr != nil {
-			// Corrupt frame: treat as a miss so the pipeline refetches a
-			// clean copy over this path.
-			_ = os.Remove(d.pathFor(url))
-			d.misses.Add(1)
-			return nil, false
-		}
-		data = raw
-	}
 	d.hits.Add(1)
 	return data, true
 }
 
-// Put queues data for asynchronous storage under url's key. Put takes
-// ownership of data: the caller must not mutate the slice afterwards (the
-// asset pipeline shares the same immutable payload with T2). When the writer
-// queue is full or the cache is closed, the write is dropped and counted —
-// callers are never blocked and results are never lost (only this
-// speculative disk copy is).
+// Put queues data and takes ownership, as T2 shares the payload; a full queue or closed cache drops this copy.
 func (d *DiskCache) Put(url string, data []byte) {
 	if len(data) == 0 || d.stopped.Load() {
 		d.dropped.Add(1)
@@ -260,13 +275,7 @@ func (d *DiskCache) Put(url string, data []byte) {
 	}
 }
 
-// Delete removes the blob for url (e.g. the decoder found the payload
-// corrupt and the manager wants a clean refetch). The removal is routed
-// through the single async writer goroutine — like Put, it never performs
-// disk I/O on the caller's goroutine, so a render/decode-path caller stays
-// off the disk (spec §17.2). A full queue drops the delete (best-effort,
-// like a dropped write); the negative cache still paces the refetch, so the
-// worst case is one extra 30s window before the corrupt blob is retried.
+// Delete queues removal on the writer goroutine (hard rule 2); a full queue drops it, and the 404 cache paces retries.
 func (d *DiskCache) Delete(url string) {
 	if d.stopped.Load() {
 		d.dropped.Add(1)
@@ -279,24 +288,23 @@ func (d *DiskCache) Delete(url string) {
 	}
 }
 
-// Clear removes every cached blob ("Clear Disk Cache" button). The cache
-// remains usable afterwards.
+// Clear removes every cached blob; the cache remains usable.
 func (d *DiskCache) Clear() error {
-	entries, err := os.ReadDir(d.root)
+	root := d.Root()
+	entries, err := os.ReadDir(root)
 	if err != nil {
-		return fmt.Errorf("cache: listing %s: %w", d.root, err)
+		return fmt.Errorf("cache: listing %s: %w", root, err)
 	}
 	var firstErr error
 	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(d.root, entry.Name())); err != nil && firstErr == nil {
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
 	return firstErr
 }
 
-// Close stops accepting writes, drains the queue, and waits for the writer
-// to exit. Safe to call multiple times.
+// Close stops accepting writes, drains the queue and waits for the writer; safe to call repeatedly.
 func (d *DiskCache) Close() {
 	d.closeOnce.Do(func() {
 		d.stopped.Store(true)
@@ -305,10 +313,7 @@ func (d *DiskCache) Close() {
 	})
 }
 
-// writerLoop is the single goroutine allowed to write blobs. It also owns the
-// byte-budget prune (#34): a sweep at open, then every diskPruneEvery stores
-// and on every SetBudget wake — all on THIS goroutine, so no new sync I/O path
-// is introduced (spec §17.2).
+// writerLoop is the only blob writer and owns the prune: at open, every diskPruneEvery stores, on each SetBudget.
 func (d *DiskCache) writerLoop() {
 	defer close(d.done)
 	d.prune() // enforce the initial budget on whatever a previous session left
@@ -316,9 +321,6 @@ func (d *DiskCache) writerLoop() {
 	for {
 		select {
 		case <-d.pruneReq:
-			// A live budget change (SetBudget): enforce it now instead of
-			// waiting for diskPruneEvery more stores — or forever, if this
-			// session only reads. The store counter is unaffected.
 			d.prune()
 		case w := <-d.queue:
 			if d.write(w) { // write() returns true only for a completed store (never a delete)
@@ -329,7 +331,7 @@ func (d *DiskCache) writerLoop() {
 				}
 			}
 		case <-d.stop:
-			// Drain whatever was queued before Close, then exit.
+			// Drain whatever was queued before Close.
 			for {
 				select {
 				case w := <-d.queue:
@@ -342,25 +344,14 @@ func (d *DiskCache) writerLoop() {
 	}
 }
 
-// write lands one blob via temp file + rename so readers never observe a
-// partial blob under the final name — or, for a delete op, removes the blob.
-// It returns true when a blob was actually stored (a completed non-delete
-// write), which writerLoop counts toward the next byte-budget sweep.
+// write stores via temp file and rename so readers never see a partial blob; true when a blob was stored.
 func (d *DiskCache) write(w diskWrite) bool {
 	if w.del {
-		// A missing file is a no-op success (nothing to purge); other errors
-		// (permissions, locked file) surface through the error hook.
+		// A missing file is success; other errors reach the error hook.
 		if err := os.Remove(w.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			d.reportError(fmt.Errorf("cache: deleting blob %s: %w", w.path, err))
 		}
 		return false
-	}
-	if d.compress.Load() {
-		// Compress on the writer goroutine (never the caller's); keep the
-		// zstd frame only when it actually shrank the blob.
-		if cz := zstdEnc.EncodeAll(w.data, nil); len(cz) < len(w.data) {
-			w.data = cz
-		}
 	}
 	dir := filepath.Dir(w.path)
 	if err := os.MkdirAll(dir, diskDirPerm); err != nil {
@@ -393,22 +384,15 @@ func (d *DiskCache) write(w diskWrite) bool {
 	return true
 }
 
-// diskFileAge is one blob's path, size, and mtime — the prune sweep's working
-// record.
+// diskFileAge is one blob's path, size and mtime, for the prune sweep.
 type diskFileAge struct {
 	path string
 	size int64
 	mod  int64 // ModTime UnixNano; oldest sweeps out first
 }
 
-// prune enforces the byte budget (#34): when stored blobs sum past it, the
-// OLDEST (mtime) are deleted until back under. budget <= 0 = UNLIMITED (the
-// default), so the common case returns immediately with no walk. Runs ONLY on
-// the writer goroutine (at open + every diskPruneEvery stores) so it never
-// races another deleter and never touches disk on a hot-path caller. Errors
-// are ignored per-file (a locked/racing file just survives to the next sweep);
-// in-flight temp files are skipped so a partial write is never counted or
-// deleted. Mirrors ThumbCache.prune, adapted to T3's sharded <xx>/<hash> tree.
+// prune deletes the oldest blobs until under budget; writer goroutine only, so it never races another deleter.
+// Temp files are skipped and per-file errors ignored.
 func (d *DiskCache) prune() {
 	budget := d.budget.Load()
 	if budget <= 0 {
@@ -416,7 +400,7 @@ func (d *DiskCache) prune() {
 	}
 	var total int64
 	files := make([]diskFileAge, 0, 256)
-	_ = filepath.WalkDir(d.root, func(path string, entry fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(d.Root(), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil // racing a concurrent Clear is fine
@@ -471,10 +455,10 @@ func (d *DiskCache) Stats() DiskStats {
 	}
 }
 
-// SizeOnDisk walks the cache and reports total blob bytes (Settings UI).
+// SizeOnDisk walks the cache and reports total blob bytes.
 func (d *DiskCache) SizeOnDisk() (int64, error) {
 	var total int64
-	err := filepath.WalkDir(d.root, func(_ string, entry fs.DirEntry, err error) error {
+	err := filepath.WalkDir(d.Root(), func(_ string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil // racing a concurrent Clear is fine

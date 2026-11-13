@@ -3,7 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestICBarUnderStage pins issue #8: the IC input bar's default sits DIRECTLY under the
@@ -229,8 +230,18 @@ func TestICBarPreFXSurvive720p(t *testing.T) {
 		haveLast bool
 	}
 	for _, counterOn := range []bool{true, false} {
-		a.d.Prefs.SetMessageCounter(counterOn)
-		if got := a.d.Prefs.MessageCounterOn(); got != counterOn {
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				MessageCounter =
+
+				counterOn
+
+		})
+
+		if got := a.d.Prefs.Load().MessageCounter; got != counterOn {
 			t.Fatalf("SetMessageCounter(%v) didn't stick (got %v)", counterOn, got)
 		}
 		// Survival is a pure function of geometry (no counter term), so it stands in for the

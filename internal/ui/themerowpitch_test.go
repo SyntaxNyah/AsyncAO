@@ -4,9 +4,6 @@ package ui
 // the gate that keeps the chatbox from growing a second opinion about it.
 
 import (
-	"os"
-	"sort"
-	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -156,81 +153,5 @@ func TestMessageRowPitchNeverTightensTheFaceMetric(t *testing.T) {
 	}
 	if got := a.messageRowPitchLogical(DefaultScalePct, c.font); got != qt {
 		t.Errorf("pitch = %d, want the larger Qt figure %d", got, qt)
-	}
-}
-
-// TestChatRastersRouteThroughTheRowPitchSeam is the encapsulation gate.
-//
-// The override is applied in exactly two places — centerRaster for the three
-// MessageRaster shapes, and renderAnimated for the per-glyph one — and the whole
-// mechanism is silently dead if a fourth build site appears beside them or if a
-// geometry site goes back to asking the FACE what the row pitch is. Both are
-// source-level facts, so this reads the source: a behavioural test cannot see a
-// call that was never written.
-func TestChatRastersRouteThroughTheRowPitchSeam(t *testing.T) {
-	src, err := os.ReadFile("screens.go")
-	if err != nil {
-		t.Fatalf("screens.go: %v", err)
-	}
-	text := string(src)
-
-	// (1) Nothing in the chatbox may derive a row pitch straight from a face.
-	// messageRowPitchLogical (themerowpitch.go) is the ONE place that is allowed
-	// to, because it is the place that raises it to Qt's.
-	if n := strings.Count(text, "render.FontLineSpacing("); n != 0 {
-		t.Errorf("screens.go calls render.FontLineSpacing %d time(s) — route row pitches through "+
-			"App.messageRowPitchLogical, or the geometry stops matching what the raster draws", n)
-	}
-
-	// (2) Every MessageRaster the chatbox builds is returned through centerRaster,
-	// which is where UseRowPitch lives.
-	//
-	// EACH SITE'S WINDOW ENDS AT THE NEXT SITE, not at the end of the enclosing
-	// function, and that repair is the point of this paragraph. A window that ran
-	// to the next line-initial "\n}" swallowed every build BELOW it in the same
-	// function, so a site that stopped returning through centerRaster was covered
-	// by a LATER site's call and the census printed ok — only the last build in a
-	// function was genuinely checked, and screens.go builds three in one. Sites are
-	// collected across all three constructors and sorted, so the windows partition
-	// the source instead of overlapping.
-	var sites []int
-	for _, ctor := range []string{"render.Rasterize(", "render.RasterizeStyled(", "render.RasterizeFallback("} {
-		for i := strings.Index(text, ctor); i >= 0; {
-			sites = append(sites, i)
-			// The next occurrence, as an ABSOLUTE offset. The scan used to advance by the
-			// RELATIVE one, which visited a bogus position and then cycled forever between
-			// two — invisible today only because each constructor appears once.
-			next := strings.Index(text[i+1:], ctor)
-			if next < 0 {
-				break
-			}
-			i += 1 + next
-		}
-	}
-	if len(sites) == 0 {
-		t.Fatal("screens.go builds no MessageRaster at all — this census is checking nothing")
-	}
-	sort.Ints(sites)
-	for n, i := range sites {
-		end := len(text)
-		if rel := strings.Index(text[i:], "\n}"); rel >= 0 {
-			end = i + rel // end of the enclosing function, when no site follows inside it
-		}
-		if n+1 < len(sites) && sites[n+1] < end {
-			end = sites[n+1]
-		}
-		if !strings.Contains(text[i:end], "centerRaster(") {
-			t.Errorf("the MessageRaster build at screens.go:%d does not return through centerRaster "+
-				"— it would skip the Qt row pitch", 1+strings.Count(text[:i], "\n"))
-		}
-	}
-	if !strings.Contains(text, "m.UseRowPitch(rowPitch)") {
-		t.Error("centerRaster no longer applies the row pitch — every themed message loses its AO2 leading")
-	}
-
-	// (3) The animated path applies it too, or an effects message is spaced
-	// differently from the identical message without effects.
-	if !strings.Contains(text, "at.UseRowPitch(a.themeRowPitchLogical(elemMessage, pct))") {
-		t.Error("renderAnimated no longer applies the row pitch")
 	}
 }

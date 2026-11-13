@@ -1,0 +1,91 @@
+# Packages and smoke-tests the client on every platform through scripts/package.sh,
+# so a PR artifact is built the same way as a release.
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version stamped into the binary.
+        type: string
+        required: false
+        default: dev
+      sign:
+        description: Sign with the release certificates, when those secrets exist.
+        type: boolean
+        required: false
+        default: false
+      smoke-test:
+        description: Launch each packaged asset; branch test builds skip this to save time.
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.target.name }}
+    runs-on: ${{ matrix.target.os }}
+    environment: ${{ inputs.sign && 'release' || '' }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          # bundle is the one file a tester downloads from a test build.
+          - { name: Windows, os: windows-2025, shell: "msys2 {0}", packages: "", bundle: asyncao-windows-x86_64-bundle.zip }
+          - { name: Linux, os: ubuntu-24.04, shell: bash, packages: patchelf desktop-file-utils, bundle: AsyncAO-linux-x86_64.AppImage }
+          - { name: macOS, os: macos-15, shell: bash, packages: dylibbundler, bundle: asyncao-macos-bundle-arm64.tar.gz }
+    defaults:
+      run:
+        shell: ${{ matrix.target.shell }}
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-build
+        with:
+          extra-packages: ${{ matrix.target.packages }}
+          go-cache-key-file: scripts/package.sh
+      - name: Build
+        run: bash scripts/package.sh build "$VERSION"
+      - name: Sign (Windows)
+        if: inputs.sign && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WIN_CERT_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+          WIN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+        run: scripts/sign-windows.ps1
+      - name: Sign (macOS)
+        if: inputs.sign && runner.os == 'macOS'
+        env:
+          APPLE_P12_BASE64: ${{ secrets.APPLE_CODESIGN_P12_BASE64 }}
+          APPLE_P12_PASSWORD: ${{ secrets.APPLE_CODESIGN_PASSWORD }}
+          APPLE_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
+        run: bash scripts/sign-macos.sh
+      - name: Pack
+        run: bash scripts/package.sh pack "$VERSION"
+      - name: Smoke test
+        if: inputs.smoke-test
+        run: bash scripts/package.sh smoke "$VERSION"
+      # A release needs every asset, so the publish job downloads them as one zipped artifact per platform.
+      - if: inputs.sign
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.target.name }}
+          path: dist/assets/*
+          if-no-files-found: error
+          retention-days: 14
+      # A test build uploads only the bundle, unzipped, so a tester does not unpack a zip to find another zip.
+      - if: ${{ !inputs.sign }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: dist/assets/${{ matrix.target.bundle }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14

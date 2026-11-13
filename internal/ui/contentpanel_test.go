@@ -10,6 +10,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -21,7 +22,7 @@ func resetContentPanel(t *testing.T) {
 	t.Helper()
 	contentPanel = contentPanelState{}
 	demoBrowser.open = false
-	demoBrowser.purpose = purposeVideo
+	demoBrowser.purpose = purposeCheck
 	t.Cleanup(func() { contentPanel = contentPanelState{}; demoBrowser.open = false })
 }
 
@@ -188,29 +189,6 @@ func TestContentPanelCloseViaEsc(t *testing.T) {
 	}
 }
 
-// TestBrowserPurposeRoutesVideoUnchanged pins the promise that the video flow is
-// byte-identical after adding the pick-purpose: purposeVideo (the zero value, the
-// Import-.demo button's purpose) still routes a pick to the video import tail and
-// never touches the content engine. It drives pickBrowsedFile with a bogus
-// path (the video tail is import-then-export; with no ffmpeg it still runs the
-// import and posts a banner) and asserts NO content job was started.
-func TestBrowserPurposeRoutesVideoUnchanged(t *testing.T) {
-	resetContentPanel(t)
-	a := headlessProbeApp(t, nil, false)
-	demoBrowser.open = true
-	demoBrowser.purpose = purposeVideo // the default; explicit for the pin
-	a.pickBrowsedFile(filepath.Join(t.TempDir(), "nope.demo"))
-	if demoBrowser.open {
-		t.Error("a pick must close the browser")
-	}
-	if contentPanel.open {
-		t.Error("the VIDEO purpose must NOT open the content panel")
-	}
-	if a.content != nil || a.contentBusy {
-		t.Error("the VIDEO purpose must NOT start a content job")
-	}
-}
-
 // TestBrowserPurposeCheckOpensPanel pins that the check purpose loads the picked
 // recording, starts the probe, and opens the panel. It writes a real .aorec so
 // loadRecordingAny succeeds; origin-missing (no session) is fine — the panel
@@ -290,6 +268,7 @@ func mountedProbeApp(t *testing.T, mount string) (*App, string) {
 	local := assets.NewLocalFetcher([]string{mount})
 	a := headlessProbeApp(t, local, true)
 	a.d.Prefs.SetLocalAssets(true, []string{mount})
+	a.d.Prefs.SetLayeredAssets(true)
 	return a, local.BaseURL()
 }
 
@@ -300,7 +279,7 @@ func mountedProbeApp(t *testing.T, mount string) (*App, string) {
 // for the inline base-setup flow ("Local base" works while streaming).
 func streamingProbeApp(t *testing.T) *App {
 	t.Helper()
-	return headlessProbeApp(t, network.NewClient(), false)
+	return headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 }
 
 // writeDemoFile writes a minimal .demo (SC + one MS) under a temp dir and returns

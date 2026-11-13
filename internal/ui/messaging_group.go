@@ -8,13 +8,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
-// AsyncAO group chats: client-side groups carried over /pm fan-out — there is NO
-// server-side group. The owner mints a random group id and invites AsyncAO players;
-// each message /pm's every member with a group control frame, so it stays private to
-// members and never touches the room. Roles are spoof-proof: the server attributes
-// every PM to its real sender (courtroom.ParsePMSender), so a "kick" is honoured only
-// when it actually came from the group's owner. Membership is reconstructed from the
-// control frames (invite / join / leave / kick) as they arrive.
+// AsyncAO group chats are client-side, carried over /pm fan-out; there is no server-side group. The owner mints a
+// random group id and invites AsyncAO players, and each message /pm's every member with a group control frame.
+// Roles cannot be spoofed because the server attributes every PM to its real sender (courtroom.ParsePMSender), so a
+// "kick" counts only from the owner. Membership is rebuilt from the control frames (invite / join / leave / kick).
 
 const (
 	maxGroups       = 16  // bound the group store
@@ -85,8 +82,8 @@ func (a *App) myUID() int {
 	return a.sess.PlayerID
 }
 
-// applyGroupInvite records a group we were invited to (owner = the inviter), adding
-// the owner and us as the initial members. Idempotent; bounded.
+// applyGroupInvite records a group we were invited to (owner = the inviter) with the owner and us as members;
+// idempotent and bounded.
 func (a *App) applyGroupInvite(id uint32, name string, ownerUID int, ownerName string) {
 	g := a.ensureGroup(id)
 	if g == nil {
@@ -109,10 +106,8 @@ func (a *App) applyGroupJoin(id uint32, uid int, name string) {
 	}
 }
 
-// applyGroupText files a received group message (the sender is implicitly a member).
-// Ignored when we don't know the group (no invite seen). The sender's character
-// (for the bubble icon) resolves from the live roster at receipt; a group that
-// isn't on screen counts the line as unread (the chat-list badge).
+// applyGroupText files a received group message (the sender is implicitly a member); ignored for an unknown group.
+// A group not on screen counts the line as unread.
 func (a *App) applyGroupText(id uint32, fromUID int, fromName, text string) {
 	g := a.msgGroups[id]
 	if g == nil {
@@ -125,9 +120,8 @@ func (a *App) applyGroupText(id uint32, fromUID int, fromName, text string) {
 	}
 }
 
-// applyGroupKick removes a member — but ONLY when the kick came from the group's
-// owner (byUID == ownerUID); the server-attributed sender makes this unforgeable. If
-// we are the target, the group is dropped locally.
+// applyGroupKick removes a member, but only when the kick came from the group's owner (byUID == ownerUID); the
+// server-attributed sender makes this unforgeable. If we are the target, the group is dropped locally.
 func (a *App) applyGroupKick(id uint32, byUID, targetUID int) {
 	g := a.msgGroups[id]
 	if g == nil || byUID != g.ownerUID {
@@ -183,12 +177,9 @@ func randGroupID() uint32 {
 	}
 }
 
-// createGroup makes a new group I own (members = just me) and selects it; invite
-// others from the group view.
+// createGroup makes a new group I own (members = just me) and selects it; invite others from the group view.
 func (a *App) createGroup(name string) {
-	// Gate on CONNECTION, not the UID: some servers (Nyathena seen in the wild)
-	// assign player-id 0, so myUID()==0 is a valid connected state — the old guard
-	// wrongly blocked group creation with "needs you fully connected".
+	// Check connection, not the UID: some servers assign player-id 0, so myUID()==0 is a valid connected state.
 	if a.sess == nil || a.room == nil {
 		a.warnLine = clampLine("Group chat needs you connected to a server first.")
 		a.warnAt = a.now()
@@ -206,8 +197,7 @@ func (a *App) createGroup(name string) {
 	a.msgSelGroup, a.msgSel = g.id, ""
 }
 
-// sendGroupText fans a message out to every other member over /pm (one command) and
-// mirrors it into the local thread.
+// sendGroupText fans a message out to every other member over /pm (one command) and mirrors it into the local thread.
 func (a *App) sendGroupText(g *msgGroup, text string) {
 	text = strings.TrimSpace(text)
 	if text == "" || g == nil || a.sess == nil {
@@ -220,8 +210,8 @@ func (a *App) sendGroupText(g *msgGroup, text string) {
 	g.appendLine(a.oocNameOrDefault(), text, true, a.activeCharName())
 }
 
-// inviteToGroup invites one player (uid + name) to a group I'm in; the visible body
-// is human-readable so a non-AsyncAO recipient at least sees the invite.
+// inviteToGroup invites one player (uid + name) to a group I'm in; the visible body is readable so a non-AsyncAO
+// recipient sees it.
 func (a *App) inviteToGroup(g *msgGroup, uid int, name string) {
 	if g == nil || a.sess == nil || uid == 0 || uid == a.myUID() {
 		return

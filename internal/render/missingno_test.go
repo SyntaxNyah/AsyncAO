@@ -5,10 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // greenPage builds a uniform-green single-frame decoded fixture (distinct from the
@@ -27,21 +26,12 @@ func greenPage() *assets.Decoded {
 
 // TestMissingnoOnlyOnConfirmedMissing pins the disjoint-state contract that keeps
 // the placeholder from ever flashing over a still-loading sprite:
-//
-//	(a) an UNCACHED base with NO MarkMissing (a still-loading "ghost") draws
-//	    hold-previous/blank EXACTLY as today — the pref-only regression trap: a
-//	    pref-only missingno would fire here and regress hold-previous;
-//	(b) after store.MarkMissing(base) the SAME render draws the shared MissingKey
-//	    page (readback its green colour) instead of the previous character;
-//	(c) after uploadTier(base) lands the real sprite the flag clears and the real
-//	    sprite draws again.
-//
 // It uses a SYNTHETIC MissingKey page (green), not the embedded art, so it builds
 // and runs without the //go:embed asset present (that lives in internal/ui).
 func TestMissingnoOnlyOnConfirmedMissing(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +137,7 @@ func TestMissingnoOnlyOnConfirmedMissing(t *testing.T) {
 func TestMissingnoDisabledHoldsPrevious(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +197,7 @@ func TestMissingnoDisabledHoldsPrevious(t *testing.T) {
 func TestMissingnoNeverFlashesForPreanim(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

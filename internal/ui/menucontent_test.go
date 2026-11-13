@@ -1,13 +1,11 @@
 package ui
 
 import (
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -74,51 +72,22 @@ func TestMenuServersPhoneBookSharesTheLobbySetter(t *testing.T) {
 	}
 }
 
-// TestMenuServersRefreshAndPingGateOnTheirOwnState pins the two rows whose shipped
-// helpers refuse to re-enter: RefreshServers while a fetch is in flight, startPinging
-// while a sweep is. Both would be dead clicks, so both dim instead — and for the ping
-// row the dimming is also the only progress feedback a static menu row can give (the
-// button it replaced said "Pinging…" in its label).
-func TestMenuServersRefreshAndPingGateOnTheirOwnState(t *testing.T) {
+// TestMenuServersRefreshGatesOnItsOwnState: RefreshServers coalesces a click during a fetch, so the row dims instead.
+func TestMenuServersRefreshGatesOnItsOwnState(t *testing.T) {
 	a := stageMenuBarApp(t)
 	refresh := menuRow(t, menuServersTitle, "Refresh server list")
-	ping := menuRow(t, menuServersTitle, "Sort by connect time")
-
-	if !a.menuItemEnabled(refresh) || !a.menuItemEnabled(ping) {
-		t.Fatal("an idle lobby must offer both rows")
+	if !a.menuItemEnabled(refresh) {
+		t.Fatal("an idle lobby must offer the row")
 	}
 	a.lobbyFetching = true
 	if a.menuItemEnabled(refresh) {
-		t.Error("Refresh must dim while a fetch is in flight — RefreshServers coalesces it away")
-	}
-	a.lobbyFetching = false
-	a.pinging = true
-	if a.menuItemEnabled(ping) {
-		t.Error("the connect-time row must dim while a sweep runs — startPinging refuses a second one")
-	}
-	a.pinging = false
-
-	// The check tracks pingMode, and turning it OFF re-sorts immediately (pingMode
-	// alone only picks the comparator for the NEXT sort).
-	a.pingMode = true
-	a.selServer = 3
-	if !ping.checked(a, 0) {
-		t.Error("the row must read as checked while the lobby is in connect-time order")
-	}
-	a.fireMenuItem(ping)
-	if a.pingMode {
-		t.Fatal("firing the row again must leave connect-time order")
-	}
-	if a.selServer != -1 {
-		t.Errorf("leaving connect-time order must re-sort (applyServerSort), sel=%d", a.selServer)
+		t.Error("Refresh must dim while a fetch is in flight")
 	}
 }
 
 // TestLobbyListActionsAreOnTheLobby pins where the SERVER-LIST actions live.
 //
-// Refresh and the connect-time sort came back out of the menu by request: they act
-// on the server list, so a menu carrying them is dead weight the moment you are in
-// a server, and a refresh button belongs beside the thing it refreshes. The
+// Refresh acts on the server list, so it belongs beside the thing it refreshes. The
 // cluster's count MUST match the number of cursor steps drawLobby takes, because
 // that constant is what turns "does the row fit?" into arithmetic instead of a
 // measured pass.
@@ -126,21 +95,20 @@ func TestMenuServersRefreshAndPingGateOnTheirOwnState(t *testing.T) {
 // Both surfaces survive on purpose and call the same setters, so they cannot
 // drift — this test is what stops one of them quietly growing a second copy.
 func TestLobbyListActionsAreOnTheLobby(t *testing.T) {
-	// The HEADER cluster keeps exactly one button. Refresh and Sort deliberately do
+	// The HEADER cluster keeps exactly one button. Refresh deliberately does
 	// NOT join it: that row is shared with the Privacy/Glossary/What's New trio, and
-	// three buttons there squeezed the trio to nothing at MinWindowW — which would
-	// strand What's New, whose only other home is that row. They live on the list's
+	// more buttons there squeezed the trio to nothing at MinWindowW — which would
+	// strand What's New, whose only other home is that row. It lives on the list's
 	// own strip instead. TestLobbyHeaderRowSheds... is what caught that.
 	if lobbyUtilBtnCount != 1 {
-		t.Errorf("the header cluster lays out %d buttons, want 1 — Refresh/Sort belong on the list strip", lobbyUtilBtnCount)
+		t.Errorf("the header cluster lays out %d buttons, want 1 — Refresh belongs on the list strip", lobbyUtilBtnCount)
 	}
 	if !strings.Contains(readSourceFile(t, "screens.go"), "lobbyListActionsDropY") {
-		t.Error("the server list's action strip is gone — Refresh/Sort would be menu-only again")
+		t.Error("the server list's action strip is gone — Refresh would be menu-only again")
 	}
 	// Still reachable from the menu, for the keyboard and for muscle memory.
 	for _, tc := range []struct{ menuTitle, label string }{
 		{menuServersTitle, "Refresh server list"},
-		{menuServersTitle, "Sort by connect time"},
 		{menuServersTitle, "Phone Book"},
 		{menuExtrasTitle, "Settings"},
 		{menuHelpTitle, "About AsyncAO"},
@@ -153,7 +121,7 @@ func TestLobbyListActionsAreOnTheLobby(t *testing.T) {
 	for _, row := range menuServersItems {
 		switch row.label {
 		case "Disconnect", "Quit AsyncAO", "Direct connect…",
-			"Refresh server list", "Sort by connect time", "Phone Book", "":
+			"Refresh server list", "Phone Book", "":
 		default:
 			t.Errorf("unexpected Servers row %q — decide whether it is lobby-only and move it", row.label)
 		}
@@ -175,7 +143,7 @@ func TestMenuKeepAspectRatioReusesTheFitSetter(t *testing.T) {
 	}
 	a.themeLay.valid = true
 	a.fireMenuItem(keep)
-	if got := a.d.Prefs.ThemeFitMode(); got != config.ThemeFitStretch {
+	if got := a.d.Prefs.Load().ThemeFit; got != config.ThemeFitStretch {
 		t.Errorf("unticking must select Stretch, got mode %d", got)
 	}
 	if a.themeLay.valid {
@@ -187,7 +155,7 @@ func TestMenuKeepAspectRatioReusesTheFitSetter(t *testing.T) {
 
 	a.themeLay.valid = true
 	a.fireMenuItem(keep)
-	if got := a.d.Prefs.ThemeFitMode(); got != config.DefaultThemeFit {
+	if got := a.d.Prefs.Load().ThemeFit; got != config.DefaultThemeFit {
 		t.Errorf("re-ticking must return to the shipped default %d, got %d", config.DefaultThemeFit, got)
 	}
 	if a.themeLay.valid {
@@ -209,12 +177,12 @@ func TestMenuKeepAspectRatioReusesTheFitSetter(t *testing.T) {
 func TestMenuViewPlainBackdropsSharesTheSetting(t *testing.T) {
 	a := stageMenuBarApp(t)
 	row := menuRow(t, "View", "Plain backdrops")
-	before := a.d.Prefs.PlainLobbyOn()
+	before := a.d.Prefs.Load().PlainLobby
 	if row.checked(a, 0) != before {
 		t.Fatal("the row must read the live preference")
 	}
 	a.fireMenuItem(row)
-	if a.d.Prefs.PlainLobbyOn() == before {
+	if a.d.Prefs.Load().PlainLobby == before {
 		t.Error("the row must flip the shipped PlainLobby preference")
 	}
 }
@@ -236,7 +204,7 @@ func TestMenuWindowThemeDesignSizeFollowsTheSharedOffer(t *testing.T) {
 		"courtroom": {X: 0, Y: 0, W: 714, H: 579},
 		"viewport":  {X: 0, Y: 0, W: 256, H: 192},
 	}
-	a.d.Prefs.SetThemeLayout(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	if !a.menuItemEnabled(row) {
 		t.Error("a theme that declares a canvas (with the themed layout on) must enable the row")
 	}
@@ -246,7 +214,7 @@ func TestMenuWindowThemeDesignSizeFollowsTheSharedOffer(t *testing.T) {
 	}
 	// The themed courtroom layout being OFF means the canvas is not what is drawn,
 	// so the offer — and the row — must withdraw together.
-	a.d.Prefs.SetThemeLayout(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if a.menuItemEnabled(row) {
 		t.Error("with the themed layout off the canvas is not on screen: the row must dim")
 	}
@@ -386,38 +354,6 @@ func TestMenuHelpOpensEachDocument(t *testing.T) {
 	}
 }
 
-// TestAsyncAOChromeLivesOutsideTheCanvas pins issue #21 rule (c): AsyncAO's own
-// controls do not draw inside a theme's design canvas.
-//
-// A row of ★ Extras / Hotkeys / Restyle / Mod / CM chips used to be pinned at the
-// raw window's bottom-left whenever a theme was active. Under aceattorney2x that
-// is inside music_list = 0,323,216,277, so it painted AND clicked through the
-// theme's own jukebox. No design key existed for a theme author to move it, so the
-// commands moved out of the canvas entirely.
-func TestAsyncAOChromeLivesOutsideTheCanvas(t *testing.T) {
-	// Every command the deleted chip row carried must still be reachable.
-	for _, row := range []struct{ menuTitle, label string }{
-		{menuExtrasTitle, "AsyncAO Extras box"},
-		{menuExtrasTitle, "Restyle character…"},
-		{menuExtrasTitle, "Mod dashboard"},
-		{menuExtrasTitle, "CM area controls"},
-		{menuHelpTitle, "Hotkeys"}, // the chip row's sibling; Help is its home
-	} {
-		menuRow(t, row.menuTitle, row.label) // fatals when the row is missing
-	}
-	// And the row itself must stay gone, along with the memo that existed only to
-	// keep its tooltip alloc-free.
-	src, err := os.ReadFile("theme_layout.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, gone := range []string{"drawThemedExtrasButton", "extrasTipText", "extrasTipBody"} {
-		if strings.Contains(string(src), gone+"(") {
-			t.Errorf("theme_layout.go still calls %q — AsyncAO chrome is back inside the design canvas", gone)
-		}
-	}
-}
-
 // TestFxAndEmojiAreReachableUnderATheme pins the regression that the themed IC-bar
 // rewrite introduced and an adversarial review caught.
 //
@@ -510,28 +446,10 @@ func TestWhatsNewLeftTheHelpMenu(t *testing.T) {
 func TestMarkChangelogSeenStampsTheBuild(t *testing.T) {
 	a := stageMenuBarApp(t)
 	const stale = "0.0.0-not-this-build"
-	a.d.Prefs.SetChangelogSeen(stale)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ChangelogSeen = stale })
 
 	a.markChangelogSeen()
-	if got := a.d.Prefs.ChangelogSeenVersion(); got == stale {
+	if got := a.d.Prefs.Load().ChangelogSeen; got == stale {
 		t.Error("markChangelogSeen must stamp the current build as seen")
-	}
-}
-
-// TestMenuBarDrawsNoUnreadBadge pins the removal. A green dot rode the Help title
-// and hung off its top-right corner, so it overlapped the title's last glyph and
-// read as a rendering defect in the strip rather than as a notification. It also
-// nagged about something nobody asked to be told. This guards the whole mechanism
-// staying gone rather than just the draw call: a reintroduced badge would need one
-// of these symbols back.
-func TestMenuBarDrawsNoUnreadBadge(t *testing.T) {
-	src, err := os.ReadFile("menubar.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, gone := range []string{"drawUnreadDot", "menuBarBadgeAnchor", "menuBarBadgeDropY", "menuBarBadgeInsetX", "changelogUnread"} {
-		if strings.Contains(string(src), gone) {
-			t.Errorf("menubar.go still references %q — the unread badge is back on the strip", gone)
-		}
 	}
 }

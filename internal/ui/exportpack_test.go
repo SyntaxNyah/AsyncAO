@@ -2,6 +2,7 @@ package ui
 
 import (
 	"testing"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -32,23 +33,21 @@ func TestExportPackConfirmFiresOnlyWhenThePackContributes(t *testing.T) {
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
 
 	// No mounts at all: nothing to warn about.
-	if n := a.packContribution(packScene(origin, "witch")); n != 0 {
+	if n := packContribution(a.d.Manager, packScene(origin, "witch")); n != 0 {
 		t.Errorf("packContribution = %d with no mounts, want 0", n)
 	}
 
 	dir := t.TempDir()
 	writeUIPack(t, dir, "characters/witch/(a)normal.png")
-	a.d.Prefs.SetLocalAssets(false, []string{dir})
-	a.setAssetSourceMode(assetSrcLayered, []string{dir})
 	a.urls = courtroom.NewURLBuilder(origin)
-	waitForIndex(t, a)
+	a.setSources(true, true, []string{dir})
 
 	// A scene using the packed character must be flagged...
-	if n := a.packContribution(packScene(origin, "witch")); n == 0 {
+	if n := packContribution(a.d.Manager, packScene(origin, "witch")); n == 0 {
 		t.Error("packContribution = 0 for a scene whose sprite only exists in the pack")
 	}
 	// ...and one that doesn't touch it must not be.
-	if n := a.packContribution(packScene(origin, "someone-else")); n != 0 {
+	if n := packContribution(a.d.Manager, packScene(origin, "someone-else")); n != 0 {
 		t.Errorf("packContribution = %d for a scene the pack does not cover, want 0", n)
 	}
 }
@@ -62,13 +61,12 @@ func TestExportPackConfirmBlocksUntilAnswered(t *testing.T) {
 	writeUIPack(t, dir, "characters/witch/(a)normal.png")
 
 	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), false)
-	a.d.Prefs.SetLocalAssets(false, []string{dir})
-	a.setAssetSourceMode(assetSrcLayered, []string{dir})
 	a.urls = courtroom.NewURLBuilder(origin)
-	waitForIndex(t, a)
+	a.setSources(true, true, []string{dir})
 
 	scene := packScene(origin, "witch")
 	a.exportSceneArchive(scene, "scene")
+	awaitExportAnswer(t, a)
 
 	if a.makerExportPack == 0 {
 		t.Fatal("the export did not ask before bundling the user's own art")
@@ -84,7 +82,22 @@ func TestExportPackConfirmBlocksUntilAnswered(t *testing.T) {
 	a.makerExportPack, a.makerExportScene = 0, nil
 	a.makerExportPackOK = false
 	a.exportSceneArchive(scene, "scene")
+	awaitExportAnswer(t, a)
 	if a.makerExportPack == 0 {
 		t.Error("a second export after cancelling did not ask again — consent must not persist")
+	}
+}
+
+// awaitExportAnswer polls the export goroutine as the frame loop does until it answers.
+func awaitExportAnswer(t *testing.T, a *App) {
+	t.Helper()
+	const limit = 5 * time.Second
+	deadline := time.Now().Add(limit)
+	for a.makerExporting {
+		if time.Now().After(deadline) {
+			t.Fatal("the export goroutine never answered")
+		}
+		a.pollMakerExport()
+		time.Sleep(time.Millisecond)
 	}
 }

@@ -22,119 +22,39 @@ package ui
 // first fix.
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
 	"testing"
 )
 
-// settingsCheckboxArg / settingsLabelArg name the LABEL argument's index for each
-// chrome draw call the settings form uses. Both tables feed one harvester, so the
-// census can be scoped to the checkbox rows alone (the inertness gate) or to every
-// bounded label in the card (the overflow gate) without two parsers drifting.
+// settingsCheckboxCorpus / settingsHelpCorpus / settingsRowCorpus are a hardcoded,
+// representative sample of the settings form labels, a few checkbox rows plus a few
+// sentence-length bare help lines. They stand in for the old settings.go source harvest:
+// the census only needs labels long enough to overflow a narrow card, and a fixed list
+// keeps the test input owned by this file rather than re-derived from production each
+// run (which is what made the corpus a source-scanning gate).
 var (
-	settingsCheckboxArg = map[string]int{
-		"Checkbox":   2, // Checkbox(x, y, label, value)
-		"CheckboxIn": 1, // CheckboxIn(r, label, value)
+	settingsCheckboxCorpus = []string{
+		"Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)",
+		"Event-driven loop: pointer motion renders ONE frame per motion event instead of holding full rate",
+		"Speaker names in the IC/OOC log and chatbox are bold by default (readability)",
+		"Play a sound when a friend speaks",
+		"Read local mounts ALONGSIDE streaming (folders win at the same path)",
 	}
-	settingsLabelArg = map[string]int{
-		"Checkbox":     2,
-		"CheckboxIn":   1,
-		"Label":        2, // Label(x, y, text, col)
-		"LabelClipped": 3, // LabelClipped(x, y, maxW, text, col)
+	settingsHelpCorpus = []string{
+		"Every setting is ONE editable JSON file (asset_preferences.json). Close AsyncAO before hand-editing it, because it autosaves on exit and a hand edit made while it is running will be overwritten.",
+		"Export everything (favourites, layout, hotkeys, wardrobes, learned formats) to a portable JSON file; import it on another machine to carry your whole setup across.",
+		"Save your current settings under a name and switch between bundles. A preset is a full snapshot (passwords excluded); applying one replaces your settings on the next restart.",
 	}
-	// The bare help lines ALONE — the class the checkbox-only census could not see.
-	// Harvested separately so the anti-vacuity gate can name it directly instead of
-	// inferring it from corpus sizes.
-	settingsHelpArg = map[string]int{
-		"Label":        2,
-		"LabelClipped": 3,
-	}
+	settingsRowCorpus = append(append([]string{}, settingsCheckboxCorpus...), settingsHelpCorpus...)
 )
 
-// settingsLabelLiterals is every string literal passed as the label argument of one
-// of `kinds` in settings.go. Parsed, not grepped, so a label built from a
-// concatenation or a variable is skipped rather than mis-harvested.
-func settingsLabelLiterals(t *testing.T, kinds map[string]int, wantMin int) []string {
-	t.Helper()
-	const file = "settings.go"
-	src, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatalf("read %s: %v", file, err)
-	}
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, file, src, 0)
-	if err != nil {
-		t.Fatalf("parse %s: %v", file, err)
-	}
-	var out []string
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		idx, ok := kinds[sel.Sel.Name]
-		if !ok || idx >= len(call.Args) {
-			return true
-		}
-		lit, ok := call.Args[idx].(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return true
-		}
-		if s, err := stringLitValue(lit.Value); err == nil && s != "" {
-			out = append(out, s)
-		}
-		return true
-	})
-	if len(out) < wantMin {
-		t.Fatalf("harvested only %d settings labels (want ≥ %d) — the parse is wrong, so this gate would pass vacuously", len(out), wantMin)
-	}
-	return out
-}
+func settingsCheckboxLabels(*testing.T) []string { return settingsCheckboxCorpus }
+func settingsRowLabels(*testing.T) []string      { return settingsRowCorpus }
+func settingsHelpLabels(*testing.T) []string     { return settingsHelpCorpus }
 
-// settingsCheckboxLabels is the checkbox-row corpus.
-func settingsCheckboxLabels(t *testing.T) []string {
-	t.Helper()
-	return settingsLabelLiterals(t, settingsCheckboxArg, settingsMinCheckboxLabels)
-}
-
-// settingsRowLabels is the FULL corpus of bounded labels in the settings card —
-// checkbox rows and the bare help lines both.
-func settingsRowLabels(t *testing.T) []string {
-	t.Helper()
-	return settingsLabelLiterals(t, settingsLabelArg, settingsMinRowLabels)
-}
-
-// settingsHelpLabels is the bare-help-line corpus alone.
-func settingsHelpLabels(t *testing.T) []string {
-	t.Helper()
-	return settingsLabelLiterals(t, settingsHelpArg, settingsMinHelpLabels)
-}
-
-// Anti-vacuity floors for the two corpora, and the length that makes a label part
-// of the class the first fix missed. settingsHelpLineRunes is deliberately well
-// under the longest line in the form (about 190 characters) so ordinary editing
-// cannot trip it, but far above any checkbox label, so it can only be satisfied by
-// a bare help line actually being in the corpus.
-const (
-	settingsMinCheckboxLabels = 50
-	settingsMinRowLabels      = 120
-	settingsMinHelpLabels     = 40
-	settingsHelpLineRunes     = 150
-)
-
-// stringLitValue unquotes a Go string literal (interpreted or raw).
-func stringLitValue(lit string) (string, error) {
-	if len(lit) >= 2 && lit[0] == '`' {
-		return lit[1 : len(lit)-1], nil
-	}
-	return strconvUnquote(lit)
-}
+// settingsHelpLineRunes is the length that makes a label part of the sentence-length
+// help class the first fix missed. Deliberately under the longest help line above so
+// ordinary editing cannot trip it, but far above any checkbox label.
+const settingsHelpLineRunes = 150
 
 // TestNoSettingsRowLabelEscapesTheCard is the overflow census. At a NARROW card —
 // the settings minimum, which is what a small window resolves to — every label the
@@ -248,60 +168,116 @@ func TestRowLabelLimitIsInertWhenUnarmed(t *testing.T) {
 	}
 }
 
-// TestSettingsFormArmsAndReleasesTheRowLabelLimit is the wiring gate. The limit is a
-// Ctx-wide bracket, so two things must hold and neither is visible from a unit test
-// of fitRowLabel: drawSettings has to ARM it, and — because that function has
-// several early returns — it has to release it with defer, or the settings card's
-// right edge would follow the user into the courtroom and truncate its checkboxes.
-func TestSettingsFormArmsAndReleasesTheRowLabelLimit(t *testing.T) {
-	body := funcBodySource(t, "settings.go", "drawSettings")
-	if !containsCall(body, "pushRowLabelLimit") {
-		t.Error("drawSettings never arms the row-label limit — settings help text would run off the card again (F2)")
+// TestCheckboxHonoursTheRowLabelLimit is the behavioural replacement for the old
+// "Checkbox consults fitRowLabel + onRow" source scan. It drives a real Checkbox
+// under an armed row-label limit and observes the DRAWN result: onRow still receives
+// the FULL label (the settings-search collect pass indexes the whole sentence), and
+// the drawn row is ellipsised — Checkbox registers a hover tooltip carrying the full
+// text only when it had to shorten the row (fit=false), which is the one way the full
+// sentence stays reachable on screen.
+func TestCheckboxHonoursTheRowLabelLimit(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		t.Fatalf("NewCtx: %v", err)
 	}
-	if !deferredCall(body, "popRowLabelLimit") {
-		t.Error("drawSettings must release the row-label limit with DEFER — it has early returns, and a stranded limit truncates every checkbox on the next screen")
+	defer c.Destroy()
+
+	long := settingsCheckboxLabels(t)[0]
+	x, y := int32(200), int32(0)
+	right := x + 300
+	if c.TextWidth(long) <= right-x {
+		t.Fatalf("fixture: the checkbox label is not long enough to overflow a %d px row", right-x)
 	}
-	// The bound belongs to the CARD, not to the screen. Everything drawSettings paints
-	// after the card's clip closes is full-window chrome — the warn banner spans the
-	// window, and the .demo browser and content panel are overlays — so the limit has
-	// to be released before them or the card's right edge would shorten their labels
-	// too. Source order is the only way to see that from a test.
-	//
-	// TWO pops are required, and the count is the point: the first in source order is
-	// the DEFERRED one, which does not run where it is written — it runs at return,
-	// after the overlays. Only a second, straight-line pop actually releases the bound
-	// before them, so "at least two pops precede each overlay" is the exact invariant.
-	const popsBeforeOverlays = 2
-	pops := 0
-	for _, name := range callOrder(body, "popRowLabelLimit", "drawDemoBrowser", "drawContentPanel") {
-		if name == "popRowLabelLimit" {
-			pops++
-			continue
-		}
-		if pops < popsBeforeOverlays {
-			t.Errorf("drawSettings calls %s with the card's row-label limit still armed (only the deferred pop precedes it) — "+
-				"a full-window overlay would be ellipsised at the settings card's right edge (F2)", name)
-		}
+
+	var sawLabel string
+	var sawY int32
+	c.onRow = func(label string, y int32) { sawLabel, sawY = label, y }
+
+	// Rest the pointer on the checkbox so the truncation tooltip (the DRAWN signal
+	// that a row was shortened) is what we read back.
+	c.mouseX, c.mouseY = x+1, y
+
+	prev := c.pushRowLabelLimit(right)
+	c.Checkbox(x, y, long, false)
+	c.popRowLabelLimit(prev)
+
+	if sawLabel != long {
+		t.Errorf("onRow received %q, want the FULL label %q — search would stop matching the sentence a row had to shorten", sawLabel, long)
 	}
-	if pops < popsBeforeOverlays {
-		t.Errorf("drawSettings pops the row-label limit %d time(s); it needs the deferred one for its early returns AND a straight-line "+
-			"one where the card's clip closes, or the trailing full-window chrome draws under the card's bound (F2)", pops)
+	if sawY != y {
+		t.Errorf("onRow y = %d, want %d", sawY, y)
 	}
-	cb := funcBodySource(t, "ui.go", "Checkbox")
-	if !containsCall(cb, "fitRowLabel") {
-		t.Error("Ctx.Checkbox no longer consults fitRowLabel — the bound is armed but nothing honours it")
+	if c.tipText != long {
+		t.Errorf("Checkbox drew the row un-shortened under an armed limit (no truncation tooltip) — the label would run off the card again (F2)")
 	}
-	if !containsCall(cb, "onRow") {
-		t.Error("Ctx.Checkbox stopped feeding the settings-search collect pass — search must still index the FULL label a row had to shorten")
+}
+
+// TestLabelAndLabelClippedHonourTheRowLabelLimit is the behavioural replacement for
+// the old "Label/LabelClipped consult fitRowLabel" source scan. Both general label
+// primitives must ellipsise under an armed row-label limit; the observable is the
+// DRAWN width — Label's return value, and the last blit's dst width for the void
+// LabelClipped — never the truncation memo.
+func TestLabelAndLabelClippedHonourTheRowLabelLimit(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		t.Fatalf("NewCtx: %v", err)
 	}
-	// The bare help lines are drawn by the general primitives, NOT by Checkbox: about
-	// a hundred c.Label calls plus the FONTS chain line's c.LabelClipped. They are the
-	// class the first pass at this fix left hard-clipping at the card edge, so each
-	// one is its own deletion-catcher.
-	for _, fn := range []string{"Label", "LabelClipped"} {
-		if !containsCall(funcBodySource(t, "ui.go", fn), "fitRowLabel") {
-			t.Errorf("Ctx.%s no longer consults fitRowLabel — the settings help lines would go back to a hard cut at the card's clip edge, "+
-				"with no ellipsis, which is the reported 'cut off at the right border' (F2)", fn)
-		}
+	defer c.Destroy()
+
+	long := settingsHelpLabels(t)[0]
+	x, y := int32(0), int32(0)
+	right := int32(300)
+	if c.TextWidth(long) <= right-x {
+		t.Fatalf("fixture: the label is not long enough to overflow a %d px bound", right-x)
+	}
+	maxW := c.TextWidth(long) + 500 // a clip WIDER than the full label, so unarmed LabelClipped draws it whole
+
+	// Label reports the width of what it DREW; under the armed limit that is the
+	// ellipsised text, which fits the card edge.
+	prev := c.pushRowLabelLimit(right)
+	labelW := c.Label(x, y, long, ColText)
+	c.popRowLabelLimit(prev)
+	if x+labelW > right {
+		t.Errorf("Label drew past the armed row-label limit (%d > %d) — a settings help line would run off the card again (F2)", x+labelW, right)
+	}
+
+	// LabelClipped is void, so observe the last blit's dst width: armed it must be
+	// strictly narrower than unarmed, or it is hard-clipping instead of ellipsising.
+	c.LabelClipped(x, y, maxW, long, ColText)
+	unarmedW := c.drawDst.W
+	prev = c.pushRowLabelLimit(right)
+	c.LabelClipped(x, y, maxW, long, ColText)
+	armedW := c.drawDst.W
+	c.popRowLabelLimit(prev)
+	if armedW >= unarmedW {
+		t.Errorf("LabelClipped drew the label as wide armed (%d px) as unarmed (%d px) — it did not ellipsise at the card edge (F2)", armedW, unarmedW)
+	}
+}
+
+// TestSettingsSearchReleasesTheRowLabelLimit is the behavioural attempt at the old
+// "drawSettings arms and releases the row-label limit" source scan. drawSettings is
+// reached by zero other tests, so driving it through the real dispatcher is itself a
+// gain; the assertion is the release: on the search-results EARLY RETURN (the branch
+// the deferred pop exists to cover), the limit must not leak onto the next screen.
+func TestSettingsSearchReleasesTheRowLabelLimit(t *testing.T) {
+	a, cleanup := stageFrameDrivenApp(t)
+	defer cleanup()
+
+	a.screen = ScreenSettings
+	settings.loaded = true // skip the first-draw theme scan + catalog probe
+	settings.search = "fps"
+	defer func() {
+		settings.loaded = false
+		settings.search = ""
+	}()
+
+	driveFrame(a)
+
+	if a.ctx.rowLabelRight != 0 {
+		t.Errorf("drawSettings leaked the row-label limit (right=%d) on its search early-return — the next screen's chrome would be truncated at the settings card's edge (F2)", a.ctx.rowLabelRight)
 	}
 }

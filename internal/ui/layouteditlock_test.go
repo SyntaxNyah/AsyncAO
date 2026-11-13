@@ -11,9 +11,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -25,7 +24,8 @@ var courtroomModalOpeners = []struct {
 	name string
 	open func(*App)
 }{
-	{"iniswap", func(a *App) { a.showIni = true }},
+	{"wardrobe", func(a *App) { a.ward.show = true }},
+	{"jukebox", func(a *App) { a.showJukebox = true }},
 	{"background picker", func(a *App) { a.bgPick.show = true }},
 	// The timer, the login dialog and the pair popup left this table in #31 — they are
 	// non-blocking floatWin panels now, so they cannot end the pass and cannot strand
@@ -141,7 +141,7 @@ func TestThemedEditorSurvivesAnOpenCourtroomModal(t *testing.T) {
 		name string
 		open func(*App)
 	}{
-		{"iniswap", func(a *App) { a.showIni = true }},
+		{"jukebox", func(a *App) { a.showJukebox = true }},
 		{"background picker", func(a *App) { a.bgPick.show = true }},
 		{"SFX browser", func(a *App) { a.showSfxBrowser = true }},
 	} {
@@ -272,7 +272,7 @@ func TestTabStripPaintSiteIsLatchedOncePerFrame(t *testing.T) {
 			name: "dismiss frame (the theme went away mid-pass)",
 			beforePass: func(a *App) {
 				a.layoutEdit = true
-				a.d.Prefs.SetThemeLayout(false) // drawCourtroom force-stops the themed editor
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false }) // drawCourtroom force-stops the themed editor
 			},
 			wantInPass: true,
 		},
@@ -571,7 +571,7 @@ var themeFitDragCases = []struct {
 	{"Stretch 1000x900", 1000, 900, func(a *App) { a.d.Prefs.SetThemeFit(config.ThemeFitStretch) }},
 	{"Custom zoom+pan 1000x800", 1000, 800, func(a *App) {
 		a.d.Prefs.SetThemeFit(config.ThemeFitCustom)
-		a.d.Prefs.SetThemeFitZoom(120)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 120 })
 		a.d.Prefs.SetThemeFitPan(7, -5)
 	}},
 }

@@ -29,8 +29,9 @@ func TestSceneAssetsDedup(t *testing.T) {
 	if counts[assets.AssetTypeCharSprite] != 2 { // idle + talk, deduped across the two identical lines
 		t.Errorf("sprites=%d want 2 (idle+talk, deduped)", counts[assets.AssetTypeCharSprite])
 	}
-	if counts[assets.AssetTypeBackground] != 1 || counts[assets.AssetTypeDeskOverlay] != 1 {
-		t.Errorf("bg=%d desk=%d want 1,1", counts[assets.AssetTypeBackground], counts[assets.AssetTypeDeskOverlay])
+	// wit is asked as wit then witnessempty, and which one a server has is unknown, so both desks are bundled.
+	if counts[assets.AssetTypeBackground] != 1 || counts[assets.AssetTypeDeskOverlay] != 2 {
+		t.Errorf("bg=%d desk=%d want 1,2", counts[assets.AssetTypeBackground], counts[assets.AssetTypeDeskOverlay])
 	}
 	if counts[assets.AssetTypeMusic] != 1 {
 		t.Errorf("music=%d want 1", counts[assets.AssetTypeMusic])

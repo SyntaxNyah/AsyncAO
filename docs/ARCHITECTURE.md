@@ -82,7 +82,7 @@ UNINTERRUPTIBLY (so an input flood — mouse motion streams an event every few m
 can never bust the cap), then any surplus INTERRUPTIBLY (input during a slow idle
 tier renders within one ceiling instead of waiting the whole budget out).
 
-With the **event-driven loop** (`EventDrivenLoopOn`, default ON) a static screen
+With the **event-driven loop** a static screen
 (`SkipFrame` true: no input, nothing animating, nobody talking) renders nothing and
 parks on `sdl.WaitEventTimeout`. It wakes on real input, on the cross-thread
 `PushWake` doorbell (a user event pushed by the WS read loop / decode delivery — the
@@ -175,7 +175,7 @@ Prefetch(base, type, prio)            PrefetchWithFallback(base, altBase, ...)
                         T3 disk?     → promote to T2 + learn + decode
                         source fetch → T2 + async T3 + learn + decode
          every candidate 404 + learned was used → invalidate + one full-list retry
-       still nothing → remember the exhausted CHAIN for the session (missSet)
+       still nothing → remember the exhausted CHAIN (media Missing)
                        → Warning{base, formats tried} → UI banner (12 s,
                                                         courtroom + char select)
        chain already exhausted → warn, submit nothing  ← the gate, above the pool
@@ -226,7 +226,7 @@ evicted background/desk re-demands on the same cadence, and the viewport
 holds the last-resident scenery (`syncAnimSticky`) until the replacement
 texture actually lands — a position flip never blanks the viewport.
 
-Hovering any character cell (either grid, the wardrobe too) warms its
+Hovering any character cell warms its
 char.ini through the decode-free raw lane (`Manager.PrefetchRaw`:
 pool-bounded, inflight-deduped, T2 + disk), so the eventual pick loads
 its emote list from memory instead of paying an RTT.
@@ -238,8 +238,7 @@ server does not have can never become resident. A roster whose characters
 ship no `char_icon` and no `emotions/button<N>_off` art therefore re-asked
 for every one of them every 2 s for as long as the grid was on screen.
 
-`Manager.conclusiveMiss` (`assets/missSet`, cap `conclusiveMissCap` = 8192)
-records the resolution chain — base + type + the alt spellings probed after
+The media system's `Missing` state records the resolution chain — base + type + the alt spellings probed after
 it — the first time every candidate 404s. Every `Prefetch*` entry point
 consults it before submitting; a hit warns and returns without a pool job.
 `demandAsset` consults it too and reports "this can never arrive", which is
@@ -251,19 +250,16 @@ and it sits at the BOTTOM of the pipeline — a hit there still costs the pool
 job, the resolver walk and two failed disk reads above it. That overhead,
 not the requests, is what took the framerate down.
 
-The memory has no clock, because it is a fact about work already done rather
-than a guess with an expiry (contrast `LocalFetcher.missMemo`, which is the
-guess). What invalidates it is a change to either input of that fact — the
-byte source, or the candidate list it was measured against — so the flushes
-live inside the setters that make those changes and no call site can forget
-them:
+A missing asset is asked again once `MissingTTL` passes. Before that, a change
+to either input of the finding — the byte source, or the candidate list it was
+measured against — forgets it, and the flushes live inside the setters that make
+those changes so no call site can forget them:
 
 | Event | Scope |
 |---|---|
 | `config.FormatGeneration` moves (format order, fallback toggles) | all |
 | `installAssetOrigin` (connect / reconnect / mounts change) | that origin |
-| `SetMountLayer` (pack rescan) | all |
-| `SetLocalOverlay` with a **different** mount set | all |
+| `SetFolders` with a **different** mount set, `RecheckFolders` (focus gain, reordering the folders) | all |
 | Settings > Cache > **Retry missing assets** | all |
 
 The first row is not a call at all: every entry carries the format generation
@@ -287,6 +283,13 @@ that in rehearsal mode, where the offline gate manufactures the 404s.
 | T2 | raw fetched bytes | 128 MiB | full URL | byte-budget LRU |
 | T3 | disk blobs | unbounded, user-clearable | `xxhash64(full URL)`, sharded `assets/<xx>/<hash>` | manual / Clear button |
 
+T3's root is an atomic pointer, so `DiskCache.Relocate` moves the cache while
+the client runs: reads and writes switch to the new root at once, then the old
+blobs are renamed over (copied across drives) or deleted, and the old root is
+removed. A blob not moved yet reads as a miss and is fetched again. The
+player's folder is never the root itself: `DiskRootIn(dir)` nests
+`<dir>/AsyncAO/assets`, and nested old/new roots are refused.
+
 Full-URL keys make per-server separation structural: two servers (or two
 local mount sets — their origin embeds a mount-list hash) can never collide.
 
@@ -308,113 +311,68 @@ the joined URL). Writes: copy-on-write + CAS retry loop; a successful learn
 marks preferences dirty for the debounced saver. Learned entries persist
 per `<host>|<type>` and survive restarts (warm start = N probes for N assets).
 
-### Local pack layer (`MountIndex` / `MountLayer`, v1.89.0)
+### The player's folders (`media.Folders`, v2.1.0)
 
-Local mount folders and `.zip` packs answer asset fetches **before the network,
-under the server's own URL**. The server's URL stays the asset's identity
-everywhere (T1 key, warnings, scene layers); `local://m-<hash>/<rel>` is only a
-transport label, so nothing downstream ever learns a second spelling.
+Local mount folders and `.zip` packs are one source in the media chain, asked
+in the order **memory → disk cache → folders → web**, under the server's own
+URL. Folders save traffic; they do not override a copy the server already sent
+and the disk cache holds. `local://m-<hash>/<rel>` is the origin for recordings,
+evidence images and Local-only mode; with layering on, the same folders also
+answer for each open tab's asset origin (the URL builder's, so a missing
+trailing slash still matches).
 
-**Six invariants.** Check each commit against them:
+**Read lazily.** `Mount` reads nothing, so it runs on the render thread. A
+folder is listed the first time a file in it is needed, and the listing (a
+*page*) answers after that. A miss re-checks a page once it is older than
+`folderTrust` (30 s), and one stat of the folder's modified time decides whether
+to list it again. `Stale` ends every page's trust: the UI calls it on window
+focus gain (rate limited by `localRecheckMinInterval`) and from **Check folders
+now**. A `.zip` pack is opened and indexed the first time it is needed and never
+changes under a page afterwards. No mounts: nothing is read.
 
-1. **Identity is the server's base.** Pack bytes are delivered under
-   `deliverBase`, never under the pack's own URL.
-2. **A pack hit never teaches the learned table.** Pack formats have nothing to
-   do with the server's, and `RecordSuccess` → `RecordLearned` *persists*.
-   Teaching it from pack bytes is the v1.61.0 / v1.87.2 regression class.
-3. **A pack hit never writes T3 or ThumbCache, and never writes T2 under the
-   server's URL.** It *may* write T2 under its own `local://` key — that
-   keyspace is disjoint, and T1 evicts long before T2, so without it every
-   evicted pack background would be re-read and re-allocated from disk.
-   ThumbCache is a *persistent* disk cache keyed by base, so a pack sprite
-   there would outlive the pack under the server's identity.
-4. **A pack failure is never a server failure.** (4a) `serveFromMount` has **no
-   error return**, so a read error cannot reach `walkCandidates`' pass-aborting
-   default arm. (4b) A *decode* error quarantines the pack entry and never calls
-   `MarkFailed`, whose key is the SERVER's base. (4c) The asymmetry is
-   deliberate: a read error is environmental and usually transient, a decode
-   error is a deterministic property of the bytes.
-5. **The layer is inert during archive replay and in Local-only mode.** A
-   bundled scene must stay hermetic; Local-only's source already *is* the
-   mounts, so layering would double-serve.
-6. **No mounts costs nothing.** `activeMountLayer` loads the layer pointer
-   *first* and returns on nil, so the default path is one atomic load
-   (benchmarked at ~0.9 ns/op, 0 allocs). No index, no goroutine, no disk.
-   Benchmark the hook *and* the call that rides it: `BenchmarkFetchRawNoMounts`
-   vs `BenchmarkFetchRawLayeredNoMounts` is the pair for the text lane (~3 ns on
-   a ~50 ns read, 0 extra allocs), because timing the hook alone cannot answer
-   what a real reader pays.
+**Invariants.**
 
-**The text lane (issue #72).** A mounted base answers `char.ini` and
-`effects.ini`, not only the art beside them. `FetchRawLayered` is the text
-sibling of `ResolveRawLayered`: pack first, server second, and named apart from
-`FetchRaw` so the callers that must NOT see a pack keep the unlayered method by
-default. Those are `extensions.json` (it seeds the server host's learned
-formats — invariant 2) and the autoindex listings, both already refused by
-`mountLayerExcluded`. The pack is consulted **before T2**, like the exact decode
-path, so a server copy cached earlier in the session cannot shadow the file the
-user just edited. Pack bytes are returned **uncached**: a couple of KiB read once
-per character per session, where a cache would only add a way to serve a stale
-ini back after a rescan. `PrefetchRaw` has the matching early-out — a file the
-pack holds has no RTT to hide, so warming it would spend a real probe, and a
-remembered miss, on a URL the server need not have at all.
+1. **Identity is the server's base.** Folder bytes are delivered under the
+   server's URL everywhere downstream (T1 key, warnings, scene layers).
+2. **A folder hit never teaches the learned table**, never answers
+   `extensions.json`, and never writes T3 or T2 under the server's
+   URL: those would outlive the folder as the server's own content.
+3. **A folder failure is never a server failure.** A decode error sets the file
+   aside (`QuarantinePack`, cap `folderBadCap`) so the server's copy is fetched,
+   and never marks the server's base failed. Mounting a different set clears
+   the set-aside files.
+4. **A folder change asks again for missing assets**, keeping the web's 404
+   memory (hard rule 6).
 
-Art from one base and metadata from another is not half a feature; it is a
-character that looks right and behaves like somebody else's. A new raw-text
-fetch therefore fails a census gate by default and its author has to name which
-side it means, because a call site reaching for the server-only lane is
-invisible: `FetchRaw` returns perfectly good bytes, just the wrong side's.
+**Text too (issue #72).** `char.ini` and `effects.ini` come from the folders
+like the art beside them, so a character's emotes and metadata match its
+sprites. A parsed ini is UI state no texture invalidation touches, so an edited
+`char.ini` (seen on focus gain through `Folders.Changed`) calls
+`forgetParsedINIs` and reloads the active character's ini in place rather than
+rebuilding the room, because `buildRoom` re-arms the roster poll whose OOC
+`/gas` is the known flood-kick vector.
 
-**A source change invalidates parsed inis, not only textures.** An ini is parsed
-into UI state keyed by URL, in maps no texture invalidation touches, so
-`rescanLocalPacks` calls `forgetParsedINIs` *ahead of* the texture-store guard —
-parsed inis are not textures, and gating them on a store existing leaves the
-headless path silently half-invalidated. It reloads the active character's ini
-in place rather than rebuilding the room, because `buildRoom` re-arms the roster
-poll whose OOC `/gas` is the known flood-kick vector.
+**Edits.** `Folders` records each file it reads (path, modified time, size; a
+`.zip` member by its pack's). On focus gain the UI asks `ChangedFolderFiles` off
+the render thread and drops only the textures of files whose copy on disk
+changed, so an alt-tab with nothing edited reloads nothing.
 
-**Setup surface.** `internal/ui/basescan.go` reads a candidate folder (counts, a
-bounded `char.ini` sample, the standard subfolders, and the two off-by-one-level
-corrections) and `basewizard.go` reports it *before* anything is written.
-`applyBaseWizard` is the only writer in that flow, pinned by a census gate: the
-report is only worth reading if browsing, scanning and re-picking cannot change
-what the user is currently running. The scan runs off the render thread behind a
-single-flight latch (hard rule 2), and its result carries the path it scanned so
-a superseded pick is reconciled on landing rather than queued.
+**Folder checks.** `internal/ui/basescan.go` reads each folder in the Asset
+source list (which media folders it holds, and the two off-by-one-level
+corrections) so its row shows a pill per kind of media, or "Not an AO base" with
+the folder that would work. `foldercheck.go` runs one scan at a time off the
+render thread (hard rule 2) and keeps reports only for folders still listed
+(hard rule 4).
 
-**One key space.** Every map and set is keyed by the *folded rel including its
-extension* (`foldRel`: per-segment percent-decode, then lowercase, returning the
-input unchanged when a byte scan finds nothing to fold). A pack transport URL is
-`LocalOrigin() + <that key>`, so URL→key is a `CutPrefix` and key→URL a
-concatenation. Two earlier drafts shipped a quarantine that was dead code
-because it was written with a URL and read with a rel.
+**Name order, not source order.** Each spelling is asked of every source
+before the next spelling (`Get(key, urgency, flags, alts...)`), so a legacy
+bare-named pack cannot serve one file as both `(a)` idle and `(b)` talk over a
+server that ships proper `(a)`/`(b)` art.
 
-**Ladder order, not provider-major.** The pack is consulted first *within each
-spelling*, not swept across every spelling first. `EmoteBare` takes no
-`EmoteKind`, so the `(a)` and `(b)` chains share a byte-identical bare alt —
-provider-major ordering would let a legacy bare-named pack serve one file as
-both idle and talk, shadowing a server that ships proper `(a)`/`(b)` art. Do
-not "fix" this back to AO-SDL's ordering.
-
-**Named caps:** `mountIndexMaxDepth`, `mountBadCap`
-(quarantine; eviction is **oldest-first**, inverting `MarkMissing`'s
-stop-when-full policy, because an unquarantined corrupt file wins forever and
-its asset is permanently missingno), `mountArchiveCap`,
-`mountZipEntryMaxBytes`, `LocalMountCap`, `mountLayerOriginCap`.
-There is **no entry-count or byte cap** on the index (v1.97.0): local mounts
-are the user's own content and must never be silently truncated, so a pack is
-indexed in full and index memory grows with the pack (~180 bytes/file). The
-remaining caps are all *safety* bounds (depth, per-entry size, symlinks) —
-not limits on legitimate content.
-
-**Zip lifetime.** Archive handles are refcounted and closed when the last
-reader releases, **not** when the layer pointer swaps — a Rescan during a read
-would otherwise close the file mid-`ReadAt`. Symlinks are never indexed (a pack
-could otherwise ship a link at a plausible asset path pointing at a private
-file); zip entry names get the same escape guard, and the uncompressed size in
-the header is treated as the attacker-controlled hint it is.
-
-No new module dependency: `archive/zip` is stdlib.
+`safepath` guards both kinds of mount: symlinks are never followed, zip entry
+names get the same escape guard, and a zip header's uncompressed size is treated
+as the attacker-controlled hint it is. No new module dependency: `archive/zip`
+is stdlib.
 
 ## Network (§7)
 
@@ -437,31 +395,32 @@ No new module dependency: `archive/zip` is stdlib.
 
 ### Proxy (`internal/netproxy`)
 
-One immutable `Policy` published through an `atomic.Pointer`, read by every dial
-without a lock; a refresh builds a new one and swaps. Resolved at boot (before
-`sdl.Init`, so a registry read or a WPAD round trip costs boot latency and never
-frames) and on an explicit Settings change — **never per request** (hard rule 2).
+`netproxy.Factory` is the socket factory: **every outbound HTTP and WebSocket connection is opened by it**, so what Settings shows and
+what the client does cannot disagree. `cmd/asyncao` builds one and injects it. A golangci rule
+(`.golangci.yml`) rejects `http.DefaultClient`, `http.Client`, `http.Transport` and `net.Dial` elsewhere.
 
-- **Every** `http.Transport` in the repo sets `Proxy`. A nil `Proxy` means *never
-  proxy*, not "use the default", and a `go/ast` census over the tree fails the
-  build gate on any literal without it. Before that gate, the asset transport and
-  the game socket were both nil-`Proxy` while the lobby and updater inherited
-  `http.DefaultTransport` — a split tunnel worse than either extreme.
-- Order inside "use the system's setting": **environment first, OS second.** An
-  env var is an explicit per-launch instruction; the OS setting is ambient.
-- Discovery: Windows registry + WinHTTP (with `WinHttpGetProxyForUrl` actually
-  *resolving* WPAD/PAC rather than assuming — the auto-detect flag is ON by
-  default on machines with no proxy at all, so assuming would strand them);
-  macOS `scutil --proxy`; elsewhere env only.
-- **Fail closed** when a proxy is configured but its destination is unknowable (a
-  PAC script off Windows). Falling back to direct is the leak this exists to
-  close. Bypassed destinations are exempt — we know where those go.
-- Bypass matching is hand-written; see the dependency table for the measurements
-  that rule out every library alternative.
+- Each configuration is one read-only `Network`, published through an `atomic.Pointer`. `Apply` builds a new one off the
+  render thread and swaps it in. Callers ask for `Current()` per connection, so a changed setting applies to the next
+  connection, and an open connection keeps its route until it closes.
+- Clients are selected by `Kind`. `Web` uses `Transport.Proxy`, so `http://` is forwarded and `https://` is tunnelled with
+  `CONNECT`. `Game` always tunnels with `CONNECT`, as a forward proxy cannot carry a WebSocket. `network.Client` builds
+  its own tuned client per `Network`, through its DNS cache.
+- A policy has **one proxy**, and a per-scheme OS setting uses its `https` entry first. A proxy that allows `CONNECT` only
+  to port 443 cannot carry `ws://`.
+- `internal/platform` supplies the machine's settings: **environment first, OS second**, because an env var is an explicit
+  per-launch instruction and the OS setting is ambient. They include the bypass list, matched by `platform.ProxyBypass`.
+  Automatic detection alone counts as no proxy.
+- Settings offers three modes: the machine's settings (the default), no proxy, and manual. Direct and manual ignore the
+  machine entirely. Manual uses the typed address and a typed bypass list, which shares the OS list's matcher. A missing or
+  unreadable address blocks connections, except to bypassed hosts and loopback, which is always direct.
+- HTTP/2, connection reuse and TLS session resumption work as usual, through tunnels too. Plain `http://` stays HTTP/1.1.
+- `Factory.Check` backs the Settings test button: one connection, reporting whether the setting, the proxy or the
+  destination failed. It always tests the way `Game` connects.
 - Fetch pool: 16 workers (fetches are RTT-bound; the transport is sized
   for 16 conns/host and h2 bases multiplex them over one connection —
   spec §7's original 8 halved cold-viewport fill for nothing), HIGH lane
-  (live message — blocks producer briefly, never sheds) and LOW lane
+  (live message — never sheds, and refuses new work when full so the
+  frame thread never waits) and LOW lane
   (speculation — sheds **oldest** job when full).
   Epoch counter cancels queued jobs on room/server change; cancelled jobs
   still get `Run(stale=true)` so no waiter hangs.
@@ -621,37 +580,30 @@ so a release hit-tests where it actually happened.
 
 ## Wardrobe & iniswap (custom characters)
 
-The courtroom's Wardrobe button opens a modal char-select-grade grid
-merging two sources, wardrobe first:
+`setIniswap` wears any character folder without taking a server slot: outgoing `MS` carries the folder in
+`char_name` (AO2-Client `set_iniswap` semantics — servers relay it, receivers stream it like any speaker), and the
+emote list reloads from that folder's `char.ini`. Picking a character or disconnecting clears it. The theme's
+`iniswap_dropdown` lists the player's own character and the folder worn now.
 
-1. **The wardrobe** — the user's own favourites, persisted in prefs
-   (`WardrobeCap` 1024) **across sessions and across servers** (folder
-   names are server-agnostic; assets resolve against the current
-   origin). Stars on each cell toggle membership; an add box accepts any
-   folder name, so no server list is required at all.
-2. **`<asset origin>/iniswap.txt`** — one character folder per line —
-   the server-curated set, merged underneath minus wardrobe duplicates
-   (case-insensitive).
+The Wardrobe saves characters for the player, across servers:
 
-Neither occupies a server slot. Every layer reuses the existing fast
-path, nothing bespoke:
+- **Data:** `config.Wardrobe`, its own `wardrobe.json` beside the prefs file, written by a debounced
+  temp-file-and-rename flush (one write per burst, like the Jukebox), loaded off the main thread. An entry is keyed by
+  its character folder (never the display name), carries any number of folders, a nickname and a last-worn time;
+  folders carry a name, the server key they were made on, an icon or image and a colour. Caps: 4096 entries,
+  200 folders. Folder images are copied into `wardrobe-icons/` beside it, so moving the original can't break a
+  folder; they load off-thread and live in T1 under `wardrobe://` keys. On first start the old per-server lists in
+  `config.json` merge into it once; `config.json` itself is left unchanged.
+- **What the window shows:** `internal/ui/wardrobe` (no SDL) filters, sorts and groups entries, and parses the
+  server's list. The window rebuilds its list only when the store's revision, the query or the server changes, so
+  painting allocates nothing per frame.
+- **The server's list:** `<asset origin>/iniswaps.ini`, AO2's name for it (courtroom.cpp:5349), fetched once per
+  server through `FetchRaw` (T2 + disk cached, singleflight), at most 4096 names.
+- **Drawing:** rounded shapes and line icons come from `ui/shapes.go`, white masks rasterised once with
+  `golang.org/x/image/vector` and tinted per draw, so they cost a few copies and no allocation.
+- **Character Select's ★** reads a lowercase membership set rebuilt only when the store's revision moves.
 
-- the txt rides `FetchRaw` (T2 + disk cached, singleflight) on a
-  goroutine; parse is bounded (`iniswapListCap` 4096), case-insensitively
-  deduped + sorted, lowercase names precomputed for the search filter;
-- icons are ordinary `AssetTypeCharIcon` traffic: same paced demand
-  (shared `demandAsset` budget/cadence), same 64 px decode thumbnails,
-  same 404 cache — the **list-character pipeline is untouched**, the menu
-  is just a second consumer of it;
-- hover previews and, once picked, live sprites go through the normal
-  name-chain (`(a)X`/`(b)X` → bare `X`).
-
-Picking an entry only swaps the active folder: outgoing `MS` carries the
-custom name in `char_name` (AO2-Client `set_iniswap` semantics — servers
-relay the folder, receivers stream it like any speaker), and the emote
-list reloads from the custom `char.ini`. Re-picking a list character or
-disconnecting clears the override; an in-flight txt fetch is drained on
-disconnect so a stale list can't land after reconnecting elsewhere.
+`docs/WARDROBE_REMOVED.md` lists what the previous Wardrobe did and what the new one left out.
 
 ## Lobby data
 
@@ -675,15 +627,17 @@ a solo sprite.
 
 | Dependency | Why |
 |---|---|
-| `veandco/go-sdl2` | SDL2/ttf/mixer bindings (the stack the references use) |
+| SDL3, SDL3_ttf, SDL3_mixer (CGO, our own binding in `internal/sdl`, `ttf`, `mix`; no Go module) | **replaces `veandco/go-sdl2` (restructuring steps 2b–2c):** go-sdl2 has no SDL3 version, and the purego SDL3 bindings call through reflection and may allocate per call, which breaks the zero-allocation render loop. Our binding wraps only the calls AsyncAO makes, with `#cgo noescape` on the per-frame ones. SDL3_mixer replaces the SDL Mixer X fork: its tracks, loop points and fades cover what the fork existed for. |
 | `hashicorp/golang-lru/v2` (+expirable) | thread-safe LRU; wrapped only for byte accounting |
-| `golang.org/x/sync` singleflight | fetch dedup (pinned v0.17.0 for Go 1.24) |
+| `golang.org/x/sync` singleflight | fetch dedup (v0.20.0, matching the Go 1.25 directive) |
 | `cespare/xxhash/v2` | fast non-crypto cache keys |
 | `kettek/apng` | APNG decode (the draft's pick was a diff library!) |
 | `golang.org/x/image` | pure-Go WebP fallback + embedded Go font |
 | `coder/websocket` | **addition:** AO2 ≥ 2.11 is WebSocket-only; stdlib has no WS client. Zero-dependency, maintained, context-aware. |
 | MSYS2 `libavif` (CGO, no Go module) | **addition (user request):** `.avif` as a probe format — native dav1d/aom decode for stills *and* AV1 image sequences, bound exactly like the libwebp CGO shim (~100 lines). The pure-Go alternatives embed a WASM runtime (gen2brain/avif → wazero), the opposite of this project's soul. CGO-less builds degrade to a descriptive decode error; sniffing (`ftyp` + `avif`/`avis` brands) stays pure Go. |
-| System `ffmpeg` (runtime, no Go module, no CGO) | **addition (user request, #99 scene video export):** the **🎥 Video** button streams captured frames into an external `ffmpeg` process (`internal/videoenc`, pure Go) for H.264/MP4 or VP9/WebM. It is **runtime-optional by design** (a user requirement: the client must still boot without ffmpeg installed) — `Available()` is a cached PATH lookup, a missing ffmpeg only disables that one action, and there is **no build-time dependency** and nothing linked. Audio (music/SFX) muxing into the video is reserved for a follow-up pass. |
+| ~~System `ffmpeg`~~ (runtime, no Go module, no CGO) | **removed 2026-11-07:** the 🎥 Video export streamed frames into an external `ffmpeg` and fed it server audio to mux; the export, its audio mux and subtitle sidecars were taken out with it. GIF, WebP and Comic exports need no external program. |
 | OpenDyslexic font (embedded asset, no Go module) | **addition (user request, M9):** the "dyslexia-friendly font" toggle bundles `internal/ui/fonts/OpenDyslexic-Regular.otf` via `//go:embed` (~172 KB) so it works for every user with no separate install — a path-on-disk preset only helped the few who'd installed it. SIL OFL 1.1 (license shipped alongside as `OpenDyslexic-LICENSE-OFL.txt`; embedded unmodified, so the Reserved Font Name clause is satisfied). Applied only to the IC/OOC chat + log text (the existing override-chain scope), so chrome widget metrics are untouched. |
-| **Proxy support — NO dependency added** (`internal/netproxy`, stdlib only) | **rejection record, because this rule exists to capture rejections as much as additions.** Honouring the OS proxy needs three things: OS discovery, a bypass matcher, and SOCKS. SOCKS is free — `net/http` dials `http`, `https`, `socks5` and `socks5h` natively. Discovery is free too: stdlib `syscall` on Windows exports `RegOpenKeyEx`/`RegQueryValueEx`/`RegCloseKey`/`HKEY_*`, and WinHTTP is reached through kernel32's `LoadLibraryExW(LOAD_LIBRARY_SEARCH_SYSTEM32)`; macOS uses `os/exec` + `scutil`; Linux has no OS setting to read. **`golang.org/x/net` and `golang.org/x/sys` are NOT in `go.mod`** — either would be a brand-new direct require, so neither is "already there". Rejected candidates, all permissive and therefore AGPLv3-compatible (licence was never the deciding factor): `x/net/http/httpproxy` — the stdlib copy is *vendored* and unimportable, and it is measurably wrong for this job (against a real Windows `ProxyOverride`, `<local>` is inexpressible and `10.*`/`172.16.*`/`192.168.*` can never match an IP literal, so a LAN AO server silently goes to the proxy); `mattn/go-ieproxy` — needs cgo on macOS, so a `CGO_ENABLED=0` mac build silently reports "no proxy", is a no-op on Linux, pulls three x/ modules, and ships that same broken bypass translation; `rapid7/go-get-proxied` — cleanest of the bunch, but its API is a per-call `GetProxy()` with a fresh WinHTTP round trip each time, which cannot sit on an asset transport under hard rule 2, so it would have to be wrapped in the snapshot we are writing anyway; any PAC-evaluating library (`darren/gpac`, `saucelabs/pacman`) — each embeds a JavaScript VM (otto/goja) against a 256 MiB budget, to do what `WinHttpGetProxyForUrl` does in-process for free on Windows; `libproxy` — LGPL C library, so cgo plus a runtime `.so` plus relinking obligations, for a Linux case that env vars already solve. |
-| `josephspurrier/goversioninfo` (BUILD-TIME tool, NOT a linked dependency) | **addition (Defender false-positive mitigation):** generates the committed Windows VERSIONINFO resource (`cmd/asyncao/versioninfo_windows.syso` from `versioninfo.json`) that gives the `.exe` real CompanyName/ProductName/FileDescription/LegalCopyright metadata. A blank-provenance unsigned Go binary is a small heuristic signal in the `Bearfoos.A!ml` false positive (docs/DEFENDER-FALSE-POSITIVE.md); the resource lowers that surface at zero runtime cost. Run via `go run …@v1.4.0` (the same pin as `.github/workflows/release.yml`; never imported — it does not enter `go.mod` and nothing links it); the syso is committed so a normal build needs no tooling, and the release workflow regenerates it per-tag best-effort. |
+| **Proxy support — NO dependency added** (`internal/netproxy`, stdlib only) | **rejection record, because this rule exists to capture rejections as much as additions.** Honouring the OS proxy needs two things: OS discovery and a bypass matcher. Discovery is free: stdlib `syscall` on Windows exports `RegOpenKeyEx`/`RegQueryValueEx`/`RegCloseKey`/`HKEY_*`; macOS uses `os/exec` + `scutil`; Linux has no OS setting to read. **`golang.org/x/net` and `golang.org/x/sys` are NOT in `go.mod`** — either would be a brand-new direct require, so neither is "already there". Rejected candidates, all permissive and therefore AGPLv3-compatible (licence was never the deciding factor): `x/net/http/httpproxy` — the stdlib copy is *vendored* and unimportable, and it is measurably wrong for this job (against a real Windows `ProxyOverride`, `<local>` is inexpressible and `10.*`/`172.16.*`/`192.168.*` can never match an IP literal, so a LAN AO server silently goes to the proxy); `mattn/go-ieproxy` — needs cgo on macOS, so a `CGO_ENABLED=0` mac build silently reports "no proxy", is a no-op on Linux, pulls three x/ modules, and ships that same broken bypass translation; `rapid7/go-get-proxied` — cleanest of the bunch, but its API is a per-call `GetProxy()` with a fresh WinHTTP round trip each time, which cannot sit on an asset transport under hard rule 2, so it would have to be wrapped in the snapshot we are writing anyway; `libproxy` — LGPL C library, so cgo plus a runtime `.so` plus relinking obligations, for a Linux case that env vars already solve. |
+| RmlUi 6.3 + FreeType + lavapipe + the Vulkan loader (CGO/C++, no Go module) — **lavapipe and the Vulkan loader ship since restructuring step 2c (the SDL_GPU renderer); RmlUi and FreeType are planned, not yet linked** | **addition (customer decision, restructuring step 2a; full record in `docs/RESTRUCTURING_PLAN.md` Part 5e):** the UI moves to RML/RCSS so themes and widgets are authored like web pages, and layout reflows instead of per-screen rectangle code. RmlUi (MIT) is built statically from a pinned 6.3 tag by `scripts/build-rmlui.sh` (msys2 has no package), with its FreeType font engine (FreeType under its FTL licence, which requires a credit), and linked by `internal/rmlui` together with RmlUi's upstream SDL3 platform backend and our own SDL_GPU render interface (RmlUi's backends are samples meant to be adapted: the SDL_GPU sample's drawing plus the advanced methods ported from its GL3 sample, RmlUi itself unmodified). Images go through our own decoder from the decoded tier, so SDL3_image is not needed. Rendering is SDL_GPU on Vulkan; machines without a Vulkan driver get lavapipe (Mesa, MIT) — on Windows msys2's `vulkan_lvp.dll` with `libLLVM` and `libSPIRV-Tools` (about 170 MB, 47 MB gzipped) plus the Vulkan loader `vulkan-1.dll` (Apache-2.0, 0.7 MB), on Linux the distro's Mesa. On macOS SDL_GPU uses Metal; the compositor works there, RmlUi's SPIR-V shaders wait on plan open item 2. Costs recorded up front: C++ enters the toolchain, and we maintain the render interface (about 1,400 lines plus 12 shaders) because the SDL_GPU sample draws no gradients, shadows, filters or masks (plan Part 5e, open item 3); lavapipe uses about 240 MB of memory, which leaves the 256 MiB budget no room on the software tier (follow-up: a trimmed static build). Rejected: Clay (layout only, every widget still ours), Dear ImGui via cimgui-go (no SDL3 backend, suspected per-call allocation), Gio/Qt/Ebiten/web (replace the compositor or the whole client), SwiftShader (smaller, 1.8 MB gzipped, but slower and RmlUi is not verified on it), SDL3_image (the sample's disk `IMG_Load` would be synchronous I/O on the render thread, hard rule 2). |
+| `golangci-lint` v2 (CI-ONLY tool, NOT a linked dependency) | **addition (no-magic-numbers rule, CLAUDE.md rule 9):** runs `mnd` over the packages listed in `.golangci.yml`, plus the `forbidigo` and `depguard` layer rules. A package joins that list once clean and never leaves it, so the rule is enforced without a codebase-wide sweep. staticcheck keeps its own step and is not duplicated. Pinned (`v2.13.2`) for the same reason as staticcheck; never imported, never in `go.mod`. Rejected alternative: a hand-written literal scanner — that would be a source-scanning test, which rule 11 forbids. |
+| `josephspurrier/goversioninfo` (BUILD-TIME tool, NOT a linked dependency) | **addition (Defender false-positive mitigation):** generates the committed Windows VERSIONINFO resource (`cmd/asyncao/versioninfo_windows.syso` from `versioninfo.json`) that gives the `.exe` real CompanyName/ProductName/FileDescription/LegalCopyright metadata. A blank-provenance unsigned Go binary is a small heuristic signal in the `Bearfoos.A!ml` false positive (docs/DEFENDER-FALSE-POSITIVE.md); the resource lowers that surface at zero runtime cost. Run via `go run …@v1.4.0` (the same pin as `scripts/package.sh`; never imported — it does not enter `go.mod` and nothing links it); the syso is committed so a normal build needs no tooling, and `scripts/package.sh` regenerates it per release. |

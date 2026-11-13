@@ -1,0 +1,102 @@
+package render
+
+import (
+	"testing"
+	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+)
+
+const (
+	sceneryVPW     = 1600
+	sceneryVPH     = 900
+	sceneryArtW    = 1200
+	sceneryArtH    = 900
+	sceneryWideW   = 4800
+	sceneryOrigin  = 2400
+	sceneryShortH  = 450
+	sceneryNoValue = 0
+)
+
+func TestSceneryRectFollowsSetScene(t *testing.T) {
+	vp := sdl.Rect{W: sceneryVPW, H: sceneryVPH}
+	if got := sceneryRect(vp, sceneryArtW, sceneryArtH, true, false, sceneryNoValue); got != vp {
+		t.Errorf("stretch = %+v, want the whole stage", got)
+	}
+	fit := sceneryRect(vp, sceneryArtW, sceneryArtH, false, false, sceneryNoValue)
+	if fit.H != vp.H || fit.W != sceneryArtW || fit.X != (vp.W-sceneryArtW)/2 {
+		t.Errorf("fit = %+v, want height-fit and centred", fit)
+	}
+	pano := sceneryRect(vp, sceneryWideW, sceneryArtH, false, true, sceneryOrigin)
+	if pano.W != sceneryWideW || pano.X != vp.W/2-sceneryOrigin {
+		t.Errorf("panorama = %+v, want the origin at the stage's centre", pano)
+	}
+}
+
+func TestSceneryScaleModeFollowsAO2(t *testing.T) {
+	cases := []struct {
+		user, design courtroom.ScalingMode
+		stretch      bool
+		nativeH      int32
+		want         sdl.ScaleMode
+	}{
+		{courtroom.ScalingAuto, courtroom.ScalingAuto, false, sceneryShortH, sdl.ScaleModeNearest},
+		{courtroom.ScalingAuto, courtroom.ScalingAuto, false, sceneryArtH, sdl.ScaleModeLinear},
+		{courtroom.ScalingAuto, courtroom.ScalingAuto, true, sceneryShortH, sdl.ScaleModeLinear},
+		{courtroom.ScalingAuto, courtroom.ScalingSmooth, false, sceneryShortH, sdl.ScaleModeLinear},
+		{courtroom.ScalingPixel, courtroom.ScalingSmooth, false, sceneryArtH, sdl.ScaleModeNearest},
+	}
+	for i, c := range cases {
+		if got := sceneryScaleMode(c.user, c.design, c.stretch, c.nativeH, sceneryVPH); got != c.want {
+			t.Errorf("case %d: got %v, want %v", i, got, c.want)
+		}
+	}
+}
+
+func TestInOutCubicEasesBothEnds(t *testing.T) {
+	const start, mid, end, quarter, threeQuarters = 0.0, 0.5, 1.0, 0.25, 0.75
+	if inOutCubic(start) != start || inOutCubic(mid) != mid || inOutCubic(end) != end {
+		t.Fatalf("ends and middle: %v %v %v", inOutCubic(start), inOutCubic(mid), inOutCubic(end))
+	}
+	if inOutCubic(quarter) >= quarter || inOutCubic(threeQuarters) <= threeQuarters {
+		t.Fatal("the curve must start slow and end slow")
+	}
+}
+
+func TestASlidePausesTheCharactersAndKeepsFramesComing(t *testing.T) {
+	const (
+		budget  = 64 << 20
+		side    = 64
+		frames  = 3
+		elapsed = 200 * time.Millisecond
+		speaker = "live://characters/a/(a)normal"
+	)
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, budget)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	defer store.Purge()
+	if err := store.Upload(speaker, sizedFixture(side, frames)); err != nil {
+		t.Fatal(err)
+	}
+	scene := &courtroom.Scene{}
+	scene.Speaker = courtroom.SpriteLayer{Visible: true, Active: speaker, IdleBase: speaker}
+	scene.Slide = courtroom.SlideScene{Active: true, Total: elapsed, Left: elapsed}
+
+	v := NewViewport(store)
+	if due, ok := v.NextAnimDue(scene); !ok || due != 0 {
+		t.Errorf("next frame due %v %v during a slide, want now", due, ok)
+	}
+	v.Update(scene, elapsed)
+	if v.speakerAnim.frame != 0 {
+		t.Errorf("speaker frame %d during a slide, want it paused", v.speakerAnim.frame)
+	}
+	scene.Slide = courtroom.SlideScene{}
+	v.Update(scene, elapsed)
+	if v.speakerAnim.frame == 0 {
+		t.Error("the speaker must animate again once the slide is over")
+	}
+}

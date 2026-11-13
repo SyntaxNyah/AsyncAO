@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The app-wide menu bar (#14, menubar.go). These pin the four things that make it a
@@ -821,7 +821,7 @@ func TestMenuBarThemeFitSubmenuMirrorsSettings(t *testing.T) {
 		}
 		a.themeLay.valid = true
 		a.fireMenuItem(it)
-		if got := a.d.Prefs.ThemeFitMode(); got != it.arg {
+		if got := a.d.Prefs.Load().ThemeFit; got != it.arg {
 			t.Fatalf("row %d must apply mode %d through SetThemeFit, got %d", i, it.arg, got)
 		}
 		if a.themeLay.valid {
@@ -876,7 +876,7 @@ func TestDrawLobbyWithMenuBarZeroAlloc(t *testing.T) {
 		t.Fatalf("the fixture must draw a live menu bar (draws=%v live=%v)", a.menuBar.draws, a.menuBar.live)
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled lobby frame with the menu bar allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -919,7 +919,7 @@ func TestDrawMenuBarOpenPaneZeroAlloc(t *testing.T) {
 		t.Fatal("the fixture must stay open across a drawn frame — a state flip would make the gate measure a different frame")
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled frame with an open menu pane allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }

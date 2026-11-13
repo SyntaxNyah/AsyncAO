@@ -18,7 +18,7 @@ func TestRemoveWhereSkipsReservedSchemes(t *testing.T) {
 	s, done := packStore(t)
 	defer done()
 	reserved := []string{
-		"theme://chatbox", "held://background", "thumb://witch",
+		"theme://chatbox", "held://background",
 		"shape://mask", "missingno://placeholder",
 	}
 	for _, k := range reserved {
@@ -115,7 +115,7 @@ func TestRemoveWhereNilPredicateIsSafe(t *testing.T) {
 func packStore(t *testing.T) (*TextureStore, func()) {
 	t.Helper()
 	ren, cleanup := newHeadlessRenderer(t)
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		cleanup()
 		t.Fatal(err)

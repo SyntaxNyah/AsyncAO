@@ -17,18 +17,35 @@ import (
 	"testing"
 )
 
-// hdidFuncDecl returns the declaration (not just the body) of the named function
-// in file, so a gate can read its PARAMETER names as well as its statements.
+// hdidFuncDecl returns the declaration (not just the body) of the named function, so
+// a gate can read its PARAMETER names as well as its statements. The file argument is
+// a HINT, not a lock: the declaration is resolved package-wide, so a file split that
+// moves the function keeps the gate green.
 func hdidFuncDecl(t *testing.T, file, fn string) *ast.FuncDecl {
 	t.Helper()
-	_, f := parsedFile(t, file)
-	for _, d := range f.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if ok && fd.Name.Name == fn && fd.Body != nil {
+	_, files := parseNonTestSources(t, 0)
+	check := func(f *ast.File) *ast.FuncDecl {
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == fn && fd.Body != nil {
+				return fd
+			}
+		}
+		return nil
+	}
+	if f, ok := files[file]; ok {
+		if fd := check(f); fd != nil {
 			return fd
 		}
 	}
-	t.Fatalf("%s: no function %s — it was renamed or removed, and its wiring gate now checks nothing", file, fn)
+	for name, f := range files {
+		if name == file {
+			continue
+		}
+		if fd := check(f); fd != nil {
+			return fd
+		}
+	}
+	t.Fatalf("no function %s — it was renamed or removed, and its wiring gate now checks nothing", fn)
 	return nil
 }
 
@@ -70,7 +87,7 @@ func identAssignedToField(n ast.Node, field string) string {
 // variable, a remembered value) fails here, and so does a tab whose id comes from
 // a different server than its preferences do.
 func TestTheSessionGetsTheIDForTheServerItDials(t *testing.T) {
-	fd := hdidFuncDecl(t, "app.go", "connectWith")
+	fd := hdidFuncDecl(t, "", "connectWith")
 	url := identAssignedToField(fd.Body, "serverKey")
 	if url == "" {
 		t.Fatal("connectWith no longer assigns a plain identifier to serverKey — the gate cannot tell which value names this server")

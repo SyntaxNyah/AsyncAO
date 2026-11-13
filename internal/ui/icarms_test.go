@@ -128,17 +128,3 @@ func TestBothArmsBounceFocusToTheICInput(t *testing.T) {
 		}
 	}
 }
-
-// TestArmedOverlayIsWiredIntoBothButtons is the encapsulation gate for the arm's
-// VISUAL. AO2 swaps in a "*_pressed" sprite (courtroom.cpp:6168/:6186); AsyncAO
-// cannot (those stems are not in the theme image set it loads), so drawArmedOverlay
-// is the substitute — and a button that stopped calling it would look exactly as
-// inert as the bug this file fixed, with every gate above still green.
-func TestArmedOverlayIsWiredIntoBothButtons(t *testing.T) {
-	body := funcBodySource(t, "theme_layout.go", "drawCourtroomThemed")
-	for _, call := range []string{"toggleRealization", "toggleScreenshake", "drawArmedOverlay"} {
-		if !containsCall(body, call) {
-			t.Errorf("the themed IC bar no longer calls %s — the arm is unreachable or invisible", call)
-		}
-	}
-}

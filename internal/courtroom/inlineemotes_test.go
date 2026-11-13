@@ -66,7 +66,7 @@ func TestChatboxExpandsInlineEmotes(t *testing.T) {
 
 	// Resolver set → expanded.
 	room, _, _, _ := newCourtroomRig(t)
-	room.InlineEmote = stubEmotes
+	room.Env = envFake{emote: stubEmotes}
 	room.HandleEvent(Event{Kind: EventMessage, Message: icMsg(":joy: hi")})
 	room.SkipToIdle()
 	if room.Scene.MessageText != "JOY hi" {
@@ -83,7 +83,7 @@ func TestChatboxExpandsInlineEmotes(t *testing.T) {
 
 	// Effect spans present → gated off (left literal), so the spans stay aligned.
 	gated, _, _, _ := newCourtroomRig(t)
-	gated.InlineEmote = stubEmotes
+	gated.Env = envFake{emote: stubEmotes}
 	withFX := ":joy: hi" + EncodeEffectsMarker([]TextEffectSpan{{Start: 0, Len: 2, Effect: TextEffectShake}})
 	gated.HandleEvent(Event{Kind: EventMessage, Message: icMsg(withFX)})
 	gated.SkipToIdle()

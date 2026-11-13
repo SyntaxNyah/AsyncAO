@@ -1,0 +1,56 @@
+# Everything a commit must pass before it can merge or release, except packaging.
+name: Checks
+
+on:
+  workflow_call:
+    inputs:
+      lint:
+        description: Lint first. False when the caller already ran lint.yml and waited for it.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    if: inputs.lint
+    uses: ./.github/workflows/lint.yml
+
+  test:
+    name: Tests (${{ matrix.os }})
+    # A lint failure is cheaper to find than three race runs, so they wait for it; skipped is fine when the caller
+    # linted already.
+    needs: lint
+    if: ${{ !cancelled() && (needs.lint.result == 'success' || needs.lint.result == 'skipped') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, shell: bash }
+          - { os: windows-2025, shell: "msys2 {0}" }
+          - { os: macos-15, shell: bash }
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-build
+        with:
+          go-cache-key-file: .github/workflows/checks.yml
+      - name: Race tests
+        run: go test -race -timeout 600s -count=1 ./...
+      # Linux only, sharing this job's setup; !cancelled() so failed tests don't hide the gates.
+      - name: Benchmarks
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: go test -run=NONE -bench=. -benchmem -benchtime=200ms -count=1 ./... | tee bench.txt
+      - name: Benchmark alloc gates
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: bash scripts/check-bench.sh bench.txt
+      - if: ${{ !cancelled() && runner.os == 'Linux' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: benchmarks
+          path: bench.txt

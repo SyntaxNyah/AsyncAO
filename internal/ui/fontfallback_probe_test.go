@@ -4,7 +4,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/veandco/go-sdl2/ttf"
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/sfnt"
 )
@@ -87,112 +86,17 @@ func TestFontCoverageMatrix(t *testing.T) {
 	}
 }
 
-// TestPickFontSelectsCoveringFace pins the actual fix end-to-end: given a set ordered
-// [embedded, ebrima, last] with aligned sfnt covers, the picker keeps Latin/Cyrillic on
-// the EMBEDDED face (its look is preserved) and routes a Tifinagh rune to EBRIMA — the
-// exact behaviour the reported ⵜⵉⴼⴻⵔⴰ tofu needs. Skips if Ebrima isn't installed.
-func TestPickFontSelectsCoveringFace(t *testing.T) {
-	if err := ttf.Init(); err != nil {
-		t.Skipf("ttf init: %v", err)
-	}
-	defer ttf.Quit()
-
-	ebrimaBytes, err := os.ReadFile(`C:\Windows\Fonts\ebrima.ttf`)
-	if err != nil {
-		t.Skip("Ebrima not installed")
-	}
-	const sz = 18
-	embedded, err := loadEmbeddedFont(sz)
-	if err != nil {
-		t.Fatalf("embedded: %v", err)
-	}
-	defer embedded.Close()
-	ebrima, err := memFont(ebrimaBytes, sz)
-	if err != nil {
-		t.Fatalf("ebrima: %v", err)
-	}
-	defer ebrima.Close()
-
-	// Order mirrors a real set: embedded, then the broad fallback, then the
-	// unconditional last entry. Covers aligned by index.
-	fonts := []*ttf.Font{embedded, ebrima, embedded}
-	cover := []*sfnt.Font{parseCover(goregular.TTF), parseCover(ebrimaBytes), nil}
-	var buf sfnt.Buffer
-
-	cases := []struct {
-		name string
-		text string
-		want *ttf.Font
-	}{
-		{"latin stays embedded", "Hello", embedded},
-		{"cyrillic stays embedded", "Привет", embedded},
-		{"tifinagh routes to ebrima", "ⵜⵉⴼⴻⵔⴰ", ebrima},
-	}
-	for _, tc := range cases {
-		if got, _ := pickFont(fonts, cover, &buf, tc.text); got != tc.want {
-			t.Errorf("%s: pickFont picked the wrong face", tc.name)
-		}
-	}
-	// Coverage flag: Latin is fully covered, but a Cyrillic+Tifinagh mix (no single
-	// face here) is NOT — that's the signal the per-glyph raster gate keys on.
-	if _, ok := pickFont(fonts, cover, &buf, "Hello"); !ok {
-		t.Error("covered flag: pure Latin should be fully covered")
-	}
-	if _, ok := pickFont(fonts, cover, &buf, "Аⵜ"); ok { // Cyrillic + Tifinagh: ebrima lacks Cyrillic, embedded lacks Tifinagh
-		t.Error("covered flag: a mixed Cyrillic+Tifinagh run should NOT be fully covered")
-	}
-}
-
-// TestCoverRunesPerGlyph pins the per-glyph assignment behind the mixed-script raster:
-// given a set [embedded, ebrima], a Latin+Tifinagh string routes 'A' to the embedded
-// face and 'ⵜ' to Ebrima — each rune to the first face that covers it. Skips without
-// Ebrima.
-func TestCoverRunesPerGlyph(t *testing.T) {
-	if err := ttf.Init(); err != nil {
-		t.Skipf("ttf init: %v", err)
-	}
-	defer ttf.Quit()
-	ebrimaBytes, err := os.ReadFile(`C:\Windows\Fonts\ebrima.ttf`)
-	if err != nil {
-		t.Skip("Ebrima not installed")
-	}
-	const sz = 18
-	embedded, err := loadEmbeddedFont(sz)
-	if err != nil {
-		t.Fatalf("embedded: %v", err)
-	}
-	defer embedded.Close()
-	ebrima, err := memFont(ebrimaBytes, sz)
-	if err != nil {
-		t.Fatalf("ebrima: %v", err)
-	}
-	defer ebrima.Close()
-
-	c := &Ctx{}
-	c.chatSet.fonts = []*ttf.Font{embedded, ebrima}
-	c.chatSet.cover = []*sfnt.Font{parseCover(goregular.TTF), parseCover(ebrimaBytes)}
-
-	got := c.coverRunes(embedded, []rune("Aⵜ"))
-	if len(got) != 2 {
-		t.Fatalf("coverRunes len = %d, want 2", len(got))
-	}
-	if got[0] != embedded {
-		t.Error("Latin 'A' should route to the embedded face")
-	}
-	if got[1] != ebrima {
-		t.Error("Tifinagh 'ⵜ' should route to Ebrima")
-	}
-}
-
 // TestScriptLoadGate pins the cheap byte/rune gate that decides which font tiers load:
 // pure-ASCII trips nothing (the 0-perf invariant), European non-ASCII trips the broad
-// tier but NOT the heavy CJK one, and only an actual Han/Kana/Hangul LETTER (not CJK
-// punctuation) trips CJK. Keeps a stray accent from pulling in ~30 MB of CJK faces.
+// tier but NOT the heavy CJK one, and only a rune the CJK faces alone draw — a
+// Han/Kana/Hangul letter, CJK punctuation or a full-width form — trips CJK. Keeps a
+// stray accent or symbol from pulling in ~30 MB of CJK faces, while a bracketed
+// name like 「Edgeworth」 still gets the faces that have its brackets.
 func TestScriptLoadGate(t *testing.T) {
 	cases := []struct {
 		text             string
 		nonASCII, cjkMab bool
-		cjkLetter        bool
+		cjkRune          bool
 	}{
 		{"Hello, world!", false, false, false}, // pure ASCII → nothing
 		{"café", true, false, false},           // Latin-1 accent → broad only
@@ -202,15 +106,19 @@ func TestScriptLoadGate(t *testing.T) {
 		{"あいう", true, true, true},              // Kana → CJK
 		{"안녕하세요", true, true, true},            // Hangul → CJK
 		{"hi 世界", true, true, true},            // mixed Latin + Han → both
-		{"。、！", true, true, false},             // CJK punctuation only → byte gate yes, letter no
+		{"。、！", true, true, true},              // CJK punctuation only → CJK (no broad face has it)
+		{"「Edgeworth」", true, true, true},      // CJK brackets around Latin → CJK
+		{"Ｆｕｌｌ", true, true, true},             // full-width Latin → CJK
+		{"★ Star ♪", true, false, false},       // BMP symbols (lead 0xE2) → broad only
+		{"ꀀ", true, true, false},               // Yi syllable: byte gate says maybe, not a CJK rune
 	}
 	for _, tc := range cases {
 		nonASCII, cjkMab := scanScriptBytes(tc.text)
 		if nonASCII != tc.nonASCII || cjkMab != tc.cjkMab {
 			t.Errorf("scanScriptBytes(%q) = (%v,%v), want (%v,%v)", tc.text, nonASCII, cjkMab, tc.nonASCII, tc.cjkMab)
 		}
-		if got := hasCJKLetter(tc.text); got != tc.cjkLetter {
-			t.Errorf("hasCJKLetter(%q) = %v, want %v", tc.text, got, tc.cjkLetter)
+		if got := hasCJKRune(tc.text); got != tc.cjkRune {
+			t.Errorf("hasCJKRune(%q) = %v, want %v", tc.text, got, tc.cjkRune)
 		}
 	}
 }

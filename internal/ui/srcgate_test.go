@@ -19,14 +19,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
-
-// strconvUnquote is strconv.Unquote, wrapped so the harvesters can be read without
-// an import that looks unrelated to string literals.
-func strconvUnquote(lit string) (string, error) { return strconv.Unquote(lit) }
 
 // parsedFile parses one file of this package, cached per test run is unnecessary —
 // these gates run once each and the files are small.
@@ -44,18 +40,51 @@ func parsedFile(t *testing.T, name string) (*token.FileSet, *ast.File) {
 	return fset, f
 }
 
-// parseNonTestSources parses every non-test .go file in this package's directory
-// into fset, returning a filename→AST map in the same shape the deprecated
-// parser.ParseDir used to hand back (its per-package Files map). ParseDir was
-// dropped because it ignores build tags when associating files with packages
-// (SA1019); the explicit walk + parser.ParseFile keeps the census exact. An empty
-// result is a failure, not a pass: a census that read nothing passes everything.
-func parseNonTestSources(t *testing.T, fset *token.FileSet, mode parser.Mode) map[string]*ast.File {
+// parsedPackage is the memoized result of parsing this package's non-test sources.
+type parsedPackage struct {
+	fset  *token.FileSet
+	files map[string]*ast.File
+}
+
+// parseKey identifies a memoized parse: the package directory and the parser mode.
+type parseKey struct {
+	dir  string
+	mode parser.Mode
+}
+
+var (
+	srcParseMu    sync.Mutex
+	srcParseCache = map[parseKey]*parsedPackage{}
+)
+
+// parseNonTestSources parses every non-test .go file in this package's directory into
+// fset, returning a filename→AST map in the same shape the deprecated parser.ParseDir
+// used to hand back (its per-package Files map). ParseDir was dropped because it
+// ignores build tags when associating files with packages (SA1019); the explicit walk +
+// parser.ParseFile keeps the census exact. An empty result is a failure, not a pass: a
+// census that read nothing passes everything.
+//
+// The parse is memoized per test binary and per parser.Mode (see parseKey): this package
+// has 200+ files and these gates used to re-read and re-parse all of them once per call
+// (~26k parses a run, slower still under -race). The on-disk sources are immutable during
+// a run, so one parse per (directory, mode) is behaviour-identical.
+func parseNonTestSources(t testing.TB, mode parser.Mode) (*token.FileSet, map[string]*ast.File) {
 	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+	key := parseKey{dir: wd, mode: mode}
+	srcParseMu.Lock()
+	defer srcParseMu.Unlock()
+	if pp, ok := srcParseCache[key]; ok {
+		return pp.fset, cloneFileMap(pp.files)
+	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read package directory: %v", err)
 	}
+	fset := token.NewFileSet()
 	files := make(map[string]*ast.File)
 	for _, e := range entries {
 		name := e.Name()
@@ -71,40 +100,19 @@ func parseNonTestSources(t *testing.T, fset *token.FileSet, mode parser.Mode) ma
 	if len(files) == 0 {
 		t.Fatal("no production sources found — the census would be vacuous")
 	}
-	return files
+	srcParseCache[key] = &parsedPackage{fset: fset, files: files}
+	return fset, cloneFileMap(files)
 }
 
-// funcBodySource returns the AST body of the named function (or method) declared in
-// file. Fails the test when it is absent — a renamed function must break its gate
-// loudly, not silently stop being checked.
-func funcBodySource(t *testing.T, file, fn string) *ast.BlockStmt {
-	t.Helper()
-	_, f := parsedFile(t, file)
-	for _, d := range f.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if ok && fd.Name.Name == fn && fd.Body != nil {
-			return fd.Body
-		}
+// cloneFileMap returns a shallow copy of files so a caller that mutates the map (the
+// icsfx sentinel gate deletes its own file before policing the rest) cannot corrupt the
+// shared cache. The *ast.File values are shared but only ever read, never written.
+func cloneFileMap(files map[string]*ast.File) map[string]*ast.File {
+	out := make(map[string]*ast.File, len(files))
+	for k, v := range files {
+		out[k] = v
 	}
-	t.Fatalf("%s: no function %s — it was renamed or removed, and its wiring gate now checks nothing", file, fn)
-	return nil
-}
-
-// containsCall reports whether n contains a call whose function NAME (the selector's
-// last segment, or a bare identifier) is fn.
-func containsCall(n ast.Node, fn string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if callName(call) == fn {
-			found = true
-		}
-		return !found
-	})
-	return found
+	return out
 }
 
 // callsNamed returns every call inside n whose function NAME is fn, in source order.
@@ -121,29 +129,6 @@ func callsNamed(n ast.Node, fn string) []*ast.CallExpr {
 	return out
 }
 
-// bindingOf returns the name the single-value assignment `x := fn(...)` binds inside
-// n, or "" when fn's result is not assigned to one plain identifier. A gate uses it to
-// learn what a helper's result is CALLED here, so the rest of the gate can require
-// other expressions to be derived from that name without hard-coding it — rename the
-// variable and the gate follows; stop using the helper and the gate fails.
-func bindingOf(n ast.Node, fn string) string {
-	name := ""
-	ast.Inspect(n, func(node ast.Node) bool {
-		as, ok := node.(*ast.AssignStmt)
-		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-			return true
-		}
-		if call, ok := as.Rhs[0].(*ast.CallExpr); !ok || callName(call) != fn {
-			return true
-		}
-		if id, ok := as.Lhs[0].(*ast.Ident); ok {
-			name = id.Name
-		}
-		return false
-	})
-	return name
-}
-
 // mentionsIdent reports whether the expression e reads the identifier name anywhere
 // inside it. Deliberately "mentions" and not "equals": a coordinate that legitimately
 // grows to `head.count.X+2` still derives from head, while one rebuilt out of the
@@ -152,47 +137,6 @@ func mentionsIdent(e ast.Expr, name string) bool {
 	found := false
 	ast.Inspect(e, func(node ast.Node) bool {
 		if id, ok := node.(*ast.Ident); ok && id.Name == name {
-			found = true
-		}
-		return !found
-	})
-	return found
-}
-
-// deferredCall reports whether n contains `defer <...>fn(...)`.
-func deferredCall(n ast.Node, fn string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		d, ok := node.(*ast.DeferStmt)
-		if !ok {
-			return true
-		}
-		if callName(d.Call) == fn {
-			found = true
-		}
-		return !found
-	})
-	return found
-}
-
-// readsFieldOf reports whether n contains `<expr containing a call to src>.<field>`
-// — a READ of that field off the helper's result, wherever it appears.
-//
-// It is assignsFieldFrom's missing half, and the omission was load-bearing: that
-// one matches an assignment TO a selector field, so a census built on it can only
-// ever see writes. The bypass a "one place knows this rule" gate is written to
-// catch is a READ — `anim := a.charMetaFor(name).idle` — whose left-hand side is a
-// plain identifier, so it went straight through. This walks expressions instead of
-// statements, which catches the read in every position it can take (an assignment,
-// an if-init, a call argument, a return).
-func readsFieldOf(n ast.Node, field, src string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		sel, ok := node.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != field {
-			return true
-		}
-		if containsCall(sel.X, src) {
 			found = true
 		}
 		return !found
@@ -244,41 +188,4 @@ func callName(call *ast.CallExpr) string {
 		return fn.Name
 	}
 	return ""
-}
-
-// callOrder returns the source ORDER of the named calls inside n: for each call
-// found, its index into want. Calls not in want are ignored, and a name that appears
-// twice contributes twice. Used to pin paint order in a single-pass draw.
-func callOrder(n ast.Node, want ...string) []string {
-	type hit struct {
-		pos  token.Pos
-		name string
-	}
-	var hits []hit
-	inWant := make(map[string]bool, len(want))
-	for _, w := range want {
-		inWant[w] = true
-	}
-	ast.Inspect(n, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if name := callName(call); inWant[name] {
-			hits = append(hits, hit{pos: call.Pos(), name: name})
-		}
-		return true
-	})
-	// ast.Inspect is already in source order for a single file, but sort defensively
-	// on position so a future nesting change cannot reorder the answer silently.
-	for i := 1; i < len(hits); i++ {
-		for j := i; j > 0 && hits[j].pos < hits[j-1].pos; j-- {
-			hits[j], hits[j-1] = hits[j-1], hits[j]
-		}
-	}
-	out := make([]string, 0, len(hits))
-	for _, h := range hits {
-		out = append(out, h.name)
-	}
-	return out
 }

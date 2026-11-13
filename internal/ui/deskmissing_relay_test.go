@@ -9,7 +9,35 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
+
+// spriteProbe implements courtroom.AssetResolver for the one residency lookup this
+// test exercises; the rest answer their nil defaults.
+type spriteProbe func(base string) bool
+
+func (f spriteProbe) EffectsFolderFor(string) string { return "" }
+func (f spriteProbe) OverlayFor(string, string) (courtroom.OverlayResolved, bool) {
+	return courtroom.OverlayResolved{}, false
+}
+func (f spriteProbe) SpriteReady(base string) bool { return f(base) }
+func (f spriteProbe) SceneryFile(string) string    { return "" }
+func (f spriteProbe) BackgroundDesign(string) (*theme.INI, bool) {
+	return nil, true
+}
+func (f spriteProbe) SpritePlayable(base string) bool { return f(base) }
+func (f spriteProbe) AudioReady(string) bool          { return false }
+func (f spriteProbe) SpriteScaling(string) courtroom.ScalingMode {
+	return courtroom.ScalingAuto
+}
+
+// loadedAs is a spriteProbe whose background has loaded as file.
+type loadedAs struct {
+	spriteProbe
+	file string
+}
+
+func (l loadedAs) SceneryFile(string) string { return l.file }
 
 // TestDrainWarningsRelaysDeskMissing pins the #44 bridge end to end over the REAL
 // asset pipeline: a background whose position ships no desk image exhausts its whole
@@ -31,7 +59,7 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	dir := t.TempDir() // empty pack: background/gs4/defensedesk exists in no format
 	local, cleanup := wireLocalManager(t, a, dir)
 	defer cleanup()
-	// The LocalMode resolver walks the configured formats; point the desk type at
+	// The resolver walks the configured formats; point the desk type at
 	// .png so the probe list is a real (and short) chain over the on-disk root.
 	a.d.Prefs.SetFormatOrder(assets.AssetTypeDeskOverlay.Name(), []string{config.ExtPNG})
 
@@ -40,8 +68,11 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	// desk base matches).
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "gs4"
-	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), a.d.Manager, sess, nil)
+	urls := courtroom.NewURLBuilder(local.BaseURL())
+	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, nil)
 	a.room = room
+	// The def background loaded as its legacy file, so the desk follows to defensedesk.
+	room.Assets = loadedAs{spriteProbe(func(string) bool { return false }), urls.Background("gs4", "defenseempty") + config.ExtPNG}
 	room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: &protocol.ChatMessage{
 		CharName: "Phoenix", Emote: "normal", Side: "def", DeskMod: protocol.DeskShow,
 	}})
@@ -108,8 +139,7 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 	a.d.Prefs.SetFormatOrder(assets.AssetTypeBackground.Name(), []string{config.ExtPNG})
 
 	urls := courtroom.NewURLBuilder(local.BaseURL())
-	bgPart, _ := courtroom.PositionScene("wit")
-	bgBase := urls.Background("gs4", bgPart)
+	bgBase := urls.PositionScenery("gs4", "wit", nil).Background
 
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "gs4"
@@ -118,7 +148,7 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 	room.SequentialWait = true
 	// Everything but the position background resolves as "settled", so the gate
 	// parks on the background and nothing else (DeskHide, no chatbox, no audio).
-	room.SpriteReady = func(base string) bool { return base != bgBase }
+	room.Assets = spriteProbe(func(base string) bool { return base != bgBase })
 
 	room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: &protocol.ChatMessage{
 		CharName: "Phoenix", Emote: "normal", Side: "wit",

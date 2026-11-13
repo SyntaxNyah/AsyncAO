@@ -35,6 +35,15 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 | UI label blit at fractional scale, 0 allocs | **0 allocs/op** steady state, **~2.0-2.4 µs/op** (device-exact) vs **~4.0 µs/op pre-fix** (software renderer) — `blitLabel`'s device-exact bracket (`blitLabelExact`) is *cheaper* than the ambient-scale resample it replaces here, because a scaled `Ren.Copy` costs a per-pixel bilinear resample the extra `SetScale`/`SetClipRect` calls don't approach; identity scale (100%) is unaffected (~1.5-1.8 µs/op either way, noise-level) since `uiDeviceExactAt` excludes it | `BenchmarkLabelAtFractionalScale` / `BenchmarkLabelAtIdentityScale` + `TestLabelAllocFreeAtFractionalScale` |
 | Popped-out preview: closed = free, main loop's new per-pass call | **4.6 ns/op, 0 allocs/op** (closed) vs **236.8 ns/op, 0 allocs/op** (open + animating, clock swept across the loop) — `AdvanceDetachedPreview` is the call `cmd/asyncao`'s minimized/`SkipFrame` branches now make on EVERY pass regardless of whether the preview was ever opened | `BenchmarkAdvanceDetachedPreviewClosed` / `BenchmarkAdvanceDetachedPreviewOpenAnimating` + `TestAdvanceDetachedPreviewClosedIsZeroAlloc` (software renderer) |
 | Popped-out preview: animation cache hit vs miss | **19.3 ns/op, 0 allocs/op** (cache hit — a looping animation past its first pass) vs **350668 ns/op, 5 allocs/op (311529 B)** (cache miss — a fresh readback+upload) | `BenchmarkPreviewWindowShowAnimFrameCacheHit` / `...CacheMiss` + `TestPreviewWindowShowAnimFrameCachesAfterFirstPass` (software renderer) |
+| Courtroom message start, plain | **5.5 µs/op, 107 allocs** | `BenchmarkMessageBeginPlain` |
+| Courtroom message start, with chat extras | **10.6 µs/op, 140 allocs** | `BenchmarkMessageBeginMarked` |
+| Chat extras decode, per message | **3.9 µs/op, 27 allocs** | `BenchmarkDecodeMarkers` |
+| Courtroom update, idle / talking, per frame | **5.9 ns/op, 0 allocs / ~0.9 µs/op, 1 alloc** | `BenchmarkUpdateIdle`, `BenchmarkUpdateTalking` |
+| char.ini parse, 60 emotes | **424 µs/op, 1,406 allocs** | `BenchmarkParseCharINI` |
+| Whole idle frame, headless | **~297 µs/op, 0 allocs** | `BenchmarkFrameIdle` |
+| Background pass, idle | **220 ns/op, 0 allocs** | `BenchmarkBackgroundIdle` |
+| `Conn.Send`, time the caller waits | **~2.4 µs/op, 2 allocs** (queues the packet; ~48 µs and 8 allocs when the caller wrote to the socket itself) | `BenchmarkConnSend` |
+| Wait gate, one tick holding a message under strict sequencing | **~17 ns/op, 0 allocs** (~6 µs and 174 allocs on a tick that rebuilds the list) | `BenchmarkWaitGateHeld` |
 | Race detector | **clean across all packages** | CI `go test -race ./...` |
 
 Notes:

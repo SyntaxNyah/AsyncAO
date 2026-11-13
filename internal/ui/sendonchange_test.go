@@ -8,7 +8,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -31,15 +30,15 @@ func newRoomForTest(t testing.TB) *courtroom.Courtroom {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	local := assets.NewLocalFetcher([]string{t.TempDir()})
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: assets.NewResolver(prefs), Prefs: prefs, T2: t2, Disk: disk,
-		Source: local, LocalMode: true, Pool: pool, Decoder: decoder,
+		Source: local, Decoder: decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	mgr.SetFolders(local.Mounts(), nil)
 	return courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), mgr, nil, courtroom.NopAudio{})
 }
 
@@ -67,20 +66,20 @@ func TestRecEventSelfContainsStyle(t *testing.T) {
 	// A NO-marker line from char 5 is recorded WITH the style re-injected.
 	bare := msgFor(5, "Phoenix", "no marker here")
 	re := a.recEventFrom(courtroom.Event{Kind: courtroom.EventMessage, Message: bare})
-	if !courtroom.HasSpriteMarker(re.Message.Message) {
+	if _, clean := courtroom.DecodeSpriteStyle(re.Message.Message); clean == re.Message.Message {
 		t.Fatal("a styled speaker's no-marker line was recorded WITHOUT its style — clips would lose it")
 	}
 	if got, _ := courtroom.DecodeSpriteStyle(re.Message.Message); got != style {
 		t.Errorf("re-injected style = %+v, want %+v", got, style)
 	}
 	// The LIVE message must be untouched — the recording copies, never mutates it.
-	if courtroom.HasSpriteMarker(bare.Message) {
+	if _, clean := courtroom.DecodeSpriteStyle(bare.Message); clean != bare.Message {
 		t.Error("recEventFrom mutated the live message instead of copying")
 	}
 
 	// An UNSTYLED speaker's line is left bare (no spurious marker).
 	re2 := a.recEventFrom(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(9, "Maya", "plain")})
-	if courtroom.HasSpriteMarker(re2.Message.Message) {
+	if _, clean := courtroom.DecodeSpriteStyle(re2.Message.Message); clean != re2.Message.Message {
 		t.Error("an unstyled speaker's line was given a marker")
 	}
 }

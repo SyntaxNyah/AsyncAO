@@ -53,12 +53,12 @@ handshake (`op 0`) / activity (`op 1` `SET_ACTIVITY`) frames.
 
 ## Privacy model
 
-- **Rich Presence is ON by default on Discord-capable builds, and now
+- **Rich Presence is ON by default, and now
   works out of the box** — the official Application ID is baked in, so a
   fresh install with Discord running shows presence immediately (no ID to
   paste). Untick *Enable* in Settings → Discord to turn it off; that gate
   is enforced live (it clears the activity the moment you untick it).
-  `-tags nodiscord` builds carry no Discord code at all, and a saved prefs
+  A saved prefs
   file keeps whatever you last chose (this default only seeds fresh installs).
 - When you enable it, the default field set is **server + character +
   showname**; **area is off** until you opt in (some people don't want
@@ -85,20 +85,9 @@ version:
   *cannot* fail to boot because of Discord, whether or not Discord is
   installed.
   > ⚠️ The DLLs shipped next to `asyncao.exe` on Windows
-  > (`SDL2.dll`, `libwebp`, `libavif`, …) are the rendering/audio engine —
+  > (`SDL3.dll`, `libwebp`, `libavif`, …) are the rendering/audio engine —
   > **the client needs those to run at all.** Don't delete them expecting
-  > to remove Discord; that just breaks the app. To get a binary with the
-  > Discord code gone, use the `-nodiscord` build below instead.
-- `go build -tags nodiscord ./cmd/asyncao` compiles the integration out
-  **entirely**: `internal/presence` becomes a no-op stub, and the whole
-  **Settings → Discord** section is compiled out too (it lives in a
-  build-tagged file). So a Discord-free binary carries **no Discord code at
-  all** — not even the settings UI — and is a touch smaller. CI publishes a
-  prebuilt `asyncao-<platform>-nodiscord` artifact for every platform (in the
-  **Actions** tab → latest run → **Artifacts**; downloading needs a free GitHub
-  account), so you don't have to build it yourself. That prebuilt artifact is
-  the **lean build** — it also has **voice chat** compiled out (built `-tags
-  "nodiscord novoice"`); see *Voice chat (never required)* in `BUILDING.md`.
+  > to remove Discord; that just breaks the app. Turn it off in Settings instead.
 
 ## Troubleshooting
 

@@ -16,8 +16,7 @@ import (
 // commented out in that release) and allocates 100 bucket maps with it. Nothing
 // in the suite looked at what CONSTRUCTING a LocalFetcher costs, so a 300 ms
 // wakeup per construction was invisible — and LocalFetcher is constructed on
-// every mounts change, on every archive replay and, through NewMountLayer, on
-// every tab activation.
+// every mounts change and on every archive replay.
 
 // goroutineSettleSlack is the growth TestLocalFetcherConstructionIsGoroutineFree
 // tolerates. Not zero, because the runtime can be finishing unrelated work (a GC
@@ -31,11 +30,8 @@ const goroutineSettleSlack = 4
 // unmissable.
 const goroutineFreeConstructions = 64
 
-// TestLocalFetcherConstructionIsGoroutineFree is the hard-rule-4 gate: building
-// fetchers — and the mount layers that used to mint one just to read a label off
-// it — must not grow the goroutine count. Measured, not assumed: the same shape
-// of scratch test reported before=2 after50Fetchers=52 after50MountLayers=102
-// against the expirable.LRU memo.
+// TestLocalFetcherConstructionIsGoroutineFree is the hard-rule-4 gate: building fetchers must not grow the goroutine
+// count, as the expirable.LRU memo once did, one janitor per fetcher.
 func TestLocalFetcherConstructionIsGoroutineFree(t *testing.T) {
 	root := t.TempDir()
 	mountSets := make([][]string, goroutineFreeConstructions)
@@ -47,56 +43,21 @@ func TestLocalFetcherConstructionIsGoroutineFree(t *testing.T) {
 
 	before := settledGoroutines()
 	fetchers := make([]*LocalFetcher, 0, goroutineFreeConstructions)
-	layers := make([]*MountLayer, 0, goroutineFreeConstructions)
 	for _, mounts := range mountSets {
 		fetchers = append(fetchers, NewLocalFetcher(mounts))
-		layers = append(layers, NewMountLayer(nil, mounts, []string{"https://example.test/base/"}))
 	}
 	after := settledGoroutines()
 
 	if grew := after - before; grew > goroutineSettleSlack {
-		t.Fatalf("%d fetchers + %d mount layers grew the goroutine count by %d (before=%d after=%d); "+
-			"the negative memo must stay janitor-free (hard rule 4)",
-			len(fetchers), len(layers), grew, before, after)
+		t.Fatalf("%d fetchers grew the goroutine count by %d (before=%d after=%d); "+
+			"the negative memo must stay janitor-free (hard rule 4)", len(fetchers), grew, before, after)
 	}
-	// Keep both alive past the measurement so nothing can be collected early and
-	// flatter the count.
+	// Kept alive past the measurement so nothing can be collected early and flatter the count.
 	runtime.KeepAlive(fetchers)
-	runtime.KeepAlive(layers)
 }
 
-// TestMountLayerLabelCostsNoFetcher is the companion pin for the specific
-// regression: NewMountLayer wants the ORIGIN, not a byte source. Re-introducing
-// NewLocalFetcher(mounts).BaseURL() there keeps the origin correct, so no other
-// test would notice — this one notices, because building a layer must cost no
-// more than building the string it wraps.
-func TestMountLayerLabelCostsNoFetcher(t *testing.T) {
-	mounts := []string{t.TempDir(), t.TempDir()}
-	origin := LocalOriginFor(mounts)
-	if got := NewMountLayer(nil, mounts, nil).LocalOrigin(); got != origin {
-		t.Fatalf("layer origin %q, want %q", got, origin)
-	}
-
-	const runs = 64
-	layerAllocs := testing.AllocsPerRun(runs, func() { _ = NewMountLayer(nil, mounts, nil) })
-	labelAllocs := testing.AllocsPerRun(runs, func() { _ = LocalOriginFor(mounts) })
-	// The layer's own overhead over the bare label: the MountLayer struct and the
-	// dedup map NewMountLayer always builds. A LocalFetcher would add its struct,
-	// its mount-slice copy, the memo struct and the memo's (2048-slot) map on top
-	// of that — far outside this margin — so the gate catches the regression
-	// without pinning the hash function's own allocation churn.
-	const layerOverheadAllocs = 3
-	if layerAllocs > labelAllocs+layerOverheadAllocs {
-		t.Fatalf("NewMountLayer allocates %.0f vs %.0f for the label alone — it is minting a fetcher for a string",
-			layerAllocs, labelAllocs)
-	}
-}
-
-// TestLocalOriginForMatchesTheFetcher pins the two spellings of the origin
-// formula as ONE formula. The helper exists so label call sites stop building
-// fetchers; the moment it drifts, a pack's transport URLs and the fetcher's
-// keyspace part company and the pack goes silently inert — the failure mode
-// TestMountLayerUnnormalizedOriginIsTheInertTrap already documents.
+// TestLocalOriginForMatchesTheFetcher pins the two spellings of the origin formula as one: the moment they drift, a
+// folder's local:// URLs and a fetcher's part company and the folder goes silently inert.
 func TestLocalOriginForMatchesTheFetcher(t *testing.T) {
 	dir := t.TempDir()
 	for _, mounts := range [][]string{

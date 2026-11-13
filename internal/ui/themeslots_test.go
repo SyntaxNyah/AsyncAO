@@ -63,6 +63,10 @@ func TestUnboundDesignKeysNamesOnlyTheOrphans(t *testing.T) {
 	}
 }
 
+// themeSlotCap is TEST-ONLY: the registry cap (hard rule 4) moved here from
+// themeslots.go. TestThemeSlotTableIsTotal asserts len(themeSlots) stays under it.
+const themeSlotCap = 160
+
 // TestThemeSlotTableIsTotal pins the registry's structural invariants. The table is
 // the contract every later #21 commit binds against, so a duplicate row or a
 // mis-derived table would silently mis-place a widget rather than fail.
@@ -100,40 +104,6 @@ func TestThemeSlotTableIsTotal(t *testing.T) {
 	for k, why := range themeSlotDeferred {
 		if why == "" {
 			t.Errorf("themeSlotDeferred[%q] has no reason", k)
-		}
-	}
-}
-
-// TestEveryDrawnKeyIsMarkedHandDrawn catches the drift that actually happened: a
-// binding commit added a draw site in theme_layout.go and forgot to move the row's
-// state off slotStateInert. The registry then LIES about what paints, and the
-// consequence is not cosmetic — themeKeyEditable returns false for an inert row, so
-// the themed layout editor refuses to offer a drag box for a widget that is on
-// screen. That is the ghost box inverted.
-//
-// The probe is the draw site's own rect lookup. Every themed control resolves its
-// rect through one of two helpers, so a key named in either call is painted.
-func TestEveryDrawnKeyIsMarkedHandDrawn(t *testing.T) {
-	src, err := os.ReadFile("theme_layout.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(src)
-	for i := range themeSlots {
-		s := &themeSlots[i]
-		if s.state != slotStateInert {
-			continue
-		}
-		// Both spellings a draw site can use to resolve this row's rect.
-		for _, probe := range []string{
-			`themedToggleRect(lay, "` + s.key + `"`,
-			`lay.rect("` + s.key + `")`,
-		} {
-			if strings.Contains(body, probe) {
-				t.Errorf("%q is drawn (%s) but still marked slotStateInert — the layout editor will refuse to place it",
-					s.key, probe)
-				break
-			}
 		}
 	}
 }

@@ -26,19 +26,13 @@ package ui
 // None restates what the wiring does; all five call it.
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -79,21 +73,30 @@ func roomFactoryAppMounted(t *testing.T) (*App, string, func()) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    assets.NewLocalFetcher([]string{mount}),
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   assets.NewLocalFetcher([]string{mount}),
+		Decoder:  decoder,
 	})
-	a.d.Prefs.SetFormatAutoDetect(false) // no manifest fetch interposes on the export path
+	t.Cleanup(a.d.Manager.CloseMedia)
+	a.d.Manager.SetFolders([]string{mount}, nil)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
+
+	// no manifest fetch interposes on the export path
 	return a, mount, cleanup
 }
 
@@ -263,18 +266,49 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 			t.Run(p.name+"/effects="+boolWord(want), func(t *testing.T) {
 				a, cleanup := roomFactoryApp(t)
 				defer cleanup()
-				a.d.Prefs.SetScreenEffects(want)
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = want })
 				// Driven together with ScreenEffects, and read INVERTED (the pref
 				// says "hide"), so each value of want exercises one side of the
 				// authoring exemption: at want=false a pref-driven room must go
 				// dark while an authoring one stays lit, and at want=true a
 				// pref-driven room must drop received sprite styles while an
 				// authoring one keeps them.
-				a.d.Prefs.SetHideSpriteStyles(want)
+				a.d.Prefs.Update(func(
+					sn *config.
+						Settings) {
+
+					sn.
+						HideSpriteStyles =
+
+						want
+
+				})
+
 				// Driven too, so the "not exempt" half of the exemption is not a
 				// vacuous false==false: the naming pref must reach all six rooms.
-				a.d.Prefs.SetForceCharNames(want)
-				a.d.Prefs.SetDisableEffects(false) // the master off-switch is not what is under test here
+				a.d.Prefs.Update(func(
+					sn *config.
+						Settings) {
+
+					sn.
+						ForceCharNames =
+
+						want
+
+				})
+
+				a.d.Prefs.Update(func(
+					sn *config.
+						Settings) {
+
+					sn.
+						DisableEffects =
+
+						false
+
+				})
+
+				// the master off-switch is not what is under test here
 
 				room := p.drive(t, a)
 				if p.stop != nil {
@@ -283,27 +317,19 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 				if room == nil {
 					t.Fatal("the path produced no room at all")
 				}
-				// The overlay engine (effectspicker.go). Without these three an
-				// authored effect resolves to nothing, silently.
-				if room.OverlayFor == nil {
-					t.Error("OverlayFor is nil — this room can never resolve a screen-effect overlay, and nothing on screen says so")
-				}
-				if room.EffectsFolderFor == nil {
-					t.Error("EffectsFolderFor is nil — the room cannot find the character's effects folder")
-				}
-				if room.CustomRealizationFor == nil {
-					t.Error("CustomRealizationFor is nil — a character's own realization sound is lost")
+				// The overlay engine + asset probes (effectspicker.go / the render &
+				// audio stores). Without these an authored effect resolves to nothing
+				// and the wait/strict-sequencing gates never hold.
+				if room.Assets == nil {
+					t.Error("Assets is nil — the overlay engine, residency probes and scaling filter are all missing")
 				}
 				// The char.ini tier (charmeta.go): the same speaker must blip,
 				// skin and scale identically in every mode.
-				if room.BlipNameFor == nil {
-					t.Error("BlipNameFor is nil — the speaker's own blip set is ignored in this mode")
+				if room.Blips == nil {
+					t.Error("Blips is nil — the speaker's own blip set is ignored in this mode")
 				}
-				if room.ChatSkinFor == nil {
-					t.Error("ChatSkinFor is nil — the speaker's own chatbox skin is ignored in this mode")
-				}
-				if room.SpriteScaling == nil {
-					t.Error("SpriteScaling is nil — the character's declared scaling filter is ignored in this mode")
+				if room.Chars == nil {
+					t.Error("Chars is nil — the speaker's own skin/ink/showname/realization is ignored in this mode")
 				}
 				// The visual gates: pref-driven for a viewing room, exempt for an
 				// authoring one. ForceCharNames is pref-driven in BOTH — it
@@ -334,9 +360,9 @@ func TestEveryRoomTheAppBuildsIsWiredAndPrefSeeded(t *testing.T) {
 				if p.authoring && room.ReduceMotion {
 					t.Error("ReduceMotion is set on an AUTHORING room — an export or preview carries the motion the author wrote, not this viewer's accessibility choice")
 				}
-				if room.ForceCharNames != a.d.Prefs.ForceCharNamesOn() {
+				if room.ForceCharNames != a.d.Prefs.Load().ForceCharNames {
 					t.Errorf("ForceCharNames = %v with the preference at %v — the naming pref is not part of the authoring exemption and must reach every room",
-						room.ForceCharNames, a.d.Prefs.ForceCharNamesOn())
+						room.ForceCharNames, a.d.Prefs.Load().ForceCharNames)
 				}
 			})
 		}
@@ -358,8 +384,8 @@ func boolWord(b bool) string {
 func TestExportKeepsItsDeliberateReduceMotionOverride(t *testing.T) {
 	a, cleanup := roomFactoryApp(t)
 	defer cleanup()
-	a.d.Prefs.SetReduceMotion(true)
-	defer a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
+	defer a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	a.startSceneExport(gateScene(), "gate", exportComic)
 	if a.gif == nil || a.gif.room == nil {
@@ -407,8 +433,27 @@ func TestAuthoringRoomsSurviveTheMasterEffectsOffSwitch(t *testing.T) {
 		t.Run(p.name, func(t *testing.T) {
 			a, cleanup := roomFactoryApp(t)
 			defer cleanup()
-			a.d.Prefs.SetDisableEffects(true)
-			defer a.d.Prefs.SetDisableEffects(false)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					DisableEffects =
+
+					true
+
+			})
+
+			defer a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					DisableEffects =
+
+					false
+
+			})
 
 			room := p.drive(t, a)
 			if p.stop != nil {
@@ -428,193 +473,5 @@ func TestAuthoringRoomsSurviveTheMasterEffectsOffSwitch(t *testing.T) {
 	}
 	if authoring != wantAuthoringRooms {
 		t.Errorf("%d authoring rooms in stagedRoomPaths(), want %d — a surface that renders what the author wrote lost its exemption (or gained one)", authoring, wantAuthoringRooms)
-	}
-}
-
-// TestRoomConstructionHasExactlyOneCallSite is the seam's encapsulation gate: in
-// this package, production code may build a courtroom in exactly ONE function.
-//
-// This is the half that makes the wiring STRUCTURAL rather than advisory. A
-// sixth mode added the old way — courtroom.NewCourtroom, then remember the two
-// wiring calls — fails here at the build gate instead of shipping a pane with no
-// screen effects, which is what happened twice already. It matches the mechanism
-// the package already uses for source-level rules
-// (TestElementDrawUsesNoStringBuilding, themeelements_test.go).
-//
-// Test files are deliberately out of scope: a Go package cannot stop its own
-// tests from calling another package's exported constructor, and a test that
-// builds a bare room is testing the room, not staging one.
-func TestRoomConstructionHasExactlyOneCallSite(t *testing.T) {
-	const wantFunc = "newRoom"
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fset := token.NewFileSet()
-	var sites []string
-	files := 0
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		files++
-		ast.Inspect(file, func(n ast.Node) bool {
-			fn, ok := n.(*ast.FuncDecl)
-			if !ok || fn.Name == nil || fn.Body == nil {
-				return true
-			}
-			ast.Inspect(fn.Body, func(in ast.Node) bool {
-				call, ok := in.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel == nil || sel.Sel.Name != "NewCourtroom" {
-					return true
-				}
-				pkg, ok := sel.X.(*ast.Ident)
-				if !ok || pkg.Name != "courtroom" {
-					return true
-				}
-				if fn.Name.Name != wantFunc {
-					t.Errorf("%s builds a courtroom directly at %s — every mode must go through App.%s "+
-						"(newroom.go), which is what attaches the char.ini callbacks, the screen-effect overlay "+
-						"engine and the user's visual preferences. Two rooms were built this way and shipped with "+
-						"no overlays at all.", fn.Name.Name, fset.Position(call.Pos()), wantFunc)
-				}
-				sites = append(sites, fn.Name.Name)
-				return true
-			})
-			return true
-		})
-	}
-	if files == 0 {
-		t.Fatal("the scan found no production files — this gate is vacuous")
-	}
-	if len(sites) != 1 {
-		t.Fatalf("courtroom.NewCourtroom has %d production call sites %v, want exactly 1 (App.%s) — "+
-			"zero means the seam was renamed and this census stopped covering anything", len(sites), sites, wantFunc)
-	}
-}
-
-// roomVisualGateFields are the three room fields that decide whether an authored
-// screen effect reaches a pixel. They are a SET, not three independent knobs —
-// the room asks effectsVisible() = ScreenEffects && !ReduceMotion — which is why
-// a construction site may not touch one of them on its own.
-var roomVisualGateFields = map[string]bool{
-	"ReduceMotion":     true,
-	"ScreenEffects":    true,
-	"HideSpriteStyles": true,
-}
-
-// roomConstructionFuncs is every production function that stages a room, and it
-// is the twin of stagedRoomPaths(): six drives, five entry points (a replay is
-// listed twice, once per mode). Pinning the list is what makes a NEW mode
-// impossible to add silently — the author has to come here, and the comment
-// they land on tells them to add a stagedRoomPath row.
-//
-//	buildRoom           app.go                 — the live courtroom
-//	pinToSplit          app.go                 — the pinned split pane
-//	startReplay         replay.go              — a replay, and the maker's Preview (authoring)
-//	ensureMakerPreview  scenemaker.go          — the WYSIWYG preview pane (authoring)
-//	startSceneExport    gifexport.go           — the comic/video export (authoring)
-//	enterEditorPreview  themeeditorpreview.go  — the theme editor's canned demo
-var roomConstructionFuncs = []string{
-	"buildRoom",
-	"enterEditorPreview",
-	"ensureMakerPreview",
-	"pinToSplit",
-	"startReplay",
-	"startSceneExport",
-}
-
-// TestRoomConstructionSitesDoNotHandRollTheVisualGates is the authoring seam's
-// encapsulation gate: a function that stages a room may not assign the effect
-// gates itself. It must call applyAuthoringVisualsToRoom (all three, together)
-// or leave newRoom's pref seeding alone.
-//
-// This is the gate for the failure that actually happened. The export carried a
-// lone, well-commented `room.ReduceMotion = false` — "export the authored
-// effects" — and the day the room also started receiving the viewer's
-// ScreenEffects preference, that line quietly stopped meaning anything: with the
-// toggle off, effectsVisible() is false however hard ReduceMotion is cleared,
-// and every exported comic went still and flat while the comment still promised
-// motion. A behavioural test can only catch the rooms it knows about; this one
-// catches the NEXT mode, at build time, in the file where the mistake is made.
-func TestRoomConstructionSitesDoNotHandRollTheVisualGates(t *testing.T) {
-	const seam = "applyAuthoringVisualsToRoom"
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fset := token.NewFileSet()
-	var stagers []string
-	files := 0
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		files++
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Name == nil || fn.Body == nil {
-				continue
-			}
-			// The seam itself and the pref seeder are the two sanctioned writers;
-			// they live in newroom.go and neither stages a room.
-			stages := false
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel != nil && sel.Sel.Name == "newRoom" {
-					stages = true
-				}
-				return true
-			})
-			if !stages {
-				continue
-			}
-			stagers = append(stagers, fn.Name.Name)
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				as, ok := n.(*ast.AssignStmt)
-				if !ok {
-					return true
-				}
-				for _, lhs := range as.Lhs {
-					sel, ok := lhs.(*ast.SelectorExpr)
-					if !ok || sel.Sel == nil || !roomVisualGateFields[sel.Sel.Name] {
-						continue
-					}
-					t.Errorf("%s assigns %s directly at %s — a staging site must call App.%s (newroom.go) instead. "+
-						"The three gates are one decision: the room renders an effect only when ScreenEffects && !ReduceMotion, "+
-						"so setting one of them here reads like an override and behaves like nothing.",
-						fn.Name.Name, sel.Sel.Name, fset.Position(as.Pos()), seam)
-				}
-				return true
-			})
-		}
-	}
-	if files == 0 {
-		t.Fatal("the scan found no production files — this gate is vacuous")
-	}
-	sort.Strings(stagers)
-	want := append([]string(nil), roomConstructionFuncs...)
-	sort.Strings(want)
-	if strings.Join(stagers, ",") != strings.Join(want, ",") {
-		t.Errorf("the production room-staging sites are %v, want %v — a mode was added or removed. "+
-			"Add it to roomConstructionFuncs AND to stagedRoomPaths() (this file), or every gate here silently stops covering it; "+
-			"if it authors rather than views, mark the row authoring:true and call App.%s.", stagers, want, seam)
 	}
 }

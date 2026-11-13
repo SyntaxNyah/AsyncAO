@@ -3,9 +3,9 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -232,7 +232,7 @@ func TestThemedEditorHonoursADragOntoThePristineSeedPosition(t *testing.T) {
 	if want := (sdl.Rect{X: box.X + 40, Y: box.Y + 300, W: box.W, H: box.H}); after != want {
 		t.Fatalf("the strip is at %+v, want %+v — landing on the seed must not snap it back into the chrome band", after, want)
 	}
-	if _, ok := a.d.Prefs.ThemeRectOverrides(stripEditTheme)[themeTabBarKey]; !ok {
+	if _, ok := a.d.Prefs.Load().ThemeRectOverrides(stripEditTheme)[themeTabBarKey]; !ok {
 		t.Fatal("the placement was not persisted, so it would be lost on the next theme load")
 	}
 }
@@ -242,7 +242,7 @@ func TestThemedEditorHonoursADragOntoThePristineSeedPosition(t *testing.T) {
 // smear it. The classic layout system already registers the SAME widget move-only, and
 // the two editors must agree.
 func TestThemedEditorRefusesToResizeTheTabStrip(t *testing.T) {
-	if slotResizable(slotTabBar) {
+	if slotResizeEdges(slotTabBar) != 0 {
 		t.Fatal("fixture: the classic slot is supposed to be move-only — the two editors must agree")
 	}
 	a, ctx, cleanup := stripEditFixture(t)
@@ -546,7 +546,7 @@ func TestLayoutEditorBannerSurvivesTheTabStrip(t *testing.T) {
 		{
 			name: "classic editor",
 			arm: func(a *App) {
-				a.d.Prefs.SetThemeLayout(false) // send drawCourtroom down the classic branch
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false }) // send drawCourtroom down the classic branch
 				a.classicEdit = true
 			},
 			// Mirrors drawClassicEditor's own banner geometry.

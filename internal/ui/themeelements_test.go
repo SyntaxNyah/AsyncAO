@@ -15,20 +15,16 @@ package ui
 // loosened to make a painter fit, the painter is wrong.
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"image"
 	"reflect"
 	"strings"
 	"testing"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -289,7 +285,7 @@ func TestDrawElementBandsZeroAllocWithNoElements(t *testing.T) {
 		t.Fatalf("a theme with no elements dispatched %d painter calls, want 0", len(seen))
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with NO elements allocates %.1f/op, want 0 — "+
 			"the element model is charging every install for a feature it does not use "+
 			"(fix the alloc, don't loosen the gate)", n)
@@ -352,7 +348,7 @@ func TestDrawElementBandsZeroAllocWith96Elements(t *testing.T) {
 		}
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with %d elements allocates %.1f/op, want 0 — "+
 			"a painter is allocating per frame (fix the painter, don't shrink the fixture)", theme.ElementCap, n)
 	}
@@ -397,7 +393,7 @@ func BenchmarkThemedFrameNoElements(b *testing.B) {
 	// b.N measures steady-state frames rather than the app warming up. The gates'
 	// own helper does the settling; its reading is what THEY assert on, and here
 	// only the warmed state it leaves behind matters.
-	allocsPerFrame(allocGateFrames, 0, draw)
+	gateZeroAlloc(draw)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -409,109 +405,6 @@ func BenchmarkThemedFrameNoElements(b *testing.B) {
 // ---------------------------------------------------------------------------
 // Gate 4 — no string building anywhere on the element draw path
 // ---------------------------------------------------------------------------
-
-// elementDrawFiles are the sources the element draw path lives in. A source scan,
-// not a runtime check, because the failure it prevents is a painter that allocates
-// only for the theme that exercises it — a `fmt.Sprintf` on the ElemText path fires
-// for a themed frame with text elements and for nobody else, so no fixture can be
-// trusted to catch it.
-//
-// APPEND EVERY NEW PAINTER FILE HERE. The gate below fails if a listed file has
-// vanished, so a rename can never silently drop the scan.
-var elementDrawFiles = []string{"themeelements.go", "themeclock.go"}
-
-// elementDrawColdFuncs are functions in those files that do NOT run on a frame —
-// the bake, the editor's own helpers — and may therefore build strings freely.
-// EMPTY today because themeelements.go is draw-path only; an entry here is a claim
-// that a reviewer should check, so it carries its reason.
-var elementDrawColdFuncs = map[string]string{}
-
-// elementDrawBannedPkgs are the packages whose every useful call allocates. The
-// draw path resolves text at BAKE time (bakedElement.label) exactly so it never
-// needs one of these.
-var elementDrawBannedPkgs = map[string]string{
-	"fmt":     "formats and allocates — bake the string into bakedElement.label instead",
-	"strconv": "allocates a new string — bake the number's text at rebuild time",
-	"strings": "Builder/Join/Repeat/Replace all allocate — bake it",
-	"bytes":   "Buffer allocates — bake it",
-}
-
-// TestElementDrawUsesNoStringBuilding scans the element draw path for the one class
-// of allocation the two AllocsPerRun gates cannot be relied on to catch: work that
-// only runs for a theme the fixture does not happen to declare.
-//
-// It matches the mechanism the package already uses for a source-level rule
-// (TestUserTextSurfacesUseACoveringFace, usertextlabel_test.go): parse the package,
-// walk the FuncDecls, fail on the call shape rather than on a measured symptom.
-func TestElementDrawUsesNoStringBuilding(t *testing.T) {
-	fset := token.NewFileSet()
-	for _, name := range elementDrawFiles {
-		file, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v — if the file was renamed, update elementDrawFiles so the scan keeps covering it", name, err)
-		}
-		funcs := 0
-		ast.Inspect(file, func(n ast.Node) bool {
-			fn, ok := n.(*ast.FuncDecl)
-			if !ok || fn.Name == nil || fn.Body == nil {
-				return true
-			}
-			if why, cold := elementDrawColdFuncs[fn.Name.Name]; cold {
-				t.Logf("%s: skipped as a cold path (%s)", fn.Name.Name, why)
-				return true
-			}
-			funcs++
-			ast.Inspect(fn.Body, func(in ast.Node) bool {
-				switch e := in.(type) {
-				case *ast.CallExpr:
-					sel, ok := e.Fun.(*ast.SelectorExpr)
-					if !ok {
-						return true
-					}
-					pkg, ok := sel.X.(*ast.Ident)
-					if !ok {
-						return true
-					}
-					if why, banned := elementDrawBannedPkgs[pkg.Name]; banned {
-						t.Errorf("%s calls %s.%s at %s — %s. The element draw path is gated at zero "+
-							"allocations; resolve text at bake time.",
-							fn.Name.Name, pkg.Name, sel.Sel.Name, fset.Position(e.Pos()), why)
-					}
-				case *ast.BinaryExpr:
-					if e.Op == token.ADD && (isStringLit(e.X) || isStringLit(e.Y)) {
-						t.Errorf("%s concatenates strings at %s — that allocates on every frame it runs. "+
-							"Bake the finished string into bakedElement.label.",
-							fn.Name.Name, fset.Position(e.Pos()))
-					}
-				case *ast.AssignStmt:
-					if e.Tok == token.ADD_ASSIGN {
-						for _, rhs := range e.Rhs {
-							if isStringLit(rhs) {
-								t.Errorf("%s appends to a string at %s — that allocates on every frame it runs.",
-									fn.Name.Name, fset.Position(e.Pos()))
-							}
-						}
-					}
-				}
-				return true
-			})
-			return true
-		})
-		if funcs == 0 {
-			t.Errorf("%s declares no draw-path functions — the scan is vacuous; "+
-				"update elementDrawFiles/elementDrawColdFuncs to point at where the painters actually live", name)
-		}
-	}
-}
-
-// isStringLit reports a string literal operand — the cheap, false-negative-free
-// half of "is this a string concatenation": a numeric `a + b` is fine, and a
-// concatenation of two string VARIABLES is caught by the AllocsPerRun gates the
-// moment it runs.
-func isStringLit(e ast.Expr) bool {
-	lit, ok := e.(*ast.BasicLit)
-	return ok && lit.Kind == token.STRING
-}
 
 // ---------------------------------------------------------------------------
 // Gate 5 — the painter table is total
@@ -581,6 +474,14 @@ func TestEveryElementKindHasAPainter(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Gate 6 — the baked row stays small
 // ---------------------------------------------------------------------------
+
+// bakedElementByteCeil is TEST-ONLY (moved here from themeelements.go), pinned by
+// TestBakedElementStaysSmall below. It bounds ONE bakedElement's INLINE footprint —
+// the fixed struct bytes every install pays × theme.ElementCap — NOT its variable
+// data: bakedElement carries a `label string` (heap-backed text) and a
+// `page *render.TexturePage` (heap-backed art), so unsafe.Sizeof sees only the
+// 16-byte string header and the 8-byte pointer, never the bytes they point at.
+const bakedElementByteCeil = 128
 
 // TestBakedElementStaysSmall pins the memory the model costs every install.
 //

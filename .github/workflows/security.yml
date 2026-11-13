@@ -1,0 +1,22 @@
+# Scheduled, not part of ci-ok: a newly published advisory must not block an unrelated release.
+name: Security
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-build
+        with:
+          go-cache-key-file: .github/workflows/security.yml
+      # v1.7.0 is the last release that builds with Go 1.25.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...

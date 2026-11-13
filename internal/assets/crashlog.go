@@ -7,11 +7,7 @@ import (
 	"runtime/debug"
 )
 
-// writeDecodeCrash best-effort appends a decode-worker panic + full stack to
-// asyncao-crash.log next to the executable. A panic on a background decode
-// goroutine is invisible to the render thread's frameCrashLog (which only
-// guards the frame loop), so without this the crash leaves no trace behind.
-// It does NOT mask the bug: the caller re-panics so the process still dies.
+// writeDecodeCrash appends a decode-worker panic to asyncao-crash.log; frameCrashLog only guards the frame loop.
 func writeDecodeCrash(r any) {
 	exe, err := os.Executable()
 	if err != nil {

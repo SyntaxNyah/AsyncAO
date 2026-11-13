@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -173,7 +174,7 @@ func TestElemLabelFontAtPctKeepsTheUndressedContract(t *testing.T) {
 	a := testTabApp(t)
 	a.themeFonts = themeFontTable{}
 	for _, pct := range []int{50, 100, 200} {
-		if got := a.elemLabelFontAtPct(elemMusicName, pct); got != a.ctx.font {
+		if got := a.elemLabelFontAtPct(elemMusicName, pct, "Trial ~ Allegro 2001"); got != a.ctx.font {
 			t.Errorf("undressed at %d%%: got %p, want the chrome face %p", pct, got, a.ctx.font)
 		}
 	}
@@ -292,8 +293,22 @@ func TestThemeFontsSuppressedByUserOverride(t *testing.T) {
 		name  string
 		apply func(a *App)
 	}{
-		{"manual font paths", func(a *App) { a.d.Prefs.SetFontPaths(`C:\some\font.ttf`) }},
-		{"dyslexia toggle", func(a *App) { a.d.Prefs.SetDyslexiaFont(true) }},
+		{"manual font paths", func(a *App) {
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.FontOverridePaths = `C:\some\font.ttf` })
+		}},
+		{"dyslexia toggle", func(a *App) {
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					DyslexiaFont =
+
+					true
+
+			})
+
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := testTabApp(t)
@@ -320,10 +335,10 @@ func TestThemeFontsSuppressedByUserOverride(t *testing.T) {
 // every accessor returns the pre-#39 value — the opt-out has to be complete.
 func TestThemeFontsOffRestoresDefaults(t *testing.T) {
 	a := testTabApp(t)
-	if !a.d.Prefs.ThemeFontsOn() {
+	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("theme fonts must ship ON (an AO2 theme's fonts are part of the theme)")
 	}
-	a.d.Prefs.SetThemeFonts(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false })
 	res := &themeApply{faceData: [][]byte{{0x00}}}
 	for i := range res.fontTable.e {
 		res.fontTable.e[i] = themeElemFont{pct: 200, face: 1, bold: true}
@@ -393,15 +408,15 @@ func TestWrapCachesKeyOnResolvedPct(t *testing.T) {
 // the pref must be in the live struct, the on-disk DTO and the load overlay.
 func TestThemeFontsPrefRoundTrips(t *testing.T) {
 	a := testTabApp(t)
-	if !a.d.Prefs.ThemeFontsOn() {
+	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("default must be ON")
 	}
-	a.d.Prefs.SetThemeFonts(false)
-	if a.d.Prefs.ThemeFontsOn() {
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false })
+	if a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("SetThemeFonts(false) did not stick")
 	}
-	a.d.Prefs.SetThemeFonts(true)
-	if !a.d.Prefs.ThemeFontsOn() {
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = true })
+	if !a.d.Prefs.Load().ThemeFonts {
 		t.Fatal("SetThemeFonts(true) did not stick")
 	}
 }

@@ -7,10 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // newHeadlessRenderer spins SDL with the dummy video driver and a software
@@ -61,7 +60,7 @@ func decodedFixture() *assets.Decoded {
 func TestPinnedPagesSurviveEvictionPressure(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +102,7 @@ func TestTextureStoreUploadAndEvict(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +150,7 @@ func benchScene(store *TextureStore) *courtroom.Scene {
 func BenchmarkRenderFrame(b *testing.B) {
 	ren, cleanup := newHeadlessRenderer(b)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -206,7 +205,7 @@ func TestPerRuneStyles(t *testing.T) {
 func TestRenderFrameZeroAllocs(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +234,7 @@ func TestRenderFrameZeroAllocs(t *testing.T) {
 func TestFrameShownZeroAllocs(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +270,7 @@ func TestFrameShownZeroAllocs(t *testing.T) {
 func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +308,7 @@ func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
 func TestTransmittedSpriteStyleZeroAlloc(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +416,7 @@ func TestRainbowMod(t *testing.T) {
 func TestViewportStickyScenery(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

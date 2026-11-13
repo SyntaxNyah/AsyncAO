@@ -7,12 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // testTabApp builds a headless App with just enough wiring for the tab
@@ -25,14 +24,34 @@ func testTabApp(t testing.TB) *App {
 	if err != nil {
 		t.Fatalf("prefs: %v", err)
 	}
-	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{ctx: &Ctx{}, activeTab: -1}
 	a.d.Prefs = prefs
 	// Hotkeys are opt-in in production, but the test fixtures exercise the
 	// dispatcher directly — enable them so those tests keep their old, on-by-default
 	// behaviour without each one having to opt in.
-	a.d.Prefs.SetHotkeysEnabled(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			HotkeysEnabled =
+
+			true
+
+	})
 	a.resetSessionState()
+	// Detailed transcript logging is ON by default, so any test that writes an IC
+	// message opens a transcript writer goroutine (transcriptFor). Join it here so
+	// the suite does not leak one goroutine per message-writing test. A test that
+	// dials (connectWith) leaves a live protocol Conn — close it so its
+	// read/deliver/keepalive loops and the peer's websocket/handler all stop.
+	t.Cleanup(func() {
+		if a.conn != nil {
+			a.conn.Close()
+		}
+		a.CloseTranscript()
+		_ = prefs.Close()
+	})
 	return a
 }
 
@@ -67,8 +86,18 @@ func TestMuteStateSurvivesResetSessionState(t *testing.T) {
 	if a.masterMuted || a.musicMuted || a.sfxMuted || a.blipMuted {
 		t.Fatal("a fresh session must default unmuted")
 	}
-	a.d.Prefs.SetMasterVolMuted(true)
-	a.d.Prefs.SetSFXVolMuted(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MasterVolMuted =
+
+			true
+
+	})
+
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.SFXVolMuted = true })
 	// Simulates the seam every Connect/Disconnect actually calls.
 	a.resetSessionState()
 	if !a.masterMuted {
@@ -114,11 +143,11 @@ func TestToggleServerFriend(t *testing.T) {
 	a := testTabApp(t)
 	a.serverKey = "wss://srv:2096"
 	a.toggleServerFriend("Alice")
-	if ok, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, "alice"); !ok {
+	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.serverKey, "alice"); !ok {
 		t.Fatal("first toggle should add Alice as a friend")
 	}
 	a.toggleServerFriend("ALICE") // case-insensitive remove
-	if ok, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, "Alice"); ok {
+	if ok, _ := a.d.Prefs.Load().ServerFriendMatch(a.serverKey, "Alice"); ok {
 		t.Error("second toggle should remove Alice")
 	}
 }
@@ -293,7 +322,17 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	}
 
 	// Pref ON: parking keeps the backgrounded stream AUDIBLE (no duck).
-	a.d.Prefs.SetMusicAcrossTabs(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
 	a.parkActive()
 	if a.musicTabDucked {
 		t.Error("with MusicAcrossTabs ON, parking must NOT duck the backgrounded stream")
@@ -431,7 +470,7 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	if a.musicAwaitURL != "" {
 		t.Error("toggle ON must clear the never-arriving await latch (the second silencer)")
 	}
-	if !a.d.Prefs.MusicAcrossTabsOn() {
+	if !a.d.Prefs.Load().MusicAcrossTabs {
 		t.Error("toggle ON must persist the pref")
 	}
 
@@ -454,7 +493,7 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 	if !d.musicTabDucked {
 		t.Error("toggle OFF must re-duck live audio immediately — the label promises silent-now")
 	}
-	if d.d.Prefs.MusicAcrossTabsOn() {
+	if d.d.Prefs.Load().MusicAcrossTabs {
 		t.Error("toggle OFF must persist the pref")
 	}
 }
@@ -635,9 +674,9 @@ func linesContain(lines []string, sub string) bool {
 // TestRebindSceneryForcesNewBaseAcrossSwitch.
 func TestBuildRoomRebindsSceneryPerTab(t *testing.T) {
 	u := courtroom.URLBuilder{}
-	bgPart, _ := courtroom.PositionScene("") // fresh room starts at the default position
-	baseA := u.Background("gs4", bgPart)
-	baseB := u.Background("prosecutorlobby", bgPart)
+	// A fresh room starts at the default position.
+	baseA := u.PositionScenery("gs4", "", nil).Background
+	baseB := u.PositionScenery("prosecutorlobby", "", nil).Background
 	if baseA == "" || baseB == "" {
 		t.Fatalf("each background must map to a non-empty base, A=%q B=%q", baseA, baseB)
 	}
@@ -1001,7 +1040,7 @@ func TestResetSessionStatePairIsSessionOnly(t *testing.T) {
 // typed name never rewrites that default, and the parked tab keeps its own.
 func TestOOCNamePerTab(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetOOCName("DefaultName")
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.OOCName = "DefaultName" })
 	// The connect flow: park → allocate → fresh session (connectWith order).
 	a.parkActive()
 	if !a.allocateTab() {
@@ -1020,7 +1059,7 @@ func TestOOCNamePerTab(t *testing.T) {
 	if a.oocName != "DefaultName" {
 		t.Errorf("a new tab must NOT inherit another tab's typed name, got %q", a.oocName)
 	}
-	if got := a.d.Prefs.SavedOOCName(); got != "DefaultName" {
+	if got := a.d.Prefs.Load().OOCName; got != "DefaultName" {
 		t.Errorf("typing in the courtroom field must not rewrite the saved default, got %q", got)
 	}
 	if got := a.tabs[0].state.oocName; got != "TabOnlyName" {
@@ -1032,24 +1071,24 @@ func TestOOCNamePerTab(t *testing.T) {
 // Players-tab sorts from prefs, clamped to the valid mode range.
 func TestResetSessionStateSeedsPlayerSort(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPlayerListSort(playerSortName)
-	a.d.Prefs.SetPlayerListAreaSort(areaSortPop)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListSort = playerSortName })
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListAreaSort = areaSortPop })
 	a.resetSessionState()
 	if a.playerSort != playerSortName || a.playerAreaSort != areaSortPop {
 		t.Errorf("seed = %d/%d, want %d/%d", a.playerSort, a.playerAreaSort, playerSortName, areaSortPop)
 	}
-	a.d.Prefs.SetPlayerListSort(99) // a stale/out-of-range value clamps to 0
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PlayerListSort = 99 }) // a stale/out-of-range value clamps to 0
 	a.resetSessionState()
 	if a.playerSort != 0 {
 		t.Errorf("out-of-range sort must clamp to 0, got %d", a.playerSort)
 	}
 }
 
-// TestTabCap pins the bound: maxTabs sessions, the next connect refuses
-// with a visible reason and leaves the active session untouched.
+// TestTabCap pins the bound: config.DefaultMultiTabCap sessions, the next connect
+// refuses with a visible reason and leaves the active session untouched.
 func TestTabCap(t *testing.T) {
 	a := testTabApp(t)
-	for i := 0; i < maxTabs; i++ {
+	for i := 0; i < config.DefaultMultiTabCap; i++ {
 		if !a.allocateTab() {
 			t.Fatalf("allocate %d must succeed", i)
 		}
@@ -1057,7 +1096,7 @@ func TestTabCap(t *testing.T) {
 		a.parkActive()
 	}
 	if a.allocateTab() {
-		t.Fatalf("allocate beyond maxTabs=%d must refuse", maxTabs)
+		t.Fatalf("allocate beyond the multi-tab cap=%d must refuse", config.DefaultMultiTabCap)
 	}
 	if a.connErr == "" {
 		t.Fatal("the refusal must explain itself on connErr")
@@ -1090,7 +1129,17 @@ func TestTabBackgroundRouting(t *testing.T) {
 		t.Fatalf("IC chat must badge: unread=%d ic=%d", tab.unread, len(tab.state.icLog))
 	}
 	// With the opt-in pref ON, OOC counts toward the badge too.
-	a.d.Prefs.SetNotifyOnOOC(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			NotifyOnOOC =
+
+			true
+
+	})
+
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventOOC, Name: "mod", Text: "yo"})
 	if tab.unread != 2 {
 		t.Fatalf("with NotifyOnOOC on, OOC must badge: unread=%d", tab.unread)
@@ -1147,7 +1196,17 @@ func TestCollectOpenTabs(t *testing.T) {
 // With the toggle OFF (default) switching areas never touches the log.
 func TestPerAreaScrollback(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPerAreaScrollback(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			PerAreaScroll =
+
+			true
+
+	})
+
 	a.icLog = []icEntry{{text: "lobby line"}} // default area (curArea "")
 
 	a.switchAreaScrollback("C1")
@@ -1241,7 +1300,17 @@ func TestRequestCloseTabConfirms(t *testing.T) {
 	b := testTabApp(t)
 	b.tabs = []*courtTab{{}, {state: sessionState{serverName: "Bg"}}}
 	b.activeTab = 0
-	b.d.Prefs.SetInstantDisconnect(true)
+	b.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			InstantDisconnect =
+
+			true
+
+	})
+
 	b.requestCloseTab(1)
 	if b.pendingCloseTab != nil {
 		t.Error("Instant ON must not open a confirm")
@@ -1498,7 +1567,18 @@ func TestCloseParkedTabStopsOrphanStream(t *testing.T) {
 // only in Frame, so a minimized tab stayed ducked until restore.
 func TestRederiveMessageDuckClearsStale(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetMusicDucking(true) // ducking enabled, so the phase is what decides
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicDuckingOn =
+
+			true
+
+	})
+
+	// ducking enabled, so the phase is what decides
 	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
 	// A message finished (phase is Idle) but the duck flag is stale-true.
 	a.musicDucked = true
@@ -1535,7 +1615,18 @@ func TestEventMusicStopClearsAwait(t *testing.T) {
 // whether a message was mid-flight when the switch happened.
 func TestParkClearsMessageDuckBeforeVolumes(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetMusicAcrossTabs(true) // the precondition: cross-tab stream stays audible
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
+	// the precondition: cross-tab stream stays audible
 	if !a.allocateTab() {
 		t.Fatal("allocate")
 	}

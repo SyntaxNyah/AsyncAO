@@ -49,9 +49,36 @@ func TestSetFormatOrderCompletes(t *testing.T) {
 		p.SetGlobalFallbacks(true)
 		p.SetTypeFallbacks(TypeSFX, true)
 		p.RecordLearned("example.com", TypeCharSprite, ExtWebP)
-		p.SetMasterVolume(80)
-		p.SetMusicVolMode(true)
-		p.SetAnimationsEnabled(false)
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				MasterVol =
+
+				80
+
+		})
+
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				MusicVolMode =
+
+				true
+
+		})
+
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				PreferAnimated =
+
+				false
+
+		})
+
 		close(finished)
 	}()
 
@@ -91,7 +118,18 @@ func TestDebounceCoalescesBurst(t *testing.T) {
 
 	const burst = 50
 	for i := 0; i < burst; i++ {
-		p.SetMasterVolume(i % 100)
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				MasterVol =
+
+				i %
+
+					100
+
+		})
+
 	}
 	waitForFile(t, path)
 	// Allow any straggler flush to settle, then verify final state on disk.
@@ -102,21 +140,21 @@ func TestDebounceCoalescesBurst(t *testing.T) {
 		t.Fatalf("load after burst: %v", err)
 	}
 	wantVol := (burst - 1) % 100
-	if loaded.MasterVolume() != wantVol {
-		t.Errorf("MasterVolume on disk = %d, want %d (last write must win)", loaded.MasterVolume(), wantVol)
+	if loaded.Load().MasterVol != wantVol {
+		t.Errorf("MasterVolume on disk = %d, want %d (last write must win)", loaded.Load().MasterVol, wantVol)
 	}
 }
 
 func TestFormatListZeroFallbackIsExactConfiguredList(t *testing.T) {
 	p, _ := newTestPrefs(t)
 
-	got := p.FormatList(TypeCharSprite)
+	got := p.Load().FormatList(TypeCharSprite)
 	want := []string{ExtWebP}
 	if !slices.Equal(got, want) {
 		t.Errorf("FormatList(CharSprite) fallbacks-off = %v, want %v (exactly one probe)", got, want)
 	}
 
-	if got := p.FormatList(TypeCharIcon); !slices.Equal(got, []string{ExtPNG}) {
+	if got := p.Load().FormatList(TypeCharIcon); !slices.Equal(got, []string{ExtPNG}) {
 		t.Errorf("FormatList(CharIcon) = %v, want [%s]", got, ExtPNG)
 	}
 }
@@ -125,13 +163,13 @@ func TestFormatListGlobalFallbacksAppendLegacyChain(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	p.SetGlobalFallbacks(true)
 
-	got := p.FormatList(TypeCharSprite)
+	got := p.Load().FormatList(TypeCharSprite)
 	want := []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG}
 	if !slices.Equal(got, want) {
 		t.Errorf("FormatList(CharSprite) global fallbacks = %v, want %v", got, want)
 	}
 
-	got = p.FormatList(TypeMusic)
+	got = p.Load().FormatList(TypeMusic)
 	want = []string{ExtOpus, ExtOgg, ExtMP3}
 	if !slices.Equal(got, want) {
 		t.Errorf("FormatList(Music) global fallbacks = %v, want %v", got, want)
@@ -142,10 +180,10 @@ func TestFormatListPerTypeFallbackOnlyAffectsThatType(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	p.SetTypeFallbacks(TypeBackground, true)
 
-	if got, want := p.FormatList(TypeBackground), []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG}; !slices.Equal(got, want) {
+	if got, want := p.Load().FormatList(TypeBackground), []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG}; !slices.Equal(got, want) {
 		t.Errorf("FormatList(Background) per-type fallback = %v, want %v", got, want)
 	}
-	if got, want := p.FormatList(TypeCharSprite), []string{ExtWebP}; !slices.Equal(got, want) {
+	if got, want := p.Load().FormatList(TypeCharSprite), []string{ExtWebP}; !slices.Equal(got, want) {
 		t.Errorf("FormatList(CharSprite) must stay zero-fallback, got %v want %v", got, want)
 	}
 }
@@ -156,7 +194,7 @@ func TestFormatListDeduplicatesPreservingOrder(t *testing.T) {
 	p.SetFormatOrder(TypeCharSprite, []string{ExtPNG, ExtWebP, ExtPNG})
 	p.SetTypeFallbacks(TypeCharSprite, true)
 
-	got := p.FormatList(TypeCharSprite)
+	got := p.Load().FormatList(TypeCharSprite)
 	want := []string{ExtPNG, ExtWebP, ExtAPNG, ExtGIF}
 	if !slices.Equal(got, want) {
 		t.Errorf("FormatList dedup = %v, want %v", got, want)
@@ -165,7 +203,7 @@ func TestFormatListDeduplicatesPreservingOrder(t *testing.T) {
 
 func TestFormatListUnknownTypeWithFallbacksIsEmpty(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if got := p.FormatList("NoSuchType"); len(got) != 0 {
+	if got := p.Load().FormatList("NoSuchType"); len(got) != 0 {
 		t.Errorf("FormatList(unknown) = %v, want empty", got)
 	}
 }
@@ -199,10 +237,11 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 	// Simulate a pre-flip prefs file: Misc stored as the old [.webp] default.
-	tp := p.AssetTypes[TypeMisc]
-	tp.FormatOrder = []string{ExtWebP}
-	p.AssetTypes[TypeMisc] = tp
-	p.markDirty()
+	p.Update(func(sn *Settings) {
+		tp := sn.AssetTypes[TypeMisc]
+		tp.FormatOrder = []string{ExtWebP}
+		sn.AssetTypes[TypeMisc] = tp
+	})
 	if err := p.SaveNow(); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -213,15 +252,16 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if got := re.AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtPNG || got[1] != ExtWebP {
+	if got := re.Load().AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtPNG || got[1] != ExtWebP {
 		t.Errorf("old-default Misc order = %v after reload, want the new [%s %s]", got, ExtPNG, ExtWebP)
 	}
 
 	// A customized order (user picked gif-first) must NOT migrate.
-	tp = re.AssetTypes[TypeMisc]
-	tp.FormatOrder = []string{ExtGIF, ExtWebP}
-	re.AssetTypes[TypeMisc] = tp
-	re.markDirty()
+	re.Update(func(sn *Settings) {
+		tp := sn.AssetTypes[TypeMisc]
+		tp.FormatOrder = []string{ExtGIF, ExtWebP}
+		sn.AssetTypes[TypeMisc] = tp
+	})
 	if err := re.SaveNow(); err != nil {
 		t.Fatalf("save custom: %v", err)
 	}
@@ -231,7 +271,7 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 		t.Fatalf("reload custom: %v", err)
 	}
 	defer re2.Close()
-	if got := re2.AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtGIF || got[1] != ExtWebP {
+	if got := re2.Load().AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtGIF || got[1] != ExtWebP {
 		t.Errorf("customized Misc order = %v after reload, want [gif webp] untouched", got)
 	}
 }
@@ -245,7 +285,7 @@ func TestMiscFormatDefaultMigration(t *testing.T) {
 func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 	// 1) Fresh install (no file) → Default.
 	fresh, path := newTestPrefs(t)
-	if got := fresh.SpriteLoadMode(); got != SpriteLoadDefault {
+	if got := fresh.Load().SpriteLoadModeVal; got != SpriteLoadDefault {
 		t.Fatalf("fresh default SpriteLoadMode = %d, want Default (%d)", got, SpriteLoadDefault)
 	}
 
@@ -259,7 +299,7 @@ func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 		t.Fatalf("load legacy: %v", err)
 	}
 	defer lp.Close()
-	if got := lp.SpriteLoadMode(); got != SpriteLoadDefault {
+	if got := lp.Load().SpriteLoadModeVal; got != SpriteLoadDefault {
 		t.Errorf("legacy (absent key) SpriteLoadMode = %d, want the new default Default (%d)", got, SpriteLoadDefault)
 	}
 
@@ -274,7 +314,7 @@ func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if got := re.SpriteLoadMode(); got != SpriteLoadBlank {
+	if got := re.Load().SpriteLoadModeVal; got != SpriteLoadBlank {
 		t.Errorf("explicit Blank did not persist: reloaded SpriteLoadMode = %d, want Blank (%d)", got, SpriteLoadBlank)
 	}
 }
@@ -288,7 +328,7 @@ func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 	// 1) Fresh install (no file) → ON.
 	fresh, path := newTestPrefs(t)
-	if !fresh.MotionRedrawPerEventOn() {
+	if !fresh.Load().MotionRedrawPerEvent {
 		t.Fatalf("fresh default MotionRedrawPerEvent = false, want ON")
 	}
 
@@ -302,12 +342,21 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 		t.Fatalf("load legacy: %v", err)
 	}
 	defer lp.Close()
-	if !lp.MotionRedrawPerEventOn() {
+	if !lp.Load().MotionRedrawPerEvent {
 		t.Error("legacy (absent key) MotionRedrawPerEvent = false, want the new default ON")
 	}
 
 	// 3) An explicit OFF must persist across a save/reload (omitempty removed).
-	fresh.SetMotionRedrawPerEvent(false)
+	fresh.Update(func(
+		sn *Settings) {
+
+		sn.
+			MotionRedrawPerEvent =
+
+			false
+
+	})
+
 	if err := fresh.SaveNow(); err != nil {
 		t.Fatalf("save explicit OFF: %v", err)
 	}
@@ -317,7 +366,7 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if re.MotionRedrawPerEventOn() {
+	if re.Load().MotionRedrawPerEvent {
 		t.Error("explicit OFF did not persist: reloaded MotionRedrawPerEvent = ON, want OFF")
 	}
 }
@@ -330,10 +379,10 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	// 1) Fresh install → ON, default dwell.
 	fresh, path := newTestPrefs(t)
-	if !fresh.EmoteHoverNamesEnabled() {
+	if !fresh.Load().EmoteHoverNamesOn {
 		t.Error("fresh default EmoteHoverNames = OFF, want ON")
 	}
-	if got := fresh.EmoteHoverNamesMillis(); got != DefaultEmoteHoverNamesMs {
+	if got := fresh.Load().EmoteHoverNamesMillis(); got != DefaultEmoteHoverNamesMs {
 		t.Errorf("fresh default dwell = %d, want %d", got, DefaultEmoteHoverNamesMs)
 	}
 
@@ -346,14 +395,32 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load legacy: %v", err)
 	}
-	if !lp.EmoteHoverNamesEnabled() {
+	if !lp.Load().EmoteHoverNamesOn {
 		t.Error("legacy (absent key) EmoteHoverNames = OFF, want the default ON")
 	}
 	_ = lp.Close()
 
 	// 3) An explicit OFF + a custom delay must persist across save/reload.
-	fresh.SetEmoteHoverNames(false)
-	fresh.SetEmoteHoverNamesMs(2000)
+	fresh.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteHoverNamesOn =
+
+			false
+
+	})
+
+	fresh.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteHoverNamesMs =
+
+			2000
+
+	})
+
 	if err := fresh.SaveNow(); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -363,16 +430,25 @@ func TestEmoteHoverNamesRoundTrip(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	defer re.Close()
-	if re.EmoteHoverNamesEnabled() {
+	if re.Load().EmoteHoverNamesOn {
 		t.Error("explicit OFF did not persist: reloaded EmoteHoverNames = ON")
 	}
-	if got := re.EmoteHoverNamesMillis(); got != 2000 {
+	if got := re.Load().EmoteHoverNamesMillis(); got != 2000 {
 		t.Errorf("custom dwell did not persist: got %d, want 2000", got)
 	}
 
 	// 4) An out-of-range delay is clamped by the setter, not stored raw.
-	re.SetEmoteHoverNamesMs(999999)
-	if got := re.EmoteHoverNamesMillis(); got != maxEmoteHoverNamesMs {
+	re.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteHoverNamesMs =
+
+			999999
+
+	})
+
+	if got := re.Load().EmoteHoverNamesMillis(); got != maxEmoteHoverNamesMs {
 		t.Errorf("oversize dwell = %d, want clamp to %d", got, maxEmoteHoverNamesMs)
 	}
 }
@@ -385,14 +461,50 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	}
 
 	p.SetGlobalFallbacks(true)
-	p.SetAnimationsEnabled(false)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			PreferAnimated =
+
+			false
+
+	})
+
 	p.SetFormatOrder(TypeCharIcon, []string{ExtWebP, ExtPNG})
 	p.SetTypeFallbacks(TypeBlip, true)
 	p.RecordLearned("assets.example.com", TypeCharSprite, ExtWebP)
-	p.SetMasterVolume(37)
-	p.SetMusicVolMode(true)
-	p.SetShowname("Nyah")
-	p.SetDebugOverlay(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVol =
+
+			37
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicVolMode =
+
+			true
+
+	})
+
+	p.Update(func(sn *Settings) { sn.Showname = "Nyah" })
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DebugOverlay =
+
+			true
+
+	})
+
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -401,32 +513,32 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.GlobalFallbacksEnabled {
+	if !q.Load().GlobalFallbacksEnabled {
 		t.Error("GlobalFallbacksEnabled lost")
 	}
-	if q.PreferAnimated {
+	if q.Load().PreferAnimated {
 		t.Error("PreferAnimated=false lost (absent-field default must not clobber explicit false)")
 	}
-	if got, want := q.FormatOrder(TypeCharIcon), []string{ExtWebP, ExtPNG}; !slices.Equal(got, want) {
+	if got, want := q.Load().FormatOrder(TypeCharIcon), []string{ExtWebP, ExtPNG}; !slices.Equal(got, want) {
 		t.Errorf("FormatOrder(CharIcon) = %v, want %v", got, want)
 	}
-	if !q.TypeFallbacksEnabled(TypeBlip) {
+	if !q.Load().TypeFallbacksEnabled(TypeBlip) {
 		t.Error("TypeFallbacks(Blip) lost")
 	}
-	learned := q.LearnedSnapshot()
+	learned := q.Load().LearnedSnapshot()
 	if got := learned[LearnedKey("assets.example.com", TypeCharSprite)]; !slices.Equal(got, []string{ExtWebP}) {
 		t.Errorf("learned format lost, snapshot=%v", learned)
 	}
-	if got := q.MasterVolume(); got != 37 {
+	if got := q.Load().MasterVol; got != 37 {
 		t.Errorf("MasterVolume = %d, want 37", got)
 	}
-	if !q.MusicVolModeOn() {
+	if !q.Load().MusicVolMode {
 		t.Error("MusicVolMode lost")
 	}
-	if got := q.SavedShowname(); got != "Nyah" {
+	if got := q.Load().Showname; got != "Nyah" {
 		t.Errorf("Showname = %q, want %q", got, "Nyah")
 	}
-	if !q.DebugOverlayEnabled() {
+	if !q.Load().DebugOverlay {
 		t.Error("DebugOverlay lost")
 	}
 }
@@ -440,10 +552,19 @@ func TestLearnedExportImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.FormatAutoDetect() {
+	if !p.Load().AutoDetectFormats {
 		t.Error("FormatAutoDetect should default ON")
 	}
-	p.SetFormatAutoDetect(false)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
+
 	p.RecordLearned("miku.pizza", TypeCharSprite, ExtWebP)
 	p.RecordLearned("other.example", TypeCharIcon, ExtPNG)
 
@@ -452,14 +573,14 @@ func TestLearnedExportImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.ClearLearned()
-	if len(p.LearnedSnapshot()) != 0 {
+	if len(p.Load().LearnedSnapshot()) != 0 {
 		t.Fatal("clear did not clear")
 	}
 	n, err := p.ImportLearnedJSON(data)
 	if err != nil || n != 2 {
 		t.Fatalf("import = %d, %v", n, err)
 	}
-	if got := p.LearnedSnapshot()[LearnedKey("miku.pizza", TypeCharSprite)]; len(got) != 1 || got[0] != ExtWebP {
+	if got := p.Load().LearnedSnapshot()[LearnedKey("miku.pizza", TypeCharSprite)]; len(got) != 1 || got[0] != ExtWebP {
 		t.Errorf("imported entry = %v", got)
 	}
 	if _, err := p.ImportLearnedJSON([]byte("junk")); err == nil {
@@ -472,7 +593,7 @@ func TestLearnedExportImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q.FormatAutoDetect() {
+	if q.Load().AutoDetectFormats {
 		t.Error("explicit FormatAutoDetect=false lost on reload")
 	}
 }
@@ -510,7 +631,7 @@ func TestExportSettingsRedactsPassword(t *testing.T) {
 	if strings.Contains(string(raw), pass) {
 		t.Fatal("exported bundle still contains the plaintext password")
 	}
-	var snap AssetPreferences
+	var snap Settings
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		t.Fatal(err)
 	}
@@ -553,15 +674,15 @@ func TestWardrobeFolders(t *testing.T) {
 	p.AddWardrobe(key, "Phoenix")
 	p.SetWardrobeFolder(key, "Maya", "Ace Attorney")
 	p.SetWardrobeFolder(key, "phoenix", "Ace Attorney") // case-insensitive key
-	if m := p.WardrobeFolderMap(key); m["maya"] != "Ace Attorney" || m["phoenix"] != "Ace Attorney" {
+	if m := p.Load().WardrobeFolderMap(key); m["maya"] != "Ace Attorney" || m["phoenix"] != "Ace Attorney" {
 		t.Fatalf("folders = %v, want both filed under Ace Attorney", m)
 	}
 	p.SetWardrobeFolder(key, "Maya", "") // clear
-	if p.WardrobeFolderMap(key)["maya"] != "" {
+	if p.Load().WardrobeFolderMap(key)["maya"] != "" {
 		t.Error("empty folder must clear the entry")
 	}
 	p.RemoveWardrobe(key, "Phoenix") // leaving the wardrobe drops the folder
-	if p.WardrobeFolderMap(key)["phoenix"] != "" {
+	if p.Load().WardrobeFolderMap(key)["phoenix"] != "" {
 		t.Error("removing a wardrobe character must drop its folder")
 	}
 	if err := p.Close(); err != nil {
@@ -582,16 +703,16 @@ func TestFavBackgrounds(t *testing.T) {
 	}
 	p.AddFavBackground(a, "lobby")
 	p.AddFavBackground(b, "gaming") // a different server keeps its own list
-	if got := p.FavBackgroundList(a); len(got) != 2 || got[0] != "courtroom" || got[1] != "lobby" {
+	if got := p.Load().FavBackgroundList(a); len(got) != 2 || got[0] != "courtroom" || got[1] != "lobby" {
 		t.Fatalf("server a favorites = %v, want [courtroom lobby]", got)
 	}
-	if got := p.FavBackgroundList(b); len(got) != 1 || got[0] != "gaming" {
+	if got := p.Load().FavBackgroundList(b); len(got) != 1 || got[0] != "gaming" {
 		t.Fatalf("server b favorites = %v, want [gaming] (per-server isolation)", got)
 	}
 	if !p.RemoveFavBackground(a, "COURTROOM") { // remove is case-insensitive
 		t.Error("RemoveFavBackground must report a change")
 	}
-	if got := p.FavBackgroundList(a); len(got) != 1 || got[0] != "lobby" {
+	if got := p.Load().FavBackgroundList(a); len(got) != 1 || got[0] != "lobby" {
 		t.Fatalf("after remove, server a = %v, want [lobby]", got)
 	}
 	if p.RemoveFavBackground(a, "not-there") {
@@ -608,15 +729,15 @@ func TestFavBackgroundFolders(t *testing.T) {
 	p.AddFavBackground(key, "lobby")
 	p.SetFavBackgroundFolder(key, "Courtroom", "Trials") // case-insensitive key
 	p.SetFavBackgroundFolder(key, "lobby", "Trials")
-	if m := p.FavBackgroundFolderMap(key); m["courtroom"] != "Trials" || m["lobby"] != "Trials" {
+	if m := p.Load().FavBackgroundFolderMap(key); m["courtroom"] != "Trials" || m["lobby"] != "Trials" {
 		t.Fatalf("folders = %v, want both filed under Trials", m)
 	}
 	p.SetFavBackgroundFolder(key, "courtroom", "") // clear
-	if p.FavBackgroundFolderMap(key)["courtroom"] != "" {
+	if p.Load().FavBackgroundFolderMap(key)["courtroom"] != "" {
 		t.Error("empty folder must clear the entry")
 	}
 	p.RemoveFavBackground(key, "Lobby") // unstarring drops the folder
-	if p.FavBackgroundFolderMap(key)["lobby"] != "" {
+	if p.Load().FavBackgroundFolderMap(key)["lobby"] != "" {
 		t.Error("removing a favourite background must drop its folder")
 	}
 }
@@ -633,20 +754,20 @@ func TestDeleteWardrobeFolder(t *testing.T) {
 	p.SetWardrobeFolder(key, "Phoenix", "AA")
 
 	p.DeleteWardrobeFolder(key, "AA", true) // ungroup
-	if m := p.WardrobeFolderMap(key); len(m) != 0 {
+	if m := p.Load().WardrobeFolderMap(key); len(m) != 0 {
 		t.Fatalf("keepMembers must clear the folder tags, got %v", m)
 	}
-	if got := p.WardrobeList(key); len(got) != 3 {
+	if got := p.Load().WardrobeList(key); len(got) != 3 {
 		t.Fatalf("keepMembers must keep the characters, got %v", got)
 	}
 
 	p.SetWardrobeFolder(key, "Maya", "AA")
 	p.SetWardrobeFolder(key, "Phoenix", "AA")
 	p.DeleteWardrobeFolder(key, "aa", false) // delete + items, case-insensitive folder match
-	if got := p.WardrobeList(key); len(got) != 1 || got[0] != "Edgeworth" {
+	if got := p.Load().WardrobeList(key); len(got) != 1 || got[0] != "Edgeworth" {
 		t.Fatalf("delete+items must remove the folder's members, got %v", got)
 	}
-	if len(p.WardrobeFolderMap(key)) != 0 {
+	if len(p.Load().WardrobeFolderMap(key)) != 0 {
 		t.Error("delete must drop the folder tags too")
 	}
 }
@@ -662,17 +783,17 @@ func TestDeleteFavBackgroundFolder(t *testing.T) {
 	p.SetFavBackgroundFolder(key, "lobby", "Trials")
 
 	p.DeleteFavBackgroundFolder(key, "Trials", true) // ungroup
-	if len(p.FavBackgroundFolderMap(key)) != 0 {
+	if len(p.Load().FavBackgroundFolderMap(key)) != 0 {
 		t.Fatal("keepMembers must clear the folder tags")
 	}
-	if len(p.FavBackgroundList(key)) != 3 {
+	if len(p.Load().FavBackgroundList(key)) != 3 {
 		t.Fatal("keepMembers must keep the favourites")
 	}
 
 	p.SetFavBackgroundFolder(key, "court", "Trials")
 	p.SetFavBackgroundFolder(key, "lobby", "Trials")
 	p.DeleteFavBackgroundFolder(key, "trials", false) // delete + items, case-insensitive
-	if got := p.FavBackgroundList(key); len(got) != 1 || got[0] != "gaming" {
+	if got := p.Load().FavBackgroundList(key); len(got) != 1 || got[0] != "gaming" {
 		t.Fatalf("delete+items must unstar the folder's members, got %v", got)
 	}
 }
@@ -680,20 +801,20 @@ func TestDeleteFavBackgroundFolder(t *testing.T) {
 // TestMultiTabCap pins the configurable tab cap: default, set, and clamp.
 func TestMultiTabCap(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.TabCap() != DefaultMultiTabCap {
-		t.Fatalf("default tab cap = %d, want %d", p.TabCap(), DefaultMultiTabCap)
+	if p.Load().TabCap() != DefaultMultiTabCap {
+		t.Fatalf("default tab cap = %d, want %d", p.Load().TabCap(), DefaultMultiTabCap)
 	}
-	p.SetTabCap(5)
-	if p.TabCap() != 5 {
-		t.Errorf("after SetTabCap(5), TabCap = %d", p.TabCap())
+	p.Update(func(sn *Settings) { sn.MultiTabCap = 5 })
+	if p.Load().TabCap() != 5 {
+		t.Errorf("after SetTabCap(5), TabCap = %d", p.Load().TabCap())
 	}
-	p.SetTabCap(99) // above the hard max
-	if p.TabCap() != maxMultiTabCap {
-		t.Errorf("SetTabCap(99) = %d, want clamp to %d", p.TabCap(), maxMultiTabCap)
+	p.Update(func(sn *Settings) { sn.MultiTabCap = 99 }) // above the hard max
+	if p.Load().TabCap() != maxMultiTabCap {
+		t.Errorf("SetTabCap(99) = %d, want clamp to %d", p.Load().TabCap(), maxMultiTabCap)
 	}
-	p.SetTabCap(0) // below the min
-	if p.TabCap() != minMultiTabCap {
-		t.Errorf("SetTabCap(0) = %d, want clamp to %d", p.TabCap(), minMultiTabCap)
+	p.Update(func(sn *Settings) { sn.MultiTabCap = 0 }) // below the min
+	if p.Load().TabCap() != minMultiTabCap {
+		t.Errorf("SetTabCap(0) = %d, want clamp to %d", p.Load().TabCap(), minMultiTabCap)
 	}
 }
 
@@ -702,14 +823,17 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load(absent) returned error: %v", err)
 	}
-	if p.GlobalFallbacksEnabled {
+	if p.Load().GlobalFallbacksEnabled {
 		t.Error("GlobalFallbacksEnabled default must be false (zero fallbacks by default)")
 	}
-	if !p.PreferAnimated {
+	if !p.Load().PreferAnimated {
 		t.Error("PreferAnimated default must be true")
 	}
+	if p.Load().CatchUpOn {
+		t.Error("CatchUpOn default must be false (the OG-client queue)")
+	}
 	for _, name := range TypeNames {
-		if _, ok := p.AssetTypes[name]; !ok {
+		if _, ok := p.Load().AssetTypes[name]; !ok {
 			t.Errorf("default AssetTypes missing %s", name)
 		}
 	}
@@ -724,14 +848,23 @@ func TestLoadCorruptFileFallsBackToDefaults(t *testing.T) {
 	if err == nil {
 		t.Error("load(corrupt) must report the parse error")
 	}
-	if p == nil || !p.PreferAnimated || len(p.AssetTypes) != len(TypeNames) {
+	if p == nil || !p.Load().PreferAnimated || len(p.Load().AssetTypes) != len(TypeNames) {
 		t.Error("load(corrupt) must still return usable defaults")
 	}
 }
 
 func TestSaveNowLeavesNoTempFiles(t *testing.T) {
 	p, path := newTestPrefs(t)
-	p.SetMasterVolume(5)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVol =
+
+			5
+
+	})
+
 	if err := p.SaveNow(); err != nil {
 		t.Fatalf("SaveNow: %v", err)
 	}
@@ -763,7 +896,15 @@ func TestCloseFlushesPendingChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.SetMusicVolMode(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicVolMode =
+
+			true
+
+	})
 
 	start := time.Now()
 	if err := p.Close(); err != nil {
@@ -777,7 +918,7 @@ func TestCloseFlushesPendingChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.MusicVolModeOn() {
+	if !q.Load().MusicVolMode {
 		t.Error("pending change lost at Close")
 	}
 }
@@ -794,7 +935,7 @@ func TestLearnedInvalidation(t *testing.T) {
 
 	seed()
 	p.SetFormatOrder(TypeCharSprite, []string{ExtAPNG})
-	learned := p.LearnedSnapshot()
+	learned := p.Load().LearnedSnapshot()
 	if _, ok := learned[LearnedKey(host, TypeCharSprite)]; ok {
 		t.Error("SetFormatOrder must invalidate learned formats for that type")
 	}
@@ -804,20 +945,20 @@ func TestLearnedInvalidation(t *testing.T) {
 
 	seed()
 	p.SetTypeFallbacks(TypeCharSprite, true)
-	learned = p.LearnedSnapshot()
+	learned = p.Load().LearnedSnapshot()
 	if _, ok := learned[LearnedKey(host, TypeCharSprite)]; ok {
 		t.Error("SetTypeFallbacks must invalidate learned formats for that type")
 	}
 
 	seed()
 	p.SetGlobalFallbacks(true)
-	if n := len(p.LearnedSnapshot()); n != 0 {
+	if n := len(p.Load().LearnedSnapshot()); n != 0 {
 		t.Errorf("SetGlobalFallbacks must invalidate all learned formats, %d left", n)
 	}
 
 	seed()
 	p.ClearLearned()
-	if n := len(p.LearnedSnapshot()); n != 0 {
+	if n := len(p.Load().LearnedSnapshot()); n != 0 {
 		t.Errorf("ClearLearned left %d entries", n)
 	}
 }
@@ -836,7 +977,7 @@ func TestClearLearnedHostIsScoped(t *testing.T) {
 	if n := p.ClearLearnedHost(bad); n != 2 {
 		t.Errorf("ClearLearnedHost dropped %d entries, want 2", n)
 	}
-	learned := p.LearnedSnapshot()
+	learned := p.Load().LearnedSnapshot()
 	if _, ok := learned[LearnedKey(bad, TypeCharSprite)]; ok {
 		t.Error("the target host's sprite entry survived")
 	}
@@ -860,19 +1001,37 @@ func TestClearLearnedHostIsScoped(t *testing.T) {
 	if n := p.ClearLearnedHost(bad); n != 1 {
 		t.Errorf("ClearLearnedHost dropped %d entries, want 1 (a longer host name is a different host)", n)
 	}
-	if _, ok := p.LearnedSnapshot()[LearnedKey(bad+".cdn.example.com", TypeCharSprite)]; !ok {
+	if _, ok := p.Load().LearnedSnapshot()[LearnedKey(bad+".cdn.example.com", TypeCharSprite)]; !ok {
 		t.Error("a host whose name starts with the target's was wrongly cleared")
 	}
 }
 
 func TestMasterVolumeClamping(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	p.SetMasterVolume(500)
-	if got := p.MasterVolume(); got != 100 {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVol =
+
+			500
+
+	})
+
+	if got := p.Load().MasterVol; got != 100 {
 		t.Errorf("MasterVolume = %d, want clamped 100", got)
 	}
-	p.SetMasterVolume(-3)
-	if got := p.MasterVolume(); got != 0 {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVol =
+
+			-3
+
+	})
+
+	if got := p.Load().MasterVol; got != 0 {
 		t.Errorf("MasterVolume = %d, want clamped 0", got)
 	}
 }
@@ -898,11 +1057,22 @@ func TestConcurrentAccess(t *testing.T) {
 				case 1:
 					p.RecordLearned("h.example.com", TypeNames[i%len(TypeNames)], ExtWebP)
 				case 2:
-					_ = p.FormatList(TypeNames[i%len(TypeNames)])
+					_ = p.Load().FormatList(TypeNames[i%len(TypeNames)])
 				case 3:
-					_ = p.LearnedSnapshot()
+					_ = p.Load().LearnedSnapshot()
 				case 4:
-					p.SetMasterVolume(i % 100)
+					p.Update(func(
+						sn *Settings) {
+
+						sn.
+							MasterVol =
+
+							i %
+
+								100
+
+					})
+
 				case 5:
 					p.SetGlobalFallbacks(i%2 == 0)
 				}
@@ -943,38 +1113,38 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	}
 	defer p.Close()
 
-	vp, chat, box, logT, in := p.LayoutScales()
+	vp, chat, box, logT, in := p.Load().LayoutScales()
 	if vp != DefaultViewportPercent || chat != DefaultScalePercent || box != DefaultScalePercent ||
 		logT != DefaultScalePercent || in != DefaultScalePercent {
 		t.Fatalf("defaults = %d/%d/%d/%d/%d", vp, chat, box, logT, in)
 	}
-	if m, s, b := p.AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
+	if m, s, b := p.Load().AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
 		t.Fatalf("default channel volumes = %d/%d/%d, want %d (start a bit under full, #9)", m, s, b, defaultStartVolume)
 	}
-	if p.MasterVolume() != defaultAudioVolume {
-		t.Fatalf("default master = %d, want %d (master stays full; it scales the channels)", p.MasterVolume(), defaultAudioVolume)
+	if p.Load().MasterVol != defaultAudioVolume {
+		t.Fatalf("default master = %d, want %d (master stays full; it scales the channels)", p.Load().MasterVol, defaultAudioVolume)
 	}
-	if crawl, stay, rate := p.Timing(); crawl != DefaultTextCrawlMs || stay != DefaultTextStayMs || rate != DefaultChatRateLimitMs {
+	if crawl, stay, rate := p.Load().Timing(); crawl != DefaultTextCrawlMs || stay != DefaultTextStayMs || rate != DefaultChatRateLimitMs {
 		t.Fatalf("default timing = %d/%d/%d", crawl, stay, rate)
 	}
 
 	p.SetLayoutScales(10, 999, 10, 10, 999) // wildly out of range → clamped
-	vp, chat, box, logT, in = p.LayoutScales()
+	vp, chat, box, logT, in = p.Load().LayoutScales()
 	if vp != MinViewportPercent || chat != MaxChatScalePercent || box != MinChatBoxPercent ||
 		logT != MinLogScalePercent || in != MaxInputPercent {
 		t.Fatalf("clamped = %d/%d/%d/%d/%d", vp, chat, box, logT, in)
 	}
 	p.SetTiming(1, 99999, 99999) // crawl floors, stay/rate ceil
-	if crawl, stay, rate := p.Timing(); crawl != MinTextCrawlMs || stay != MaxTextStayMs || rate != MaxChatRateLimitMs {
+	if crawl, stay, rate := p.Load().Timing(); crawl != MinTextCrawlMs || stay != MaxTextStayMs || rate != MaxChatRateLimitMs {
 		t.Fatalf("clamped timing = %d/%d/%d", crawl, stay, rate)
 	}
 	p.SetMasterList("  https://alt.example/servers  ")
-	if got := p.MasterList(); got != "https://alt.example/servers" {
+	if got := p.Load().MasterListURL; got != "https://alt.example/servers" {
 		t.Fatalf("master list = %q", got)
 	}
 
 	p.SetAudioVolumes(0, 55, 200) // mute is a real value; 200 clamps
-	p.SetOOCName("arbok")
+	p.Update(func(sn *Settings) { sn.OOCName = "testuser" })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -983,19 +1153,19 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m, s, b := q.AudioVolumes(); m != 0 || s != 55 || b != 100 {
+	if m, s, b := q.Load().AudioVolumes(); m != 0 || s != 55 || b != 100 {
 		t.Fatalf("reloaded volumes = %d/%d/%d, want 0/55/100 (0 must survive)", m, s, b)
 	}
-	if q.SavedOOCName() != "arbok" {
-		t.Fatalf("reloaded OOC name = %q", q.SavedOOCName())
+	if q.Load().OOCName != "testuser" {
+		t.Fatalf("reloaded OOC name = %q", q.Load().OOCName)
 	}
-	if v, _, _, _, _ := q.LayoutScales(); v != MinViewportPercent {
+	if v, _, _, _, _ := q.Load().LayoutScales(); v != MinViewportPercent {
 		t.Fatalf("reloaded viewport = %d", v)
 	}
-	if _, stay, _ := q.Timing(); stay != MaxTextStayMs {
+	if _, stay, _ := q.Load().Timing(); stay != MaxTextStayMs {
 		t.Fatalf("reloaded stay = %d", stay)
 	}
-	if got := q.MasterList(); got != "https://alt.example/servers" {
+	if got := q.Load().MasterListURL; got != "https://alt.example/servers" {
 		t.Fatalf("reloaded master list = %q", got)
 	}
 }
@@ -1011,19 +1181,19 @@ func TestViewportExactWidth(t *testing.T) {
 	}
 	defer p.Close()
 
-	if got := p.ViewportExactWidth(); got != 0 {
+	if got := p.Load().ViewportExactW; got != 0 {
 		t.Fatalf("default exact width = %d, want 0 (off)", got)
 	}
-	p.SetViewportExactWidth(100) // below Min → clamps up
-	if got := p.ViewportExactWidth(); got != MinViewportExactPx {
+	p.Update(func(sn *Settings) { sn.ViewportExactW = 100 }) // below Min → clamps up
+	if got := p.Load().ViewportExactW; got != MinViewportExactPx {
 		t.Fatalf("clamp-up = %d, want %d", got, MinViewportExactPx)
 	}
-	p.SetViewportExactWidth(99999) // above Max → clamps down
-	if got := p.ViewportExactWidth(); got != MaxViewportExactPx {
+	p.Update(func(sn *Settings) { sn.ViewportExactW = 99999 }) // above Max → clamps down
+	if got := p.Load().ViewportExactW; got != MaxViewportExactPx {
 		t.Fatalf("clamp-down = %d, want %d", got, MaxViewportExactPx)
 	}
-	p.SetViewportExactWidth(512) // a clean 2× multiple passes through
-	if got := p.ViewportExactWidth(); got != 512 {
+	p.Update(func(sn *Settings) { sn.ViewportExactW = 512 }) // a clean 2× multiple passes through
+	if got := p.Load().ViewportExactW; got != 512 {
 		t.Fatalf("exact = %d, want 512", got)
 	}
 	if err := p.SaveNow(); err != nil {
@@ -1033,11 +1203,11 @@ func TestViewportExactWidth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := q.ViewportExactWidth(); got != 512 {
+	if got := q.Load().ViewportExactW; got != 512 {
 		t.Fatalf("reloaded exact width = %d, want 512", got)
 	}
-	q.SetViewportExactWidth(0) // 0 turns it back off (must round-trip, not re-clamp to Min)
-	if got := q.ViewportExactWidth(); got != 0 {
+	q.Update(func(sn *Settings) { sn.ViewportExactW = 0 }) // 0 turns it back off (must round-trip, not re-clamp to Min)
+	if got := q.Load().ViewportExactW; got != 0 {
 		t.Fatalf("clear = %d, want 0", got)
 	}
 }
@@ -1056,24 +1226,52 @@ func TestOOCScaleIndependent(t *testing.T) {
 
 	// Set the IC log to a non-default size and the OOC independently.
 	p.SetLayoutScales(DefaultViewportPercent, DefaultScalePercent, DefaultScalePercent, 180, DefaultScalePercent)
-	p.SetOOCScale(130)
-	if got := p.OOCScale(); got != 130 {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			OOCScalePct =
+
+			130
+
+	})
+
+	if got := p.Load().OOCScalePct; got != 130 {
 		t.Fatalf("OOC scale = %d, want 130 (independent of the 180 log size)", got)
 	}
-	if _, _, _, logT, _ := p.LayoutScales(); logT != 180 {
+	if _, _, _, logT, _ := p.Load().LayoutScales(); logT != 180 {
 		t.Fatalf("log scale = %d, want 180 (OOC change must not touch it)", logT)
 	}
-	p.SetOOCScale(9999) // clamps to the log-scale ceiling
-	if got := p.OOCScale(); got != MaxLogScalePercent {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			OOCScalePct =
+
+			9999
+
+	})
+
+	// clamps to the log-scale ceiling
+	if got := p.Load().OOCScalePct; got != MaxLogScalePercent {
 		t.Fatalf("OOC clamp = %d, want %d", got, MaxLogScalePercent)
 	}
-	p.SetOOCScale(125)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			OOCScalePct =
+
+			125
+
+	})
+
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
 	if q, err := load(path); err != nil {
 		t.Fatal(err)
-	} else if got := q.OOCScale(); got != 125 {
+	} else if got := q.Load().OOCScalePct; got != 125 {
 		t.Fatalf("reloaded OOC scale = %d, want 125", got)
 	}
 
@@ -1087,7 +1285,7 @@ func TestOOCScaleIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := lp.OOCScale(); got != 170 {
+	if got := lp.Load().OOCScalePct; got != 170 {
 		t.Fatalf("legacy OOC scale = %d, want 170 (inherit the IC log size)", got)
 	}
 }
@@ -1097,15 +1295,12 @@ func TestOOCScaleIndependent(t *testing.T) {
 // on the corrupt-file quarantine path), so the "no stored value ⇒ inherit the log
 // size" overlay never runs there. OOCScalePct had no entry in the defaults block,
 // so a brand-new install got 0 — and 0 is not "absent" once it leaves this package:
-// the UI hands it straight to the font builder, which floors the point size at 1 px
-// and renders the whole OOC log unreadable (and, because the IC log asks the same
-// shared set for 100%, rebuilds that set twice per frame).
 func TestOOCScaleFirstRunDefault(t *testing.T) {
 	fresh, err := load(filepath.Join(t.TempDir(), "does-not-exist.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fresh.OOCScale(); got != DefaultScalePercent {
+	if got := fresh.Load().OOCScalePct; got != DefaultScalePercent {
 		t.Errorf("first-run OOC scale = %d, want %d — a never-saved config must not yield a 0%% font scale", got, DefaultScalePercent)
 	}
 	// Same for a corrupt file: load quarantines it and returns the same defaults.
@@ -1114,7 +1309,7 @@ func TestOOCScaleFirstRunDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	bp, _ := load(bad) // the parse error is expected; the prefs are the defaults
-	if got := bp.OOCScale(); got != DefaultScalePercent {
+	if got := bp.Load().OOCScalePct; got != DefaultScalePercent {
 		t.Errorf("quarantined-config OOC scale = %d, want %d", got, DefaultScalePercent)
 	}
 	// The default must not defeat the legacy-inherit rule: an EXISTING file with a
@@ -1128,7 +1323,7 @@ func TestOOCScaleFirstRunDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ep.OOCScale(); got != DefaultScalePercent {
+	if got := ep.Load().OOCScalePct; got != DefaultScalePercent {
 		t.Errorf("empty-config OOC scale = %d, want %d", got, DefaultScalePercent)
 	}
 }
@@ -1142,10 +1337,10 @@ func TestNameColorClamp(t *testing.T) {
 	}
 	defer p.Close()
 	p.SetNameColorSatVal(200, 0) // saturation over the top, brightness under the floor
-	if got := p.NameColorSat(); got != 100 {
+	if got := p.Load().NameSat; got != 100 {
 		t.Errorf("saturation = %d, want 100 (clamped)", got)
 	}
-	if got := p.NameColorVal(); got != minNameColorVal {
+	if got := p.Load().NameVal; got != minNameColorVal {
 		t.Errorf("brightness = %d, want %d (floor)", got, minNameColorVal)
 	}
 }
@@ -1160,26 +1355,35 @@ func TestResetSettings(t *testing.T) {
 	defer p.Close()
 
 	p.SetAudioVolumes(0, 10, 20)
-	p.SetForceCharNames(true)
-	p.SetTabCap(20)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ForceCharNames =
+
+			true
+
+	})
+
+	p.Update(func(sn *Settings) { sn.MultiTabCap = 20 })
 	p.SetCallWords([]string{"myname"})
 	p.AddFavorite("Home", "wss://home:2096", "")
 
 	p.ResetSettings()
 
-	if m, s, b := p.AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
+	if m, s, b := p.Load().AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
 		t.Errorf("volumes not reset: %d/%d/%d", m, s, b)
 	}
-	if p.ForceCharNamesOn() {
+	if p.Load().ForceCharNames {
 		t.Error("ForceCharNames not reset")
 	}
-	if p.TabCap() != DefaultMultiTabCap {
-		t.Errorf("TabCap = %d, want %d", p.TabCap(), DefaultMultiTabCap)
+	if p.Load().TabCap() != DefaultMultiTabCap {
+		t.Errorf("TabCap = %d, want %d", p.Load().TabCap(), DefaultMultiTabCap)
 	}
-	if got := p.CallWords(); len(got) != 1 || got[0] != "myname" {
+	if got := p.Load().CallWords(); len(got) != 1 || got[0] != "myname" {
 		t.Errorf("callwords (content) must be preserved, got %v", got)
 	}
-	if len(p.FavoriteServers()) != 1 {
+	if len(p.Load().FavoriteServers()) != 1 {
 		t.Error("favourites (content) must be preserved")
 	}
 }
@@ -1197,7 +1401,7 @@ func TestCallWordAddRemove(t *testing.T) {
 	if n := p.AddCallWord("Alice, bob , ALICE,  "); n != 2 {
 		t.Fatalf("AddCallWord bulk = %d, want 2 (alice, bob; dup + blanks skipped)", n)
 	}
-	if got := p.CallWords(); len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
+	if got := p.Load().CallWords(); len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
 		t.Fatalf("CallWords = %v, want [alice bob]", got)
 	}
 	if n := p.AddCallWord("bob"); n != 0 {
@@ -1206,7 +1410,7 @@ func TestCallWordAddRemove(t *testing.T) {
 	if !p.RemoveCallWord("ALICE") { // case-insensitive remove
 		t.Error("RemoveCallWord(ALICE) should drop the lowercased entry")
 	}
-	if got := p.CallWords(); len(got) != 1 || got[0] != "bob" {
+	if got := p.Load().CallWords(); len(got) != 1 || got[0] != "bob" {
 		t.Errorf("after remove, CallWords = %v, want [bob]", got)
 	}
 }
@@ -1227,12 +1431,12 @@ func TestCallWordWildcardRoundTrip(t *testing.T) {
 	if n := p.AddCallWord("  Obj*  "); n != 1 {
 		t.Fatalf("AddCallWord = %d, want 1", n)
 	}
-	if got := p.CallWords(); len(got) != 1 || got[0] != "obj*" {
+	if got := p.Load().CallWords(); len(got) != 1 || got[0] != "obj*" {
 		t.Fatalf("in-memory CallWords = %v, want [obj*] (lowercased, '*' kept)", got)
 	}
 	// SetCallWords (the bulk replace path) must keep it too.
 	p.SetCallWords([]string{"OBJ*", "tif"})
-	if got := p.CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
+	if got := p.Load().CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
 		t.Fatalf("SetCallWords result = %v, want [obj* tif]", got)
 	}
 	if err := p.Close(); err != nil {
@@ -1242,7 +1446,7 @@ func TestCallWordWildcardRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
+	if got := q.Load().CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
 		t.Errorf("wildcard lost across reload: got %v, want [obj* tif]", got)
 	}
 }
@@ -1256,11 +1460,29 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.DNDPersistOn() || p.DNDSavedOn() {
+	if p.Load().DNDPersist || p.Load().DNDSaved {
 		t.Fatal("DND persistence + state must default OFF (session-only)")
 	}
-	p.SetDNDPersist(true)
-	p.SetDNDSaved(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DNDPersist =
+
+			true
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DNDSaved =
+
+			true
+
+	})
+
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1268,8 +1490,8 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.DNDPersistOn() || !q.DNDSavedOn() {
-		t.Errorf("DND persist/state lost across reload: persist=%v saved=%v", q.DNDPersistOn(), q.DNDSavedOn())
+	if !q.Load().DNDPersist || !q.Load().DNDSaved {
+		t.Errorf("DND persist/state lost across reload: persist=%v saved=%v", q.Load().DNDPersist, q.Load().DNDSaved)
 	}
 }
 
@@ -1278,23 +1500,26 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 // SFXVolMuted): all four default OFF (unmuted, matching today's actual
 // behavior — no migration stamp needed), and the saved state survives a real
 // save→load round trip through disk, exactly like TestDNDPersistRoundTrip.
-// This is the "the value actually round-trips" half of the guard;
-// TestEverySavedPreferenceIsAlsoLoaded (prefsroundtrip_test.go) is the "the
-// shape exists" half — deleting either the prefsJSON field or its load-overlay
-// line for any one of the four fails THIS test's reload assertion, even
-// though the shape-only guard could theoretically still pass if the omission
-// were paired with an accidental removal elsewhere.
 func TestChannelMuteRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := newWithDebounce(path, testDebounce)
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.MasterVolMutedOn() || p.MusicVolMutedOn() || p.SFXVolMutedOn() || p.BlipVolMutedOn() {
+	if p.Load().MasterVolMuted || p.Load().MusicVolMuted || p.Load().SFXVolMuted || p.Load().BlipVolMuted {
 		t.Fatal("all four channel mutes must default unmuted")
 	}
-	p.SetMasterVolMuted(true)
-	p.SetSFXVolMuted(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MasterVolMuted =
+
+			true
+
+	})
+
+	p.Update(func(sn *Settings) { sn.SFXVolMuted = true })
 	// Music and blip are left OFF deliberately, so the reload assertion also
 	// catches a bug that sets every channel muted regardless of which one changed.
 	if err := p.Close(); err != nil {
@@ -1304,13 +1529,13 @@ func TestChannelMuteRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.MasterVolMutedOn() {
+	if !q.Load().MasterVolMuted {
 		t.Error("master mute lost across reload")
 	}
-	if !q.SFXVolMutedOn() {
+	if !q.Load().SFXVolMuted {
 		t.Error("SFX mute lost across reload")
 	}
-	if q.MusicVolMutedOn() || q.BlipVolMutedOn() {
+	if q.Load().MusicVolMuted || q.Load().BlipVolMuted {
 		t.Error("unmuted channels came back muted after reload")
 	}
 }
@@ -1323,14 +1548,33 @@ func TestAlertVolumeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.AlertVolume() != defaultAudioVolume {
-		t.Fatalf("AlertVolume default = %d, want %d", p.AlertVolume(), defaultAudioVolume)
+	if p.Load().AlertVol != defaultAudioVolume {
+		t.Fatalf("AlertVolume default = %d, want %d", p.Load().AlertVol, defaultAudioVolume)
 	}
-	p.SetAlertVolume(150) // over-max clamps to 100
-	if p.AlertVolume() != 100 {
-		t.Errorf("AlertVolume(150) = %d, want clamp to 100", p.AlertVolume())
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AlertVol =
+
+			150
+
+	})
+
+	// over-max clamps to 100
+	if p.Load().AlertVol != 100 {
+		t.Errorf("AlertVolume(150) = %d, want clamp to 100", p.Load().AlertVol)
 	}
-	p.SetAlertVolume(40)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AlertVol =
+
+			40
+
+	})
+
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1338,8 +1582,8 @@ func TestAlertVolumeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.AlertVolume() != 40 {
-		t.Errorf("AlertVolume lost across reload: got %d, want 40", q.AlertVolume())
+	if q.Load().AlertVol != 40 {
+		t.Errorf("AlertVolume lost across reload: got %d, want 40", q.Load().AlertVol)
 	}
 }
 
@@ -1351,30 +1595,39 @@ func TestResetAll(t *testing.T) {
 	}
 	defer p.Close()
 
-	p.SetForceCharNames(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ForceCharNames =
+
+			true
+
+	})
+
 	p.SetCallWords([]string{"myname"})
 	p.AddFavorite("Home", "wss://home:2096", "")
 
 	p.ResetAll()
 
-	if p.ForceCharNamesOn() {
+	if p.Load().ForceCharNames {
 		t.Error("ForceCharNames not reset")
 	}
-	if got := p.CallWords(); len(got) != 0 {
+	if got := p.Load().CallWords(); len(got) != 0 {
 		t.Errorf("callwords must be wiped, got %v", got)
 	}
-	if got := p.FavoriteServers(); len(got) != 0 {
+	if got := p.Load().FavoriteServers(); len(got) != 0 {
 		t.Errorf("favourites must be wiped, got %d", len(got))
 	}
 }
 
 // TestResetContentFieldsExist guards resetContentFields against a struct rename:
-// every preserved name must be a real exported field of AssetPreferences.
+// every preserved name must be a real exported field of Settings.
 func TestResetContentFieldsExist(t *testing.T) {
-	tp := reflect.TypeOf(AssetPreferences{})
+	tp := reflect.TypeOf(Settings{})
 	for name := range resetContentFields {
 		if f, ok := tp.FieldByName(name); !ok || f.PkgPath != "" {
-			t.Errorf("resetContentFields[%q] is not an exported field of AssetPreferences", name)
+			t.Errorf("resetContentFields[%q] is not an exported field of Settings", name)
 		}
 	}
 }
@@ -1389,14 +1642,14 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 	}
 	defer p.Close()
 
-	if p.RestoreTabsOn() {
+	if p.Load().RestoreTabs {
 		t.Error("RestoreTabs must default OFF")
 	}
-	if len(p.OpenTabList()) != 0 {
+	if len(p.Load().OpenTabList()) != 0 {
 		t.Error("OpenTabs must default empty")
 	}
 
-	p.SetRestoreTabs(true)
+	p.Update(func(sn *Settings) { sn.RestoreTabs = true })
 	p.SetOpenTabs([]OpenTab{
 		{Name: "Alpha", URL: "wss://a.example:2096"},
 		{Name: "Beta", URL: "wss://b.example:2096"},
@@ -1409,10 +1662,10 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !q.RestoreTabsOn() {
+	if !q.Load().RestoreTabs {
 		t.Error("reloaded RestoreTabs must be ON")
 	}
-	got := q.OpenTabList()
+	got := q.Load().OpenTabList()
 	if len(got) != 2 || got[0].Name != "Alpha" || got[0].URL != "wss://a.example:2096" || got[1].URL != "wss://b.example:2096" {
 		t.Fatalf("reloaded OpenTabs = %v", got)
 	}
@@ -1428,10 +1681,10 @@ func TestToolboxSeenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if p.ToolboxSeenOn() {
+	if p.Load().ToolboxSeen {
 		t.Fatal("a fresh config must report ToolboxSeen=false (show the ring)")
 	}
-	p.SetToolboxSeen(true)
+	p.Update(func(sn *Settings) { sn.ToolboxSeen = true })
 	if err := p.SaveNow(); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -1440,7 +1693,7 @@ func TestToolboxSeenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !re.ToolboxSeenOn() {
+	if !re.Load().ToolboxSeen {
 		t.Fatal("ToolboxSeen must survive a save/reload — the DTO/overlay wiring is missing (save-but-not-load trap)")
 	}
 }
@@ -1465,8 +1718,8 @@ func TestCorruptConfigQuarantined(t *testing.T) {
 	}
 	// Defaults are in effect (PreferAnimated is a default-true field, so it is
 	// a good sentinel that the fresh defaults were applied).
-	if p.PreferAnimated != defaultPreferAnimated {
-		t.Errorf("corrupt load must fall back to defaults; PreferAnimated=%v want %v", p.PreferAnimated, defaultPreferAnimated)
+	if p.Load().PreferAnimated != defaultPreferAnimated {
+		t.Errorf("corrupt load must fall back to defaults; PreferAnimated=%v want %v", p.Load().PreferAnimated, defaultPreferAnimated)
 	}
 	// Quarantine info is surfaced.
 	q := p.Quarantine()
@@ -1573,7 +1826,7 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load old file: %v", err)
 	}
-	if p.AutoReconnectOn() {
+	if p.Load().AutoReconnect {
 		t.Error("an older file's ON auto-reconnect must be forced OFF on update (the pull-back)")
 	}
 
@@ -1585,8 +1838,42 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load stamped file: %v", err)
 	}
-	if !q.AutoReconnectOn() {
+	if !q.Load().AutoReconnect {
 		t.Error("a stamped file's explicit ON must be respected (the pull-back already ran)")
+	}
+}
+
+// TestCatchUpDefaultPullback pins the one-shot ON→OFF move for packed-room
+// catch-up: older files carry catchUpWhenBehind:true (the old default the saver
+// always wrote) but no stamp, and must be forced to the OG-client queue once.
+// A stamped file's explicit ON survives, so turning it back on after updating
+// sticks.
+func TestCatchUpDefaultPullback(t *testing.T) {
+	old := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(old, []byte(`{"catchUpWhenBehind": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := load(old)
+	if err != nil {
+		t.Fatalf("load old file: %v", err)
+	}
+	if p.Load().CatchUpOn {
+		t.Error("an older file's ON catch-up must be forced OFF on update")
+	}
+	if !p.Load().CatchUpDefaultMigrated {
+		t.Error("the pull-back must stamp the file so it never runs twice")
+	}
+
+	stamped := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(stamped, []byte(`{"catchUpWhenBehind": true, "catchUpDefaultMigrated": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q, err := load(stamped)
+	if err != nil {
+		t.Fatalf("load stamped file: %v", err)
+	}
+	if !q.Load().CatchUpOn {
+		t.Error("a stamped file's explicit ON must be respected")
 	}
 }
 
@@ -1595,12 +1882,6 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 // so a file from an older build carries a baked textCrawlMs:18 that a bare default
 // change would never reach — only the absent stamp can tell "written before the
 // move" from "deliberately 18". Four properties, one per sub-test:
-//
-//  1. it fires exactly once — an un-stamped file lands on the new default;
-//  2. it is VALUE-AWARE — an un-stamped file holding any OTHER value keeps it,
-//     because the saver always wrote the field, so that value is a deliberate pick;
-//  3. a post-move user edit survives the NEXT load (the whole point of the stamp);
-//  4. the stamp itself round-trips, so the move can never fire a second time.
 func TestBlipSpeedDefaultMove(t *testing.T) {
 	// Pinned to the package constant, not a loose literal: if the pre-move default
 	// is ever restated, this test must move with the migration it guards.
@@ -1616,10 +1897,10 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load old file: %v", err)
 		}
-		if crawl, _, _ := p.Timing(); crawl != DefaultTextCrawlMs {
+		if crawl, _, _ := p.Load().Timing(); crawl != DefaultTextCrawlMs {
 			t.Errorf("an older file's %d ms crawl must move to %d ms once, got %d", oldDefaultCrawlMs, DefaultTextCrawlMs, crawl)
 		}
-		if !p.BlipSpeedDefaultMoved() {
+		if !p.Load().BlipSpeedDefaultMigrated {
 			t.Error("the move must stamp the file so it never runs twice")
 		}
 	})
@@ -1643,12 +1924,12 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load un-stamped %d ms file: %v", deliberate, err)
 			}
-			if crawl, _, _ := p.Timing(); crawl != deliberate {
+			if crawl, _, _ := p.Load().Timing(); crawl != deliberate {
 				t.Errorf("a deliberate pre-move %d ms pick was clobbered: got %d", deliberate, crawl)
 			}
 			// The stamp is written EITHER WAY, so the move can never fire again and
 			// re-examine a value it has already decided to keep.
-			if !p.BlipSpeedDefaultMoved() {
+			if !p.Load().BlipSpeedDefaultMigrated {
 				t.Errorf("a preserved %d ms pick must still stamp the file", deliberate)
 			}
 		}
@@ -1662,7 +1943,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		}
 		// Deliberately back to the OLD default: the value the move forces away from
 		// is exactly the one a stamped file must be allowed to keep.
-		_, stay, rate := p.Timing()
+		_, stay, rate := p.Load().Timing()
 		p.SetTiming(oldDefaultCrawlMs, stay, rate)
 		if err := p.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
@@ -1671,7 +1952,7 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload: %v", err)
 		}
-		if crawl, _, _ := q.Timing(); crawl != oldDefaultCrawlMs {
+		if crawl, _, _ := q.Load().Timing(); crawl != oldDefaultCrawlMs {
 			t.Errorf("a deliberate %d ms pick after the move was overwritten: got %d", oldDefaultCrawlMs, crawl)
 		}
 	})
@@ -1686,10 +1967,10 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file: %v", err)
 		}
-		if crawl, _, _ := p.Timing(); crawl != oldDefaultCrawlMs {
+		if crawl, _, _ := p.Load().Timing(); crawl != oldDefaultCrawlMs {
 			t.Errorf("a stamped file's explicit %d ms must be respected, got %d", oldDefaultCrawlMs, crawl)
 		}
-		if !p.BlipSpeedDefaultMoved() {
+		if !p.Load().BlipSpeedDefaultMigrated {
 			t.Error("the stamp was lost on load")
 		}
 		if err := p.SaveNow(); err != nil {
@@ -1699,10 +1980,10 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload: %v", err)
 		}
-		if !q.BlipSpeedDefaultMoved() {
+		if !q.Load().BlipSpeedDefaultMigrated {
 			t.Error("the stamp did not survive save → load — the move would re-fire on every launch")
 		}
-		if crawl, _, _ := q.Timing(); crawl != oldDefaultCrawlMs {
+		if crawl, _, _ := q.Load().Timing(); crawl != oldDefaultCrawlMs {
 			t.Errorf("after save→load the crawl is %d, want the stored %d", crawl, oldDefaultCrawlMs)
 		}
 	})
@@ -1716,15 +1997,6 @@ func TestBlipSpeedDefaultMove(t *testing.T) {
 // having no state distinguishable from its default — the flip cannot be
 // value-aware: it is the AutoReconnect pull-back's shape, mirrored. Four
 // properties, one per sub-test:
-//
-//  1. the flip fires on an un-stamped file — its explicit false is forced ON;
-//  2. a stamped file's explicit pin is respected as-is;
-//  3. a user who re-pins WebP AFTER the flip stays pinned across load/save —
-//     which also proves the stamp persists to disk and the flip fires exactly
-//     once, because a lost stamp would re-force ON on the very next load;
-//  4. a stamped file with the key ABSENT reads as the new ON default, which is
-//     what makes prefsJSON.DeskFollowManifest a *bool: as a plain bool, absent
-//     would decode to false and silently re-pin the user to WebP.
 func TestDeskManifestDefaultFlip(t *testing.T) {
 	t.Run("an un-stamped file is flipped to follow the manifest", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -1735,10 +2007,10 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load old file: %v", err)
 		}
-		if !p.DeskFollowsManifest() {
+		if !p.Load().DeskFollowManifest {
 			t.Error("an older file's WebP pin must be flipped to follow-the-manifest on update")
 		}
-		if !p.DeskManifestDefaultMigrated {
+		if !p.Load().DeskManifestDefaultMigrated {
 			t.Error("the flip must stamp the file so it never runs twice")
 		}
 	})
@@ -1752,7 +2024,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file: %v", err)
 		}
-		if p.DeskFollowsManifest() {
+		if p.Load().DeskFollowManifest {
 			t.Error("a stamped file's explicit WebP pin must be respected (the flip already ran)")
 		}
 	})
@@ -1766,10 +2038,20 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newWithDebounce: %v", err)
 		}
-		if !p.DeskFollowsManifest() {
+		if !p.Load().DeskFollowManifest {
 			t.Fatal("precondition: the flip must have fired on this un-stamped file")
 		}
-		p.SetDeskFollowManifest(false) // the user re-pins WebP after updating
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				DeskFollowManifest =
+
+				false
+
+		})
+
+		// the user re-pins WebP after updating
 		if err := p.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
 		}
@@ -1790,7 +2072,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload: %v", err)
 		}
-		if q.DeskFollowsManifest() {
+		if q.Load().DeskFollowManifest {
 			t.Error("a re-pinned WebP choice was lost — the flip re-fired instead of firing exactly once")
 		}
 	})
@@ -1804,7 +2086,7 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file without the key: %v", err)
 		}
-		if !p.DeskFollowsManifest() {
+		if !p.Load().DeskFollowManifest {
 			t.Error("absent deskFollowManifest read as a WebP pin — the DTO field must be a *bool so absent means 'default ON', not 'false'")
 		}
 	})
@@ -1817,10 +2099,6 @@ func TestDeskManifestDefaultFlip(t *testing.T) {
 // always written, so a file from an older build carries an explicit false that a
 // bare default change could never reach, and a bool has no state distinguishable
 // from its default, so the flip cannot be value-aware.
-//
-// Four properties, one per sub-test — the fourth is why prefsJSON.DetailedLog
-// became a *bool: as a plain bool, absent would decode to false and silently turn
-// logging back OFF for a stamped file whose key had been hand-trimmed.
 func TestDetailedLogDefaultFlip(t *testing.T) {
 	t.Run("an un-stamped file is flipped ON", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -1831,10 +2109,10 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load old file: %v", err)
 		}
-		if !p.DetailedLogOn() {
+		if !p.Load().DetailedLog {
 			t.Error("an older file's OFF must be flipped ON once on update")
 		}
-		if !p.DetailedLogDefaultMigrated {
+		if !p.Load().DetailedLogDefaultMigrated {
 			t.Error("the flip must stamp the file so it never runs twice")
 		}
 	})
@@ -1848,7 +2126,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file: %v", err)
 		}
-		if p.DetailedLogOn() {
+		if p.Load().DetailedLog {
 			t.Error("a stamped file's explicit OFF must be respected (the flip already ran)")
 		}
 	})
@@ -1862,10 +2140,20 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newWithDebounce: %v", err)
 		}
-		if !p.DetailedLogOn() {
+		if !p.Load().DetailedLog {
 			t.Fatal("precondition: the flip must have fired on this un-stamped file")
 		}
-		p.SetDetailedLog(false) // the user turns the transcript back off after updating
+		p.Update(func(
+			sn *Settings) {
+
+			sn.
+				DetailedLog =
+
+				false
+
+		})
+
+		// the user turns the transcript back off after updating
 		if err := p.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
 		}
@@ -1886,7 +2174,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload: %v", err)
 		}
-		if q.DetailedLogOn() {
+		if q.Load().DetailedLog {
 			t.Error("the re-disable was lost — the flip re-fired instead of firing exactly once")
 		}
 	})
@@ -1900,7 +2188,7 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load stamped file without the key: %v", err)
 		}
-		if !p.DetailedLogOn() {
+		if !p.Load().DetailedLog {
 			t.Error("absent detailedLog read as OFF — the DTO field must be a *bool so absent means 'default ON'")
 		}
 	})
@@ -1911,10 +2199,6 @@ func TestDetailedLogDefaultFlip(t *testing.T) {
 // AO2's own options.cpp:420-423, :430-433, :440-443, which default true) so the
 // SFX/effects picks and the Pre checkbox reset after every send, matching the
 // one-shot Screenshake/Realization arms.
-//
-//	stickysounds / stickyeffects / stickypres → false (AsyncAO default; AO2 ships true)
-//	sfx_on_idle                               → false (options.cpp:569-572)
-//
 // The two AsyncAO options added beside them ride along, because their defaults
 // were user decisions and a silent flip would be a behaviour change nobody asked
 // for: ghost text ON, the unfocused-throttle override OFF.
@@ -1925,12 +2209,12 @@ func TestSendOptionDefaults(t *testing.T) {
 		got  bool
 		want bool
 	}{
-		{"stickySounds", p.StickySoundsOn(), false},
-		{"stickyEffects", p.StickyEffectsOn(), false},
-		{"stickyPreanims", p.StickyPreanimsOn(), false},
-		{"sfxOnIdle", p.SFXOnIdleOn(), false},
-		{"ghostCrawlText", p.GhostCrawlTextOn(), true},
-		{"unfocusedFullRate", p.UnfocusedFullRateOn(), false},
+		{"stickySounds", p.Load().StickySounds, false},
+		{"stickyEffects", p.Load().StickyEffects, false},
+		{"stickyPreanims", p.Load().StickyPreanims, false},
+		{"sfxOnIdle", p.Load().SFXOnIdle, false},
+		{"ghostCrawlText", p.Load().GhostCrawlText, true},
+		{"unfocusedFullRate", p.Load().UnfocusedFullRate, false},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s defaults to %v, want %v", tc.name, tc.got, tc.want)
@@ -1939,12 +2223,21 @@ func TestSendOptionDefaults(t *testing.T) {
 	// Every one of them must round-trip: the save-but-never-load class this codebase
 	// has shipped more than once (TestEverySavedPreferenceIsAlsoLoaded catches the
 	// reflection half; this pins the behaviour those fields actually promise).
-	p.SetStickySounds(false)
-	p.SetStickyEffects(false)
-	p.SetStickyPreanims(false)
-	p.SetSFXOnIdle(true)
-	p.SetGhostCrawlText(false)
-	p.SetUnfocusedFullRate(true)
+	p.Update(func(sn *Settings) { sn.StickySounds = false })
+	p.Update(func(sn *Settings) { sn.StickyEffects = false })
+	p.Update(func(sn *Settings) { sn.StickyPreanims = false })
+	p.Update(func(sn *Settings) { sn.SFXOnIdle = true })
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			GhostCrawlText =
+
+			false
+
+	})
+
+	p.Update(func(sn *Settings) { sn.UnfocusedFullRate = true })
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1957,12 +2250,12 @@ func TestSendOptionDefaults(t *testing.T) {
 		got  bool
 		want bool
 	}{
-		{"stickySounds", q.StickySoundsOn(), false},
-		{"stickyEffects", q.StickyEffectsOn(), false},
-		{"stickyPreanims", q.StickyPreanimsOn(), false},
-		{"sfxOnIdle", q.SFXOnIdleOn(), true},
-		{"ghostCrawlText", q.GhostCrawlTextOn(), false},
-		{"unfocusedFullRate", q.UnfocusedFullRateOn(), true},
+		{"stickySounds", q.Load().StickySounds, false},
+		{"stickyEffects", q.Load().StickyEffects, false},
+		{"stickyPreanims", q.Load().StickyPreanims, false},
+		{"sfxOnIdle", q.Load().SFXOnIdle, true},
+		{"ghostCrawlText", q.Load().GhostCrawlText, false},
+		{"unfocusedFullRate", q.Load().UnfocusedFullRate, true},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s did not survive save → load: %v, want %v", tc.name, tc.got, tc.want)
@@ -1981,11 +2274,11 @@ func TestSmoothLogScrollPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.SmoothLogScrollOn() {
+	if p.Load().SmoothLogScroll {
 		t.Error("smooth log scrolling must default OFF (the log follows instantly, like AO2)")
 	}
-	p.SetSmoothLogScroll(true)
-	if !p.SmoothLogScrollOn() {
+	p.Update(func(sn *Settings) { sn.SmoothLogScroll = true })
+	if !p.Load().SmoothLogScroll {
 		t.Fatal("SetSmoothLogScroll(true) did not stick")
 	}
 	if err := p.Close(); err != nil {
@@ -1995,13 +2288,12 @@ func TestSmoothLogScrollPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.SmoothLogScrollOn() {
+	if !q.Load().SmoothLogScroll {
 		t.Error("smoothLogScroll=true lost across save/load (missing copy-on-load line?)")
 	}
 }
 
 // TestThemeFitModeRoundTrip walks EVERY theme-fit mode through save → load.
-//
 // It exists because the load overlay clamps the on-disk mode, and that clamp's
 // upper bound used to be a hard-coded ThemeFitCustom: appending ThemeFitNative
 // without moving the bound would have clamped the new default straight back to
@@ -2032,7 +2324,7 @@ func TestThemeFitModeRoundTrip(t *testing.T) {
 				t.Fatalf("newWithDebounce: %v", err)
 			}
 			p.SetThemeFit(m.mode)
-			if got := p.ThemeFitMode(); got != m.mode {
+			if got := p.Load().ThemeFit; got != m.mode {
 				t.Fatalf("SetThemeFit(%s) = %d, want %d (clamped in the setter)", m.name, got, m.mode)
 			}
 			if err := p.Close(); err != nil {
@@ -2042,7 +2334,7 @@ func TestThemeFitModeRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reload: %v", err)
 			}
-			if got := q.ThemeFitMode(); got != m.mode {
+			if got := q.Load().ThemeFit; got != m.mode {
 				t.Errorf("after save→load ThemeFitMode = %d, want %s(%d) — the load clamp ate it", got, m.name, m.mode)
 			}
 		})
@@ -2055,13 +2347,6 @@ func TestThemeFitModeRoundTrip(t *testing.T) {
 // only the absent stamp can tell them apart, and a bare default flip would
 // therefore reach nobody who has ever saved preferences. A stamped file is
 // respected as-is, so a user who deliberately picks Stretch afterwards keeps it.
-//
-// The move is VALUE-AWARE, unlike its auto-reconnect sibling: it only touches a
-// file still sitting on the OLD default. Since Stretch WAS that default and the
-// saver always wrote the field, any other stored mode is provably a deliberate
-// pick — and overwriting a Custom pick in particular would strand that user's
-// zoom and pan on a mode that no longer reads them. The STAMP is written either
-// way, so neither branch can run twice.
 func TestThemeFitDefaultMove(t *testing.T) {
 	old := filepath.Join(t.TempDir(), PrefsFileName)
 	if err := os.WriteFile(old, []byte(`{"themeFit": 0}`), 0o600); err != nil {
@@ -2071,8 +2356,8 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load old file: %v", err)
 	}
-	if p.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("an older file's baked Stretch must move to Native(%d) once, got %d", ThemeFitNative, p.ThemeFitMode())
+	if p.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("an older file's baked Stretch must move to Native(%d) once, got %d", ThemeFitNative, p.Load().ThemeFit)
 	}
 	if !p.ThemeFitDefaultJustMoved() {
 		t.Error("the move must report itself, or the one-time upgrade window snap never arms")
@@ -2086,8 +2371,8 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load stamped file: %v", err)
 	}
-	if q.ThemeFitMode() != ThemeFitStretch {
-		t.Errorf("a stamped file's deliberate Stretch must be respected, got %d", q.ThemeFitMode())
+	if q.Load().ThemeFit != ThemeFitStretch {
+		t.Errorf("a stamped file's deliberate Stretch must be respected, got %d", q.Load().ThemeFit)
 	}
 	if q.ThemeFitDefaultJustMoved() {
 		t.Error("a stamped file must not report a move — the snap would fire on every launch")
@@ -2115,10 +2400,10 @@ func TestThemeFitDefaultMove(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load pre-stamp file: %v", err)
 			}
-			if got := r.ThemeFitMode(); got != tc.want {
+			if got := r.Load().ThemeFit; got != tc.want {
 				t.Errorf("a deliberate pick was overwritten: ThemeFitMode = %d, want %d", got, tc.want)
 			}
-			if !r.ThemeFitDefaultMigrated {
+			if !r.Load().ThemeFitDefaultMigrated {
 				t.Error("the stamp must be written even when the value is preserved, or the move runs again next launch")
 			}
 			if r.ThemeFitDefaultJustMoved() {
@@ -2135,10 +2420,10 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load Custom file: %v", err)
 	}
-	if c.ThemeZoom() != 150 {
-		t.Errorf("Custom zoom = %d, want the saved 150", c.ThemeZoom())
+	if c.Load().ThemeZoom() != 150 {
+		t.Errorf("Custom zoom = %d, want the saved 150", c.Load().ThemeZoom())
 	}
-	if px, _ := c.ThemePan(); px != 10 {
+	if px, _ := c.Load().ThemePan(); px != 10 {
 		t.Errorf("Custom pan X = %d, want the saved 10", px)
 	}
 
@@ -2148,10 +2433,10 @@ func TestThemeFitDefaultMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fresh: %v", err)
 	}
-	if fresh.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("a fresh install must start on Native(%d), got %d", ThemeFitNative, fresh.ThemeFitMode())
+	if fresh.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("a fresh install must start on Native(%d), got %d", ThemeFitNative, fresh.Load().ThemeFit)
 	}
-	if !fresh.ThemeFitDefaultMigrated {
+	if !fresh.Load().ThemeFitDefaultMigrated {
 		t.Error("a fresh install must be stamped as already-migrated, or the move re-fires over a later deliberate Stretch")
 	}
 	if fresh.ThemeFitDefaultJustMoved() {
@@ -2165,8 +2450,6 @@ func TestThemeFitDefaultMove(t *testing.T) {
 // not even exist yet), so a launch that ends inside the debounce window — a
 // crash, a kill, a fast quit — used to leave the file unstamped and run the
 // migration, and the one-time window snap it arms, all over again next launch.
-// The migrating launch therefore flushes the file synchronously before the app
-// gets to run.
 func TestThemeFitStampIsDurableWithoutAClose(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	if err := os.WriteFile(path, []byte(`{"themeFit": 0}`), 0o600); err != nil {
@@ -2189,11 +2472,11 @@ func TestThemeFitStampIsDurableWithoutAClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-read the file: %v", err)
 	}
-	var onDisk prefsJSON
+	var onDisk Settings
 	if err := json.Unmarshal(data, &onDisk); err != nil {
 		t.Fatalf("parse the file: %v", err)
 	}
-	if onDisk.ThemeFitDefaultMigrated == nil || !*onDisk.ThemeFitDefaultMigrated {
+	if !onDisk.ThemeFitDefaultMigrated {
 		t.Error("the stamp had not reached disk — a crash here re-runs the migration and re-snaps the window")
 	}
 	if onDisk.ThemeFit != ThemeFitNative {
@@ -2237,8 +2520,8 @@ func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
 	if second.ThemeFitDefaultJustMoved() {
 		t.Error("the move re-fired on the next launch — the stamp did not persist")
 	}
-	if second.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("the moved value did not persist: ThemeFitMode = %d", second.ThemeFitMode())
+	if second.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("the moved value did not persist: ThemeFitMode = %d", second.Load().ThemeFit)
 	}
 	// And the stamp is respected even against a value the user changes afterwards.
 	second.SetThemeFit(ThemeFitStretch)
@@ -2249,8 +2532,8 @@ func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("third load: %v", err)
 	}
-	if third.ThemeFitMode() != ThemeFitStretch {
-		t.Errorf("a deliberate post-stamp Stretch was moved again: ThemeFitMode = %d", third.ThemeFitMode())
+	if third.Load().ThemeFit != ThemeFitStretch {
+		t.Errorf("a deliberate post-stamp Stretch was moved again: ThemeFitMode = %d", third.Load().ThemeFit)
 	}
 	if third.ThemeFitDefaultJustMoved() {
 		t.Error("a deliberate post-stamp Stretch reported a move")
@@ -2259,7 +2542,6 @@ func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
 
 // TestSpriteScalingMigratesEveryoneToAuto pins owner decision D2: the move to
 // Auto reaches EXISTING users, not just fresh installs.
-//
 // The old client had one client-wide linear filter, so a saved smoothScaling:true
 // is not a considered choice about per-sprite behaviour — it is the default nobody
 // touched. Respecting it as if it were a decision would leave every character
@@ -2275,10 +2557,10 @@ func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load old file: %v", err)
 	}
-	if got := p.SpriteScalingMode(); got != SpriteScalingAuto {
+	if got := p.Load().SpriteScaling; got != SpriteScalingAuto {
 		t.Errorf("an existing user must land on Auto, got %d", got)
 	}
-	if !p.SpriteScalingMigrated {
+	if !p.Load().SpriteScalingMigrated {
 		t.Error("the move must stamp itself, or it re-fires and overwrites the user's later choice")
 	}
 
@@ -2291,7 +2573,7 @@ func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load stamped file: %v", err)
 	}
-	if got := q.SpriteScalingMode(); got != SpriteScalingPixel {
+	if got := q.Load().SpriteScaling; got != SpriteScalingPixel {
 		t.Errorf("a stamped file's explicit choice must be respected, got %d", got)
 	}
 
@@ -2305,7 +2587,7 @@ func TestSpriteScalingMigratesEveryoneToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load future file: %v", err)
 	}
-	if got := r.SpriteScalingMode(); got != SpriteScalingAuto {
+	if got := r.Load().SpriteScaling; got != SpriteScalingAuto {
 		t.Errorf("an out-of-range mode must clamp to Auto, got %d", got)
 	}
 }
@@ -2320,7 +2602,7 @@ func TestSpriteScalingRoundTrips(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newWithDebounce: %v", err)
 		}
-		p.SetSpriteScalingMode(mode)
+		p.Update(func(sn *Settings) { sn.SpriteScaling = mode })
 		if err := p.Close(); err != nil {
 			t.Fatalf("close: %v", err)
 		}
@@ -2328,7 +2610,7 @@ func TestSpriteScalingRoundTrips(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		if got := q.SpriteScalingMode(); got != mode {
+		if got := q.Load().SpriteScaling; got != mode {
 			t.Errorf("mode %d did not survive save→load, got %d", mode, got)
 		}
 	}

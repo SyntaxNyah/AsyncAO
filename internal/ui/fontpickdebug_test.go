@@ -3,13 +3,12 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestICLogDrawAllocationIsUnaffectedByTheFontDebugReadout is the "zero cost
 // when the panel is closed" gate CLAUDE.md rule 11 calls for on this
-// diagnostic, modeled on internal/assets/mountserve_test.go's
-// TestNoMountsIsExactlyOneAtomicLoad: measure the REAL per-frame call site
+// diagnostic: measure the REAL per-frame call site
 // directly (drawICLogList — the function screens.go's courtroom draw calls
 // every frame) and assert the Fonts-tab readout added nothing to it.
 //
@@ -24,7 +23,7 @@ func TestICLogDrawAllocationIsUnaffectedByTheFontDebugReadout(t *testing.T) {
 	list := sdl.Rect{X: 0, Y: 0, W: 420, H: 300}
 	draw := func() { a.drawICLogList(list, false) }
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("drawICLogList allocates %.1f/op with the Fonts debug readout in the tree, want 0 — "+
 			"the readout must never run on the real per-frame draw path (fix the alloc, don't loosen the gate)", n)
 	}

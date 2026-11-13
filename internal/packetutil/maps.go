@@ -1,6 +1,4 @@
-// Package packetutil holds the small set of AsyncAO-side conveniences that
-// aolib-go intentionally keeps unexported: the FantaCode primitive helpers and
-// the wire-int enum maps. Everything canonical is delegated to aolib.
+// Package packetutil holds the FantaCode helpers and wire-int enum maps that aolib-go keeps unexported.
 package packetutil
 
 import (
@@ -42,24 +40,6 @@ func BoolToWire(b bool) string {
 
 // WireToBool decodes a "1"/"0" token to a boolean.
 func WireToBool(s string) bool { return s == "1" }
-
-// IntsToStrs maps an int slice to its decimal string form.
-func IntsToStrs(ns []int) []string {
-	out := make([]string, len(ns))
-	for i, n := range ns {
-		out[i] = strconv.Itoa(n)
-	}
-	return out
-}
-
-// StrsToInts maps a string slice to ints (lenient).
-func StrsToInts(ss []string) []int {
-	out := make([]int, len(ss))
-	for i, s := range ss {
-		out[i] = AtoiOrZero(s)
-	}
-	return out
-}
 
 // DeskModifierToWire maps a DeskModifier to its legacy wire integer.
 var DeskModifierToWire = map[aolib.DeskModifier]int{

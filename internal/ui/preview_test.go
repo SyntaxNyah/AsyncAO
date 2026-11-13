@@ -10,7 +10,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 func TestUnionRect(t *testing.T) {
@@ -224,7 +224,7 @@ func TestCharSelectPortraitFallsBackToFirstEmote(t *testing.T) {
 	a, char := portraitTestApp(t, "SNormal", "SCry")
 
 	// Frame 1 — the hover: parse the char.ini, show the optimistic convention.
-	a.ensurePreviewEmotes(char, previewEmotePortrait)
+	a.ensurePreviewEmotes(char)
 	a.setCharPortraitPreview(char)
 	if want := a.urls.Emote(char, "normal", courtroom.EmoteIdle); a.previewBase != want {
 		t.Fatalf("first frame must probe the conventional idle pose\n got %q\nwant %q", a.previewBase, want)
@@ -256,7 +256,7 @@ func TestCharSelectPortraitKeepsNormalWhenPackHasIt(t *testing.T) {
 	// pack's entry IS the base already probed and must be recognised as such.
 	a, char := portraitTestApp(t, "cry", "Normal")
 
-	a.ensurePreviewEmotes(char, previewEmotePortrait)
+	a.ensurePreviewEmotes(char)
 	a.setCharPortraitPreview(char)
 	normal := a.urls.Emote(char, "normal", courtroom.EmoteIdle)
 	waitPortraitEmotes(t, a)
@@ -274,7 +274,7 @@ func TestCharSelectPortraitKeepsNormalWhenPackHasIt(t *testing.T) {
 // certainly no repointing of the new tab's preview box.
 func TestPortraitPreviewIgnoresOtherTabsParse(t *testing.T) {
 	a, char := portraitTestApp(t, "SNormal")
-	a.ensurePreviewEmotes(char, previewEmotePortrait)
+	a.ensurePreviewEmotes(char)
 	a.setCharPortraitPreview(char)
 	normal := a.previewBase
 	a.serverKey = "ws://other.tab" // the user switched tabs mid-parse

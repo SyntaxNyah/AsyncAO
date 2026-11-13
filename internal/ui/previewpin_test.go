@@ -3,7 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The sprite preview's PIN. previewPinned already existed, but the only writer was
@@ -59,7 +60,7 @@ func TestPreviewPinLatchAndPrefBothHoldTheBox(t *testing.T) {
 		t.Error("the session latch alone must pin")
 	}
 	a.previewPinned = false
-	a.d.Prefs.SetPreviewPinned(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true })
 	if !a.previewIsPinned() {
 		t.Error("the preference alone must pin")
 	}
@@ -70,20 +71,20 @@ func TestPreviewPinLatchAndPrefBothHoldTheBox(t *testing.T) {
 // pin button would look broken.
 func TestTogglePreviewPinClearsBoth(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPreviewPinned(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true })
 	a.previewPinned = false
 	a.togglePreviewPin()
-	if a.previewIsPinned() || a.previewPinned || a.d.Prefs.PreviewPinnedOn() {
-		t.Fatalf("unpinning left it pinned: latch=%v pref=%v", a.previewPinned, a.d.Prefs.PreviewPinnedOn())
+	if a.previewIsPinned() || a.previewPinned || a.d.Prefs.Load().PreviewPinned {
+		t.Fatalf("unpinning left it pinned: latch=%v pref=%v", a.previewPinned, a.d.Prefs.Load().PreviewPinned)
 	}
 	a.togglePreviewPin()
-	if !a.previewPinned || !a.d.Prefs.PreviewPinnedOn() {
-		t.Fatalf("pinning must set both: latch=%v pref=%v", a.previewPinned, a.d.Prefs.PreviewPinnedOn())
+	if !a.previewPinned || !a.d.Prefs.Load().PreviewPinned {
+		t.Fatalf("pinning must set both: latch=%v pref=%v", a.previewPinned, a.d.Prefs.Load().PreviewPinned)
 	}
 }
 
 // TestDismissPreviewOnClickRespectsThePinAndDisarmsTheDwell pins the five close
-// paths the recon found: the background pickers, the two wardrobe grids and the
+// paths the recon found: the background pickers, the two wardrobe grids (since removed) and the
 // AO2 THEMED emote grid all dismissed with a raw `a.previewBase = ""`, which
 // ignored the pin AND skipped closeSpritePreview — so the trigger's dwell id was
 // never cleared and the already-elapsed hover re-opened the box the very next
@@ -115,13 +116,13 @@ func TestDismissPreviewOnClickRespectsThePinAndDisarmsTheDwell(t *testing.T) {
 // closeSpritePreview) must not silently wipe a setting the user chose.
 func TestClosePreviewClearsTheLatchNotThePreference(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPreviewPinned(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = true })
 	a.previewBase, a.previewPinned = "x", true
 	a.closeSpritePreview()
 	if a.previewPinned {
 		t.Error("closing must clear the session latch")
 	}
-	if !a.d.Prefs.PreviewPinnedOn() {
+	if !a.d.Prefs.Load().PreviewPinned {
 		t.Error("closing must NOT clear the sticky preference")
 	}
 }

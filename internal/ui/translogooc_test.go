@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
@@ -20,7 +21,16 @@ import (
 // so a user who turned logging off never gets a file appearing on disk.
 func TestOOCLogRespectsDetailedLogPref(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetDetailedLog(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			false
+
+	})
 	a.serverName = "Skrapegropen-ooc-pref-off"
 
 	a.pushOOC("Nyah: should not be logged", "Nyah")
@@ -35,11 +45,11 @@ func TestOOCLogRespectsDetailedLogPref(t *testing.T) {
 // exposes no path of its own to ask for directly.
 func transcriptLogFiles(t *testing.T, server string) map[string]bool {
 	t.Helper()
-	exe, err := os.Executable()
+	root, err := exeDataDir()
 	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
+		t.Fatalf("exeDataDir: %v", err)
 	}
-	dir := filepath.Join(filepath.Dir(exe), "logs", sanitizeLogFolder(server))
+	dir := filepath.Join(root, "logs", sanitizeLogFolder(server))
 	names, _ := filepath.Glob(filepath.Join(dir, "*.log"))
 	out := make(map[string]bool, len(names))
 	for _, n := range names {
@@ -65,9 +75,20 @@ func transcriptNewFile(t *testing.T, server string, before map[string]bool) (str
 // writer's channel length — the background goroutine can drain a wrongly-queued
 // line before an in-process check ever observes it, which would hide the bug.
 func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
+	withExeDataRoot(t)
 	const server = "Skrapegropen-ooc-suppressed"
 	a := testTabApp(t)
-	a.d.Prefs.SetDetailedLog(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			true
+
+	})
+
 	a.serverName = server
 	t.Cleanup(a.CloseTranscript)
 	a.frameNow = time.Now()
@@ -106,9 +127,20 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 // so this is the encapsulation test: OOC cannot land in a writer belonging to a
 // different session, driven through the production call path rather than reimplemented.
 func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
+	withExeDataRoot(t)
 	const server = "Skrapegropen-ooc-split"
 	a := testTabApp(t)
-	a.d.Prefs.SetDetailedLog(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			true
+
+	})
+
 	a.serverName = server
 	t.Cleanup(a.CloseTranscript)
 

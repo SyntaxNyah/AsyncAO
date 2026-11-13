@@ -1,20 +1,15 @@
 package theme
 
-// AO2 ≥ 2.10 themes ship courtroom_stylesheets.css — a Qt stylesheet
-// (QSS) skinning every widget. Full QSS is a Qt rendering feature, but
-// the properties theme authors actually use for the LOOK are a handful
-// of colors. This parses that subset into a Palette the UI applies over
-// its own color scheme, so "the css stuff" visibly works: panels, text,
-// buttons, and accents take the theme's colors.
+// AO2 2.10+ courtroom_stylesheets.css is QSS; this parses the colour subset into a Palette.
 
 import (
-	"strconv"
+	"math"
 	"strings"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 )
 
-// Palette is the color scheme extracted from a theme stylesheet. Each
-// pointer is nil when the stylesheet didn't define it — the UI keeps its
-// default for those slots.
+// Palette is the extracted colour scheme; a nil pointer keeps the UI's default.
 type Palette struct {
 	Text    *RGB // base text (QWidget/body color)
 	Panel   *RGB // window/panel background
@@ -23,13 +18,11 @@ type Palette struct {
 	Danger  *RGB // error text, when themes define one
 }
 
-// Empty reports whether nothing usable was parsed.
 func (p Palette) Empty() bool {
 	return p.Text == nil && p.Panel == nil && p.PanelHi == nil &&
 		p.Accent == nil && p.Danger == nil
 }
 
-// paletteSlot identifies where a parsed declaration lands.
 type paletteSlot int
 
 const (
@@ -41,20 +34,14 @@ const (
 	slotDanger
 )
 
-// selectorSlots maps the QSS selectors theme authors use onto palette
-// slots, per property. Lowercased selector → property → slot.
+// selectorSlots maps lowercased QSS selector, then property, to palette role.
 var selectorSlots = map[string]map[string]paletteSlot{
-	// Base widget look: the whole-window colors.
 	"*":           {"color": slotText, "background-color": slotPanel, "background": slotPanel},
 	"qwidget":     {"color": slotText, "background-color": slotPanel, "background": slotPanel},
 	"qmainwindow": {"color": slotText, "background-color": slotPanel, "background": slotPanel},
-	// Buttons: raised surfaces.
 	"qpushbutton": {"background-color": slotPanelHi, "background": slotPanelHi, "color": slotText, "border-color": slotAccent},
 	"aobutton":    {"background-color": slotPanelHi, "background": slotPanelHi, "border-color": slotAccent},
-	// Inputs give the accent via their borders. List/edit widget
-	// backgrounds are REFINEMENTS of the window look, not the window look
-	// — only QWidget-level selectors define the panel slot (a theme that
-	// darkens its lists must not recolor every panel).
+	// Inputs give the accent via borders; only QWidget-level selectors define the panel.
 	"qlineedit":      {"background-color": slotPanelHi, "background": slotPanelHi, "border-color": slotAccent},
 	"qplaintextedit": {"color": slotText},
 	"qtextedit":      {"color": slotText},
@@ -62,14 +49,12 @@ var selectorSlots = map[string]map[string]paletteSlot{
 	"qtreewidget":    {"color": slotText},
 	"qcheckbox":      {"color": slotText},
 	"qlabel":         {"color": slotText},
-	// Hover/checked states are the closest thing QSS has to an accent.
+	// Hover and checked states are the closest QSS has to an accent.
 	"qpushbutton:hover":   {"background-color": slotAccent, "background": slotAccent},
 	"qpushbutton:pressed": {"background-color": slotAccent, "background": slotAccent},
 }
 
-// ParseStylesheet extracts the supported palette from QSS content.
-// Later declarations win, like CSS. Unknown selectors/properties are
-// ignored wholesale — this is a palette extractor, not a CSS engine.
+// ParseStylesheet extracts the palette; later declarations win, and unknown selectors and properties are ignored.
 func ParseStylesheet(data []byte) Palette {
 	var pal Palette
 	assign := func(slot paletteSlot, c RGB) {
@@ -126,7 +111,6 @@ func ParseStylesheet(data []byte) Palette {
 	return pal
 }
 
-// parseDeclarations splits "prop: value; prop: value" into a map.
 func parseDeclarations(body string) map[string]string {
 	out := map[string]string{}
 	for _, decl := range strings.Split(body, ";") {
@@ -139,7 +123,6 @@ func parseDeclarations(body string) map[string]string {
 	return out
 }
 
-// stripCSSComments removes /* ... */ runs.
 func stripCSSComments(s string) string {
 	var b strings.Builder
 	for {
@@ -157,29 +140,30 @@ func stripCSSComments(s string) string {
 	}
 }
 
-// parseCSSColor handles the forms theme authors use: #rgb, #rrggbb,
-// #aarrggbb (Qt's ARGB — alpha ignored), rgb(...)/rgba(...), and a few
-// named colors.
+const (
+	cssShortHexLen = 3
+	cssHexLen      = 6
+	cssQtHexLen    = 8
+)
+
+// parseCSSColor handles #rgb, #rrggbb, #aarrggbb (Qt's ARGB, alpha ignored), rgb()/rgba() and a few named colours.
 func parseCSSColor(v string) (RGB, bool) {
 	v = strings.ToLower(strings.TrimSpace(v))
 	switch {
 	case strings.HasPrefix(v, "#"):
 		hex := v[1:]
 		switch len(hex) {
-		case 3: // #rgb
-			r, okR := hexNibble(hex[0])
-			g, okG := hexNibble(hex[1])
-			b, okB := hexNibble(hex[2])
-			if okR && okG && okB {
-				return RGB{R: r * 17, G: g * 17, B: b * 17}, true
+		case cssShortHexLen: // #rgb: each digit doubled, so #abc is #aabbcc
+			if c, ok := parse.HexColor(string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})); ok {
+				return RGB{R: c.R, G: c.G, B: c.B}, true
 			}
-		case 6: // #rrggbb
-			if n, err := strconv.ParseUint(hex, 16, 32); err == nil {
-				return RGB{R: uint8(n >> 16), G: uint8(n >> 8), B: uint8(n)}, true
+		case cssHexLen: // #rrggbb
+			if c, ok := parse.HexColor(hex); ok {
+				return RGB{R: c.R, G: c.G, B: c.B}, true
 			}
-		case 8: // #aarrggbb (Qt order) — alpha dropped
-			if n, err := strconv.ParseUint(hex, 16, 64); err == nil {
-				return RGB{R: uint8(n >> 16), G: uint8(n >> 8), B: uint8(n)}, true
+		case cssQtHexLen: // #aarrggbb (Qt order) — alpha dropped
+			if c, ok := parse.HexColor(hex[2:] + hex[:2]); ok { // aarrggbb → rrggbbaa
+				return RGB{R: c.R, G: c.G, B: c.B}, true
 			}
 		}
 	case strings.HasPrefix(v, "rgb(") || strings.HasPrefix(v, "rgba("):
@@ -188,11 +172,12 @@ func parseCSSColor(v string) (RGB, bool) {
 			inner = inner[:end]
 		}
 		parts := strings.Split(inner, ",")
-		if len(parts) >= 3 {
-			r := atoiTrim(parts[0])
-			g := atoiTrim(parts[1])
-			b := atoiTrim(parts[2])
-			return RGB{R: uint8(r), G: uint8(g), B: uint8(b)}, true
+		if len(parts) >= rgbFields {
+			var c RGB
+			c.R, _ = parse.Uint8(parts[0], 0, math.MaxUint8)
+			c.G, _ = parse.Uint8(parts[1], 0, math.MaxUint8)
+			c.B, _ = parse.Uint8(parts[2], 0, math.MaxUint8)
+			return c, true
 		}
 	}
 	if named, ok := cssNamedColors[v]; ok {
@@ -201,38 +186,16 @@ func parseCSSColor(v string) (RGB, bool) {
 	return RGB{}, false
 }
 
-// hexNibble decodes one hex digit, in EITHER case.
-//
-// The uppercase arm is not cosmetic. parseCSSColor lowercases its whole input
-// before it gets here, so within the stylesheet it can never fire — but
-// parseRGBAValue (sidecar_read.go) calls hexNibble DIRECTLY on the author's own
-// text, and without this arm every `#1C1C1C` in an asyncao_theme.ini was refused
-// while `#101010` beside it parsed. That is exactly the silent class the sidecar's
-// rule 3 exists to avoid: the value degraded to "the stylesheet's own colour is
-// kept", the note went to an import report nothing displayed, and four of
-// themes/thh_trial's five [palette] roles simply did not apply. Upper-case hex is
-// the spelling humans write and the spelling every one of the 14 shipped themes
-// writes. Pinned by TestSidecarColoursAcceptEitherHexCase.
-func hexNibble(c byte) (uint8, bool) {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0', true
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10, true
-	case c >= 'A' && c <= 'F':
-		return c - 'A' + 10, true
-	}
-	return 0, false
-}
-
-// cssNamedColors: the handful that appear in real AO themes.
+// cssNamedColors are those that appear in real AO themes.
 var cssNamedColors = map[string]RGB{
-	"white":       {R: 255, G: 255, B: 255},
+	"white":       {R: math.MaxUint8, G: math.MaxUint8, B: math.MaxUint8},
 	"black":       {},
-	"red":         {R: 255},
-	"green":       {G: 128},
-	"blue":        {B: 255},
-	"gray":        {R: 128, G: 128, B: 128},
-	"grey":        {R: 128, G: 128, B: 128},
+	"red":         {R: math.MaxUint8},
+	"green":       {G: cssHalfChannel},
+	"blue":        {B: math.MaxUint8},
+	"gray":        {R: cssHalfChannel, G: cssHalfChannel, B: cssHalfChannel},
+	"grey":        {R: cssHalfChannel, G: cssHalfChannel, B: cssHalfChannel},
 	"transparent": {},
 }
+
+const cssHalfChannel = 128

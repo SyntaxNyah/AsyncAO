@@ -4,27 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// Settings → Formats. Everything that decides WHICH file type AsyncAO asks a
-// server for lives here, and nowhere else.
-//
-// It exists because those controls were previously split three ways — the
-// per-server profile and the audio fallbacks on Assets, the probe order,
-// per-type fallbacks, autodetect and desk policy on Power user, the
-// learned-format tools on Assets → Cache — so a player whose emotes rendered as
-// nothing had to already know the answer in order to find it. The zero-fallback
-// default (exactly one network probe per asset) is deliberate and unchanged;
-// what changes is that its consequence is now explained, its per-server escape
-// hatch is one click, and the state it learned is visible.
+// Settings > Formats: every control that decides which file type is requested from a server.
 
-// imageTypeNames are the asset classes whose image format is user-tunable, in
-// the order they're listed on this tab (icons first — that's the wall of art a
-// player sees before anything else loads).
+// imageTypeNames are the asset classes with a user-tunable image format, in tab order.
 var imageTypeNames = []string{
 	config.TypeCharIcon,
 	config.TypeCharSprite,
@@ -35,44 +22,29 @@ var imageTypeNames = []string{
 	config.TypeMisc,
 }
 
-// audioTypeNames are the asset classes whose legacy-audio fallback chain
-// (.ogg/.wav/.mp3 after .opus) is user-tunable.
+// audioTypeNames are the asset classes with a user-tunable legacy-audio fallback chain.
 var audioTypeNames = []string{config.TypeSFX, config.TypeMusic, config.TypeBlip}
 
 const (
-	// learnedColName / learnedColLearned / learnedColOrder are the column x
-	// offsets (relative to the form origin) of the read-only per-server learned
-	// table: asset class, what this server actually taught us, and what would be
-	// probed if it hadn't. Named because three labels must line up across ten
-	// rows; a bare literal in each would drift the moment one is edited.
+	// learnedCol* are x offsets from the form origin for the learned table's columns.
 	learnedColName    = 8
 	learnedColLearned = 150
 	learnedColOrder   = 250
-	// learnedRowH is one learned-table row's height — tighter than a settings
-	// row because the table is read-only text, not clickable widgets.
+	// learnedRowH is one learned-table row's height.
 	learnedRowH = 20
-	// learnedExtGapPx separates the extensions in the "learned here" cell when a
-	// class has learned more than one. Small: the ladder must read as one cell,
-	// not spill toward the neighbouring "otherwise asks for" column at x=250.
+	// learnedExtGapPx separates extensions when a class has learned more than one.
 	learnedExtGapPx = 6
 	// formatPresetGap separates the per-server "pin one format" preset buttons.
 	formatPresetGap = 6
 )
 
-// Every label this tab draws repeatedly is derived ONCE here rather than in the
-// draw. The settings screen has no allocation gate (the benchmark suite covers
-// the courtroom render loop, not this page), so a `name + ":"` inside a per-type
-// loop would allocate on every frame the tab is open and nothing would fail —
-// building the strings at package init makes that impossible instead of unlikely.
+// Row labels are built once at init so the per-frame draw does not allocate.
 var (
-	// formatPresetLabels / formatPresetTips are the display name and hover text
-	// of each config.OptionalImageFormats entry (".webp" → "WebP"), parallel to
-	// that slice.
+	// formatPresetLabels / formatPresetTips are display names and hover text, parallel to config.OptionalImageFormats.
 	formatPresetLabels, formatPresetTips = buildFormatPresets()
 	// typeRowLabels maps an asset-type name to its "<name>:" row label.
 	typeRowLabels = buildTypeRowLabels()
-	// audioFallbackLabels are the legacy-audio checkbox labels, parallel to
-	// audioTypeNames.
+	// audioFallbackLabels are the legacy-audio checkbox labels, parallel to audioTypeNames.
 	audioFallbackLabels = buildAudioFallbackLabels()
 )
 
@@ -106,17 +78,8 @@ func buildAudioFallbackLabels() []string {
 	return out
 }
 
-// pinnedProfileJSON builds a per-server format profile: an extensions.json
-// document that declares ONE extension for every class the manifest system
-// knows (icons, character art, emote buttons, backgrounds). Applying it seeds
-// this host's learned table instantly — no network round-trip, so the very
-// first probe after it is already right — and it overrides both the server's
-// own manifest and the global default, for that host only.
-//
-// It is deliberately a manifest rather than a new preference: the per-server
-// profile mechanism already exists, already persists, and already re-applies on
-// every reconnect (fetchManifestAsync). A second mechanism would be a second
-// place to look, which is the bug this tab is fixing.
+// pinnedProfileJSON builds an extensions.json declaring one extension for every manifest class.
+// It is a manifest rather than a preference because per-server profiles already persist and re-apply on reconnect.
 func pinnedProfileJSON(ext string) string {
 	return `{"charicon_extensions":["` + ext + `"],` +
 		`"emote_extensions":["` + ext + `"],` +
@@ -124,37 +87,28 @@ func pinnedProfileJSON(ext string) string {
 		`"background_extensions":["` + ext + `"]}`
 }
 
-// noteSearchRow registers a non-checkbox control with the settings gather-search
-// (#26). Checkbox does this itself; buttons don't, and the one-click fixes on
-// this tab are buttons — an unfindable fix is the problem, not the solution.
+// noteSearchRow registers a button with the settings search; Checkbox does this itself.
 func (a *App) noteSearchRow(label string, y int32) {
 	if a.ctx.onRow != nil {
 		a.ctx.onRow(label, y)
 	}
 }
 
-// formatsTabPointer draws the "the format controls live on their own tab now"
-// jump button used by the Assets and Power user tabs. A pointer, never a copy:
-// duplicating a control is how the two tabs ended up disagreeing about where
-// formats belong. Returns the next y.
+// formatsTabPointer draws the jump button to the Formats tab. Returns the next y.
 func (a *App) formatsTabPointer(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	const label = "Open the Formats tab"
 	a.noteSearchRow(label, y)
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 220, H: btnH}, label) {
-		// Takes effect next frame: the body being drawn belongs to the old tab
-		// and drawSettings already took that tab's scroll pointer.
+		// Takes effect next frame: drawSettings already took the old tab's scroll pointer.
 		settings.tab = tabFormats
 	}
 	return y + btnH + 8
 }
 
-// formatOrderText returns each asset type's EFFECTIVE probe list as display
-// text, indexed by assets.AssetType (config.TypeNames is declared in the enum's
-// order, pinned by TestTypeNamesMatchConfig). The result is cached against the
-// preferences' format generation, so a steady frame costs one atomic load and
-// no allocation — see settingsState.fmtOrderText for why that matters here.
+// formatOrderText returns each asset type's effective probe list, indexed by assets.AssetType.
+// Cached against the format generation so a steady frame allocates nothing.
 func formatOrderText(p *config.AssetPreferences) []string {
 	gen := p.FormatGeneration()
 	if settings.fmtOrderOK && settings.fmtOrderGen == gen {
@@ -162,7 +116,7 @@ func formatOrderText(p *config.AssetPreferences) []string {
 	}
 	settings.fmtOrderText = settings.fmtOrderText[:0]
 	for _, name := range config.TypeNames {
-		settings.fmtOrderText = append(settings.fmtOrderText, strings.Join(p.FormatList(name), " "))
+		settings.fmtOrderText = append(settings.fmtOrderText, strings.Join(p.Load().FormatList(name), " "))
 	}
 	settings.fmtOrderGen, settings.fmtOrderOK = gen, true
 	return settings.fmtOrderText
@@ -178,18 +132,14 @@ func (a *App) drawSettingsFormats(y, _ int32) int32 {
 	y = a.drawFormatsAutoDetect(y, w)
 	y = a.drawFormatsPerType(y, w)
 	y = a.drawFormatsFallbacks(y, w)
-	y = a.drawFormatsLearnedTools(y, w)
 
-	// Casing is the OTHER reason a whole server fetches nothing, and it is not a
-	// format control, so it gets a signpost instead of a second home here.
+	// Casing is the other cause of a server fetching nothing; its control lives on the Power user tab.
 	y = a.settingsDesc(pad, y, "Still nothing loading for a server, in any format? The other cause is the character-folder capitalisation in asset URLs — that control is on the Power user tab under \"Character folder casing\".", ColTextDim)
 	y += 10
 	return y
 }
 
-// drawFormatsExplainer states the streaming model in plain language: one probe
-// per asset, why, what it costs, and what the escape hatch costs. Requirement:
-// a player should understand this without reading the source.
+// drawFormatsExplainer explains the one-probe-per-asset model.
 func (a *App) drawFormatsExplainer(y, w int32) int32 {
 	pad := a.formX
 	y = a.settingsSection(y, w, "How formats work")
@@ -204,11 +154,7 @@ func (a *App) drawFormatsExplainer(y, w int32) int32 {
 	return y
 }
 
-// drawFormatsThisServer is the scoped fix: what is deciding the CURRENT
-// server's formats, what it has actually learned there, and the per-server
-// buttons that change it. Formats are learned per host, so art failing to load
-// is almost always one server's problem — solving it with a global flip would
-// slow down every other server to fix this one.
+// drawFormatsThisServer draws what decides the current server's formats and the per-server buttons.
 func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -225,13 +171,9 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	c.LabelClipped(pad+learnedColLearned, y, a.formW-learnedColLearned, host, ColText)
 	y += 22
 
-	// What is deciding this host's formats, most specific wins first: a profile
-	// pinned here, the built-in official-vanilla example, then the server's own
-	// format list, then nothing (the per-type defaults, learned as art loads).
-	// The "not checked yet" case is stated as such rather than folded into "no
-	// list" — claiming a server publishes nothing when we simply haven't asked
-	// would send a player straight to a fix they don't need.
-	hasCustom := a.d.Prefs.ExtProfile(host) != ""
+	// Most specific source first: pinned profile, built-in vanilla list, server list, then defaults.
+	// "Not checked yet" stays apart from "no list" so players aren't sent to a fix they don't need.
+	hasCustom := a.d.Prefs.Load().ExtProfile(host) != ""
 	st, known := a.manifestStatus[host]
 	source, col := "", ColTextDim
 	switch {
@@ -239,7 +181,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 		source, col = "You have pinned this server's formats. That wins over everything else, on this server only.", ColAccent
 	case a.extProfileFor(host) != "":
 		source, col = "Using the built-in official-vanilla format list for this server (it serves classic PNG art).", ColAccent
-	case !a.d.Prefs.FormatAutoDetect():
+	case !a.d.Prefs.Load().AutoDetectFormats:
 		source = "Automatic detection is off, so this server's own format list is not being read — the per-type formats below decide everything."
 	case known && st == seedApplied:
 		source, col = "This server publishes a format list and AsyncAO read it — nothing here needs touching.", ColAccent
@@ -255,7 +197,6 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 
 	y = a.drawLearnedTable(y, host)
 
-	// One-click, scoped to this server: pin the type it serves.
 	y = a.settingsDesc(pad, y, "Art missing on this server? Tell AsyncAO which file type it serves. This applies instantly, to THIS server only, and sticks across reconnects — every other server keeps its own settings and its speed.", ColText)
 	y += 4
 	const pinLabel = "Pin this server's image format"
@@ -278,8 +219,6 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	}
 	y = by + btnH + 8
 
-	// The ready-made example + the undo. Both existed before under Assets →
-	// "Server format profile"; they belong beside the pins.
 	const vanillaLabel = "Use the official-vanilla format list"
 	a.noteSearchRow(vanillaLabel, y)
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, vanillaLabel) {
@@ -302,9 +241,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 	a.noteSearchRow(reprobeLabel, y)
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, reprobeLabel) {
 		n := a.d.Prefs.ClearLearnedHost(host)
-		// Drop the in-memory table's entries for this host too, one class at a
-		// time: the resolver has no per-host wipe, and InvalidateAll would throw
-		// away every OTHER server's warm state to fix this one.
+		// The resolver has no per-host wipe; InvalidateAll would drop every other server's state.
 		for t := assets.AssetType(0); t < assets.AssetTypeCount; t++ {
 			a.d.Resolver.Invalidate(host, t)
 		}
@@ -322,8 +259,7 @@ func (a *App) drawFormatsThisServer(y, w int32) int32 {
 // profile and re-seeds immediately, so the change is live on the next request.
 func (a *App) applyServerFormatPin(host, ext, label string) {
 	a.d.Prefs.SetExtProfile(host, pinnedProfileJSON(ext))
-	// A pin is an explicit override of whatever was learned: clear this host's
-	// stale entries so a previously-learned (wrong) type can't answer first.
+	// A pin overrides what was learned; clear it so a stale type can't answer first.
 	a.d.Prefs.ClearLearnedHost(host)
 	for t := assets.AssetType(0); t < assets.AssetTypeCount; t++ {
 		a.d.Resolver.Invalidate(host, t)
@@ -333,21 +269,8 @@ func (a *App) applyServerFormatPin(host, ext, label string) {
 	settings.statusLine = "Pinned " + label + " for " + host + " — art re-requests in that format."
 }
 
-// drawLearnedTable renders the read-only view of what host has actually taught
-// AsyncAO, per asset class, beside what would be probed without it. This is the
-// fastest way to see WHY an asset is missing: a class showing a type the server
-// doesn't serve is the whole diagnosis.
-//
-// A class can have learned MORE than one type — a server whose extensions.json
-// declares two formats for a class really does serve both, and the whole point
-// of keeping the list is that the second is reachable when the first 404s. The
-// preferred one (probed first) is drawn in the accent colour, the rest of the
-// ladder dimmed behind it.
-//
-// Zero allocation per frame by construction: Resolver.LearnedList is one atomic
-// load plus a map lookup and returns interned extension strings, drawn as
-// separate labels rather than joined (joining would allocate every frame), and
-// the probe-order column comes from the generation-cached formatOrderText.
+// drawLearnedTable shows what host has taught AsyncAO per asset class beside the default probe order.
+// Allocation-free: LearnedList returns interned strings, drawn as separate labels.
 func (a *App) drawLearnedTable(y int32, host string) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -381,15 +304,24 @@ func (a *App) drawLearnedTable(y int32, host string) int32 {
 	return y
 }
 
-// drawFormatsAutoDetect owns the automatic path: the extensions.json probe and
-// the one class (desks) that can be opted out of it.
+// drawFormatsAutoDetect draws the extensions.json toggle and the desk opt-out.
 func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	y = a.settingsSection(y, w, "Automatic detection")
-	auto := a.d.Prefs.FormatAutoDetect()
+	auto := a.d.Prefs.Load().AutoDetectFormats
 	if next := c.Checkbox(pad, y, "Read the server's format list (extensions.json) when connecting (recommended, on by default)", auto); next != auto {
-		a.d.Prefs.SetFormatAutoDetect(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoDetectFormats =
+
+				next
+
+		})
+
 		if next {
 			a.manifestFor = "" // re-check the current server right away
 			a.fetchManifestAsync()
@@ -399,9 +331,19 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 	y = a.settingsDesc(pad, y, "On: AsyncAO reads the list the server publishes and asks for exactly what it ships, so the single request per asset is right first time. Off: the server's list is ignored and the per-type formats below decide everything — turn it off only if you are forcing formats by hand.", ColTextDim)
 	y += 8
 
-	deskWebP := !a.d.Prefs.DeskFollowsManifest()
+	deskWebP := !a.d.Prefs.Load().DeskFollowManifest
 	if next := c.Checkbox(pad, y, "Always use WebP for desks, even when the server's list says otherwise", deskWebP); next != deskWebP {
-		a.d.Prefs.SetDeskFollowManifest(!next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DeskFollowManifest =
+
+				!next
+
+		})
+
 		a.d.Prefs.ClearLearnedType(config.TypeDeskOverlay) // re-derive on next probe
 		a.d.Resolver.InvalidateAll()
 		a.d.Resolver.WarmFromPrefs()
@@ -416,23 +358,19 @@ func (a *App) drawFormatsAutoDetect(y, w int32) int32 {
 	return y
 }
 
-// drawFormatsPerType is the manual layer: the image probe order per asset class
-// (or a read-only view of it while automatic detection is on) and the legacy
-// audio chains.
+// drawFormatsPerType draws the image probe order per asset class and the legacy audio chains.
 func (a *App) drawFormatsPerType(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	y = a.settingsSection(y, w, "Formats per asset type")
-	auto := a.d.Prefs.FormatAutoDetect()
+	auto := a.d.Prefs.Load().AutoDetectFormats
 	if auto {
 		y = a.settingsDesc(pad, y, "These are your fallback settings for servers that publish no format list — while automatic detection is on, a server that publishes one overrides them. Defaults: character icons PNG, chatbox skins PNG then WebP, everything else WebP.", ColTextDim)
 		y += 4
 		orders := formatOrderText(a.d.Prefs)
 		for _, typeName := range imageTypeNames {
 			if typeName == config.TypeMisc {
-				// Chatbox-skin art is never declared by extensions.json and mixes
-				// formats pack-by-pack on real servers, so the misc probes stay
-				// adjustable even with automatic detection on.
+				// Misc (chatbox skins) is never in extensions.json and mixes formats per pack, so it stays editable.
 				y = a.drawTypeFormatRow(typeName, y)
 				continue
 			}
@@ -457,7 +395,7 @@ func (a *App) drawFormatsPerType(y, w int32) int32 {
 	y = a.settingsDesc(pad, y, "Sound follows the same rule: AsyncAO asks for .opus first because it is what modern packs ship. Tick a class here to also try the older types when .opus isn't there.", ColTextDim)
 	y += 4
 	for i, typeName := range audioTypeNames {
-		enabled := a.d.Prefs.TypeFallbacksEnabled(typeName)
+		enabled := a.d.Prefs.Load().TypeFallbacksEnabled(typeName)
 		if next := c.Checkbox(pad, y, audioFallbackLabels[i], enabled); next != enabled {
 			a.d.Prefs.SetTypeFallbacks(typeName, next)
 			a.d.Resolver.InvalidateAll()
@@ -469,16 +407,14 @@ func (a *App) drawFormatsPerType(y, w int32) int32 {
 	return y
 }
 
-// drawTypeFormatRow renders the per-type format checkboxes; ticking builds a
-// new format order: the type's default first, then enabled extras in the
-// OptionalImageFormats order.
+// drawTypeFormatRow draws the per-type format checkboxes; the order is the type's default, then extras.
 func (a *App) drawTypeFormatRow(typeName string, y int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	c.Label(pad, y+2, typeRowLabels[typeName], ColText)
 	x := pad + 110
 
-	current := a.d.Prefs.FormatOrder(typeName)
+	current := a.d.Prefs.Load().FormatOrder(typeName)
 	enabled := map[string]bool{}
 	for _, ext := range current {
 		enabled[ext] = true
@@ -515,9 +451,7 @@ func (a *App) drawTypeFormatRow(typeName string, y int32) int32 {
 		a.d.Resolver.WarmFromPrefs()
 	}
 
-	// Probe-order chips: with 2+ formats ticked, clicking a chip promotes
-	// it one slot toward "probed first" (zero-fallback order is the user's
-	// to arrange — ticking chooses the set, chips choose the order).
+	// Probe-order chips: with 2+ formats ticked, a click moves that chip one place earlier.
 	if len(current) > 1 && !changed {
 		c.Label(x+12, y+2, "order:", ColTextDim)
 		cx := x + 12 + c.TextWidth("order:") + 8
@@ -545,14 +479,12 @@ func containsExt(list []string, ext string) bool {
 	return false
 }
 
-// drawFormatsFallbacks is the global last resort, presented as one: it is the
-// only control here that changes behaviour on EVERY server, and the per-server
-// pin above solves the common case without that cost.
+// drawFormatsFallbacks draws the global fallback toggle, the only control here that affects every server.
 func (a *App) drawFormatsFallbacks(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	y = a.settingsSection(y, w, "Fallbacks (last resort)")
-	global := a.d.Prefs.GlobalFallbacks()
+	global := a.d.Prefs.Load().GlobalFallbacksEnabled
 	if next := c.Checkbox(pad, y, "If the preferred type isn't there, try the older ones too (off by default, affects EVERY server)", global); next != global {
 		a.d.Prefs.SetGlobalFallbacks(next)
 		a.d.Resolver.InvalidateAll()
@@ -562,60 +494,6 @@ func (a *App) drawFormatsFallbacks(y, w int32) int32 {
 	y = a.settingsDesc(pad, y, "On: a miss is retried down the chain (WebP → APNG → GIF → PNG), so art is found almost whatever a server ships — at the cost of extra requests for every asset that misses, on every server, which is felt most on a cold room load. Off (default): one request per asset, and a miss stays missing.", ColTextDim)
 	y += 6
 	y = a.settingsDesc(pad, y, "Reach for this only when a server's art is inconsistent asset by asset. If it's one server that simply uses a different type, pin that server's format under \"This server\" above — same result, none of the cost.", ColTextDim)
-	y += 12
-	return y
-}
-
-// drawFormatsLearnedTools owns the learned-format state: the global resets and
-// the portable export/import. They used to sit among the disk-cache buttons,
-// which is a different kind of state entirely.
-func (a *App) drawFormatsLearnedTools(y, w int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	y = a.settingsSection(y, w, "Learned formats")
-	y = a.settingsDesc(pad, y, "Every server AsyncAO has loaded art from is remembered, so the next visit asks correctly from the first request. These act on ALL servers at once — to fix a single one, use \"This server\" above.", ColTextDim)
-	y += 6
-
-	// Behaviour is unchanged from its previous home on Assets → Cache (#36, Dag):
-	// a server-side repack or a stale CDN needs the learned format AND the cached
-	// file dropped together — either one alone leaves the other stuck, so the
-	// wrongly-probed format can never re-derive. The learned-format RACE that once
-	// produced the same symptom on its own is fixed at the root (manager.go tryBase
-	// no longer blanks the shared per-host learned slot during a stale re-probe);
-	// this button remains for the repack/CDN case no code path can pre-empt.
-	const fixLabel = "Fix stuck / repeated images (all servers)"
-	a.noteSearchRow(fixLabel, y)
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 320, H: btnH}, fixLabel) {
-		a.d.Prefs.ClearLearned()
-		a.d.Resolver.InvalidateAll()
-		settings.statusLine = "Cleared learned formats + disk cache — images re-derive on next use."
-		if err := a.d.Manager.ClearDisk(); err != nil {
-			settings.statusLine = "Cleared learned formats; disk clear failed: " + err.Error()
-		}
-	}
-	y += btnH + 4
-	y = a.settingsDesc(pad, y, "Use if art has gone wrong everywhere — for example every emote button showing the same picture. It drops the remembered formats and the cached files together, so both re-derive from scratch.", ColTextDim)
-	y += 8
-
-	const clearLabel = "Clear learned formats"
-	a.noteSearchRow(clearLabel, y)
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 190, H: btnH}, clearLabel) {
-		a.d.Prefs.ClearLearned()
-		a.d.Resolver.InvalidateAll()
-		settings.statusLine = "Learned formats cleared."
-	}
-	// Learned-format portability: one player's warm state seeds another's.
-	const exportLabel, importLabel = "Export learned formats", "Import learned formats"
-	a.noteSearchRow(exportLabel, y)
-	a.noteSearchRow(importLabel, y)
-	if c.Button(sdl.Rect{X: pad + 200, Y: y, W: 190, H: btnH}, exportLabel) {
-		exportLearnedAsync(a)
-	}
-	if c.Button(sdl.Rect{X: pad + 400, Y: y, W: 190, H: btnH}, importLabel) {
-		importLearnedAsync(a)
-	}
-	y += btnH + 4
-	y = a.settingsDesc(pad, y, "Export writes the whole table beside the program so it can be shared or carried to another machine; import merges one in, which warms every server it covers before you ever visit them.", ColTextDim)
 	y += 12
 	return y
 }

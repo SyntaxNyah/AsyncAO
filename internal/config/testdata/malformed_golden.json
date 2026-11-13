@@ -1,0 +1,148 @@
+[
+  {
+    "name": "empty",
+    "data": "",
+    "error": "syntax",
+    "quarantined": true,
+    "output_delta": {
+      "__themeFitMovedToNative": false,
+      "__themeFitStampPending": false
+    }
+  },
+  {
+    "name": "truncated",
+    "data": "{\"smoothScaling\": tru",
+    "error": "syntax",
+    "quarantined": true,
+    "output_delta": {
+      "__themeFitMovedToNative": false,
+      "__themeFitStampPending": false
+    }
+  },
+  {
+    "name": "bom",
+    "data": "﻿{\"smoothScaling\": true}",
+    "error": "syntax",
+    "quarantined": true,
+    "output_delta": {
+      "__themeFitMovedToNative": false,
+      "__themeFitStampPending": false
+    }
+  },
+  {
+    "name": "null_root",
+    "data": "null",
+    "error": "\u003cnil\u003e",
+    "quarantined": false,
+    "output_delta": {
+      "__themeFitMovedToNative": true,
+      "__themeFitStampPending": true
+    }
+  },
+  {
+    "name": "array_root",
+    "data": "[1,2,3]",
+    "error": "type: root=array",
+    "quarantined": true,
+    "output_delta": {
+      "__themeFitMovedToNative": false,
+      "__themeFitStampPending": false
+    }
+  },
+  {
+    "name": "string_root",
+    "data": "\"hello\"",
+    "error": "type: root=string",
+    "quarantined": true,
+    "output_delta": {
+      "__themeFitMovedToNative": false,
+      "__themeFitStampPending": false
+    }
+  },
+  {
+    "name": "wrong_type_string_for_int",
+    "data": "{\"nameColorVal\": \"abc\"}",
+    "error": "type: nameColorVal=string -\u003e int",
+    "quarantined": true,
+    "output_delta": {
+      "__themeFitMovedToNative": false,
+      "__themeFitStampPending": false
+    }
+  },
+  {
+    "name": "wrong_type_int_for_bool",
+    "data": "{\"smoothScaling\": 123}",
+    "error": "type: smoothScaling=number -\u003e bool",
+    "quarantined": true,
+    "output_delta": {
+      "__themeFitMovedToNative": false,
+      "__themeFitStampPending": false
+    }
+  },
+  {
+    "name": "wrong_type_nested",
+    "data": "{\"export\": {\"heightPx\": \"tall\"}}",
+    "error": "type: export.heightPx=string -\u003e int",
+    "quarantined": true,
+    "output_delta": {
+      "__themeFitMovedToNative": false,
+      "__themeFitStampPending": false
+    }
+  },
+  {
+    "name": "duplicate_keys",
+    "data": "{\"smoothScaling\": true, \"smoothScaling\": false}",
+    "error": "\u003cnil\u003e",
+    "quarantined": false,
+    "output_delta": {
+      "__themeFitMovedToNative": true,
+      "__themeFitStampPending": true,
+      "smoothScaling": false
+    }
+  },
+  {
+    "name": "huge_number_clamp",
+    "data": "{\"nameColorVal\": 1000000000}",
+    "error": "\u003cnil\u003e",
+    "quarantined": false,
+    "output_delta": {
+      "__themeFitMovedToNative": true,
+      "__themeFitStampPending": true,
+      "nameColorVal": 100
+    }
+  },
+  {
+    "name": "negative_number_clamp",
+    "data": "{\"nameColorVal\": -1000000000}",
+    "error": "\u003cnil\u003e",
+    "quarantined": false,
+    "output_delta": {
+      "__themeFitMovedToNative": true,
+      "__themeFitStampPending": true,
+      "nameColorVal": 50
+    }
+  },
+  {
+    "name": "unknown_key_root",
+    "data": "{\"zzzUnknown\": 1}",
+    "error": "\u003cnil\u003e",
+    "quarantined": false,
+    "output_delta": {
+      "__themeFitMovedToNative": true,
+      "__themeFitStampPending": true
+    }
+  },
+  {
+    "name": "unknown_key_nested",
+    "data": "{\"export\": {\"zzzUnknown\": 1}}",
+    "error": "\u003cnil\u003e",
+    "quarantined": false,
+    "output_delta": {
+      "__themeFitMovedToNative": true,
+      "__themeFitStampPending": true,
+      "export": {
+        "loop": false
+      }
+    }
+  }
+]

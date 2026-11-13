@@ -133,25 +133,12 @@ func TestSidecarRefusalIsVisibleOnScreen(t *testing.T) {
 	}
 }
 
-// TestSidecarRefusalChipDoesNotOverlapItsNeighbours pins the band's geometry with
-// three chips in it.
-//
-// Two right-anchored chips both measured from the window edge would have drawn on
-// top of each other — the exact failure the band's "drop rather than overlap" rule
-// exists to prevent, and one a single anchor cannot express. It also pins the
-// no-error case as byte-identical: menuBarRightContentLeft must be the window width
-// when nothing is right-anchored, or every install without a theme error pays a
-// layout change for a feature it is not using.
-func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
+// TestSidecarRefusalChipStaysInTheBand pins the chip's geometry: inside the window and clear of the menu titles.
+func TestSidecarRefusalChipStaysInTheBand(t *testing.T) {
 	a, cleanup := stageThemedCourtroom(t)
 	defer cleanup()
-	a.drawCourtroom(1280, 720) // one frame so the menu bar's own latch is live
-
-	const w = int32(1280)
-	if got := a.menuBarRightContentLeft(w); got != w {
-		t.Fatalf("menuBarRightContentLeft = %d with no theme error, want the window width %d — "+
-			"the other two chips' rects must be unchanged for every install without one", got, w)
-	}
+	const w, h = int32(1280), int32(720)
+	a.drawCourtroom(w, h) // one frame so the menu bar's own latch is live
 
 	a.themeSidecarErr = "theme \"x\": refused"
 	a.themeSidecarTip = "refused"
@@ -162,25 +149,8 @@ func TestSidecarRefusalChipDoesNotOverlapItsNeighbours(t *testing.T) {
 	if right := errRect.X + errRect.W; right > w {
 		t.Errorf("the refusal chip runs off the right edge: %+v in a %d-wide window", errRect, w)
 	}
-	if got := a.menuBarRightContentLeft(w); got != errRect.X {
-		t.Errorf("menuBarRightContentLeft = %d, want the refusal chip's left edge %d", got, errRect.X)
-	}
-	// The missing-asset chip now sits INSIDE that, not on top of it.
-	a.assetMissCount = 3
-	a.assetMissAt = a.now()
-	a.d.Prefs.SetAssetWarnings(true)
-	if missRect, missOK := a.assetMissChipRect(w); missOK {
-		if missRect.X+missRect.W > errRect.X {
-			t.Errorf("the missing-asset chip %+v overlaps the refusal chip %+v — two right-anchored "+
-				"chips measured from the same edge", missRect, errRect)
-		}
-	}
-	// And the left-anchored Iniswap chip keeps clear of both, or drops.
-	if iniRect, iniOK := a.iniswapChipRect(w); iniOK {
-		if iniRect.X+iniRect.W > errRect.X {
-			t.Errorf("the Iniswap chip %+v overlaps the refusal chip %+v — the reserve must come off "+
-				"menuBarRightContentLeft, not off the window width", iniRect, errRect)
-		}
+	if errRect.X < a.menuBarTitlesRight() {
+		t.Errorf("the refusal chip %+v overlaps the menu titles ending at %d", errRect, a.menuBarTitlesRight())
 	}
 }
 

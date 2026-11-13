@@ -1,0 +1,1674 @@
+[
+  {
+    "name": "legacy_smoothScaling",
+    "input": {
+      "smoothScaling": true
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "legacy_spriteScalingMigrated",
+    "input": {
+      "spriteScaling": 2,
+      "spriteScalingMigrated": true
+    },
+    "output_delta": {
+      "spriteScaling": 2
+    }
+  },
+  {
+    "name": "legacy_autoReconnectDefaultMigrated",
+    "input": {
+      "autoReconnect": true,
+      "autoReconnectDefaultMigrated": false
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "legacy_catchUpDefaultMigrated",
+    "input": {
+      "catchUpDefaultMigrated": false,
+      "catchUpWhenBehind": true
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "legacy_themeFitDefaultMigrated",
+    "input": {
+      "themeFit": 0,
+      "themeFitDefaultMigrated": false
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "legacy_blipSpeedDefaultMigrated",
+    "input": {
+      "blipSpeedDefaultMigrated": false,
+      "textCrawlMs": 18
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "legacy_deskManifestDefaultMigrated",
+    "input": {
+      "deskFollowManifest": false,
+      "deskManifestDefaultMigrated": false
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "legacy_detailedLogDefaultMigrated",
+    "input": {
+      "detailedLog": false,
+      "detailedLogDefaultMigrated": false
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "viewportPercent_aboveMax",
+    "input": {
+      "viewportPercent": 1000000
+    },
+    "output_delta": {
+      "viewportPercent": 85
+    }
+  },
+  {
+    "name": "nameColorVal_belowMin",
+    "input": {
+      "nameColorVal": -1000
+    },
+    "output_delta": {
+      "nameColorVal": 50
+    }
+  },
+  {
+    "name": "highlightColor_belowMin",
+    "input": {
+      "highlightColor": -1000
+    },
+    "output_delta": {
+      "highlightColor": 16776216
+    }
+  },
+  {
+    "name": "export_partial",
+    "input": {
+      "export": {
+        "fps": 0,
+        "heightPx": 1000000
+      }
+    },
+    "output_delta": {
+      "export": {
+        "heightPx": 720,
+        "loop": false
+      }
+    }
+  },
+  {
+    "name": "layoutProfile_legacyPresets",
+    "input": {
+      "layoutPresets": {
+        "streamer": {
+          "viewport": [
+            0,
+            0,
+            0.74,
+            0.66
+          ]
+        }
+      }
+    },
+    "output_delta": {
+      "layoutProfiles": {
+        "streamer": {
+          "classic": {
+            "viewport": [
+              0,
+              0,
+              0.74,
+              0.66
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "oocScale_inherit",
+    "input": {
+      "logScalePct": 170
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "subtheme_sanitize",
+    "input": {
+      "subtheme": "../../secret"
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "proxyMode_clamp",
+    "input": {
+      "proxyMode": 99
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "panelFonts_garbage",
+    "input": {
+      "panelFonts": {
+        "": {
+          "family": "x"
+        },
+        "  ID1  ": {
+          "family": "  Arial  ",
+          "sizePx": 999999
+        },
+        "id2": {
+          "family": "very-long-family-name-over-max-len",
+          "sizePx": -5
+        }
+      }
+    },
+    "output_delta": {
+      "panelFonts": {
+        "id1": {
+          "family": "Arial"
+        },
+        "id2": {
+          "family": "very-long-family-name-over-max-len"
+        }
+      }
+    }
+  },
+  {
+    "name": "macros_garbage",
+    "input": {
+      "macros": [
+        {
+          "key": "  KEY1  ",
+          "lines": [
+            "  l1  ",
+            "",
+            "  l2  "
+          ],
+          "name": "  m1  "
+        }
+      ]
+    },
+    "output_delta": {
+      "macros": [
+        {
+          "key": "key1",
+          "lines": [
+            "l1",
+            "l2"
+          ],
+          "name": "m1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "stylePresets_garbage",
+    "input": {
+      "stylePresets": [
+        {
+          "key": "K",
+          "name": "  "
+        },
+        {
+          "key": "K2",
+          "name": "ok",
+          "style": {
+            "opacity": 255
+          }
+        }
+      ]
+    },
+    "output_delta": {
+      "stylePresets": [
+        {
+          "color": 0,
+          "key": "k2",
+          "name": "ok",
+          "style": {
+            "motionPath": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "opacity": 100
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "chromeShape_garbage",
+    "input": {
+      "chromeShape": "garbage"
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "hiddenPanels_garbage",
+    "input": {
+      "hiddenPanels": [
+        "a",
+        "a",
+        "",
+        "b"
+      ]
+    },
+    "output_delta": {
+      "hiddenPanels": [
+        "a",
+        "b"
+      ]
+    }
+  },
+  {
+    "name": "classicLayout_garbage",
+    "input": {
+      "classicLayout": {
+        "a": [
+          0,
+          0,
+          0.5,
+          0.5
+        ],
+        "b": [
+          0,
+          0,
+          -1,
+          1
+        ],
+        "c": [
+          5,
+          0,
+          0.5,
+          0.5
+        ]
+      }
+    },
+    "output_delta": {
+      "classicLayout": {
+        "a": [
+          0,
+          0,
+          0.5,
+          0.5
+        ]
+      }
+    }
+  },
+  {
+    "name": "layoutGridPx_garbage",
+    "input": {
+      "layoutGridPx": 100000
+    },
+    "output_delta": {
+      "layoutGridPx": 64
+    }
+  },
+  {
+    "name": "classicAnchors_garbage",
+    "input": {
+      "classicAnchors": {
+        "a": {
+          "mode": "garbage",
+          "winH": -5,
+          "winW": 999999
+        }
+      }
+    },
+    "output_delta": {}
+  },
+  {
+    "name": "classicRotations_garbage",
+    "input": {
+      "classicRotations": {
+        "": 45,
+        "a": 90,
+        "b": 180
+      }
+    },
+    "output_delta": {
+      "classicRotations": {
+        "a": 90,
+        "b": 180
+      }
+    }
+  },
+  {
+    "name": "themeRectRotations_garbage",
+    "input": {
+      "themeRectRotations": {
+        "": {
+          "k": 1
+        },
+        "t1": {
+          "": 45,
+          "k1": 90
+        }
+      }
+    },
+    "output_delta": {
+      "themeRectRotations": {
+        "t1": {
+          "k1": 90
+        }
+      }
+    }
+  },
+  {
+    "name": "layoutProfiles_garbage",
+    "input": {
+      "layoutProfiles": {
+        "": {
+          "hidden": [
+            "x"
+          ]
+        },
+        "p1": {
+          "classic": {
+            "a": [
+              0,
+              0,
+              -1,
+              1
+            ]
+          },
+          "gridPx": 99999
+        }
+      }
+    },
+    "output_delta": {
+      "layoutProfiles": {
+        "p1": {
+          "gridPx": 64
+        }
+      }
+    }
+  },
+  {
+    "name": "golden_fixture",
+    "input": {
+      "adaptiveLatMultiple": 2,
+      "additiveText": true,
+      "alertVolume": 2,
+      "animDecodeConcurrency": 2,
+      "animateEntrances": true,
+      "animatedBudgetMiB": 64,
+      "animatedSpriteCapPx": 240,
+      "areaHighlightHex": "v832",
+      "assetCharCase": 1,
+      "assetOrigin": "v601",
+      "assetTypes": {
+        "Background": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".webp"
+          ]
+        },
+        "Blip": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".opus"
+          ]
+        },
+        "CharIcon": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".png"
+          ]
+        },
+        "CharSprite": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".webp"
+          ]
+        },
+        "DeskOverlay": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".webp"
+          ]
+        },
+        "Effect": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".webp"
+          ]
+        },
+        "EmoteButton": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".webp"
+          ]
+        },
+        "Misc": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".png",
+            ".webp"
+          ]
+        },
+        "Music": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".opus"
+          ]
+        },
+        "SFX": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".opus"
+          ]
+        },
+        "ShoutBubble": {
+          "fallbacksEnabled": false,
+          "formatOrder": [
+            ".webp"
+          ]
+        },
+        "v342": {
+          "fallbacksEnabled": true,
+          "formatOrder": [
+            "v442"
+          ]
+        }
+      },
+      "autoClipModcall": true,
+      "autoConnectOnLaunch": true,
+      "autoLoginToast": true,
+      "autoReconnect": true,
+      "autoReconnectDefaultMigrated": true,
+      "autoStatus": {
+        "afkWords": "v213",
+        "busyWords": "v313",
+        "clearWords": "v113",
+        "enabled": true,
+        "lfrpWords": "v513",
+        "writingWords": "v413"
+      },
+      "bgSlideshow": true,
+      "bgSlideshowSecs": 3,
+      "blipOnSpaces": true,
+      "blipRate": 1,
+      "blipSpeedDefaultMigrated": true,
+      "blipVolMuted": true,
+      "blipVolume": 1,
+      "blipVolumes": {
+        "v752": 1
+      },
+      "boldNamesOff": true,
+      "breathAmp": 2,
+      "breathNoBob": true,
+      "breathNoScale": true,
+      "breathSpeed": 1,
+      "callWords": [
+        "v703"
+      ],
+      "callwordOSToast": true,
+      "callwordSoundFile": "v931",
+      "callwordToast": true,
+      "callwordsOOC": true,
+      "casingEnabled": true,
+      "casingRoles": 1,
+      "catchUpDefaultMigrated": true,
+      "catchUpLingerMs": 1,
+      "catchUpThreshold": 1,
+      "catchUpWhenBehind": true,
+      "changelogSeenVersion": "v641",
+      "charChatbox": true,
+      "chatBoxPercent": 50,
+      "chatRateLimitMs": 2,
+      "chatScalePercent": 50,
+      "chatboxOpacity": 2,
+      "chatboxTint": true,
+      "chromeShape": "sharp",
+      "chromeShapeTier": 1,
+      "chromeTheme": "v613",
+      "classicAnchors": {
+        "cc": {
+          "mode": "cc",
+          "winH": 600,
+          "winW": 800
+        }
+      },
+      "classicLayout": {
+        "v881": [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "classicRotations": {
+        "v212": 2
+      },
+      "clipSpritesToStage": true,
+      "crossfadeMs": 50,
+      "customChrome": [
+        "v362",
+        "v462",
+        "v562",
+        "v662",
+        "v762",
+        "v862",
+        "v962"
+      ],
+      "debugOverlay": true,
+      "depthOfField": true,
+      "deskFollowManifest": true,
+      "deskManifestDefaultMigrated": true,
+      "detailedLog": true,
+      "detailedLogDefaultMigrated": true,
+      "disableAltEmoteRow": true,
+      "disableEffects": true,
+      "disableFrameLimiter": true,
+      "discord": {
+        "appId": "v013",
+        "enabled": true,
+        "showArea": true,
+        "showChar": true,
+        "showName": true,
+        "showServer": true
+      },
+      "diskCacheBudgetMiB": 128,
+      "dndPersist": true,
+      "dndSaved": true,
+      "dragLayout": true,
+      "dyslexiaFont": true,
+      "emoteButtonImages": true,
+      "emoteCaptions": true,
+      "emoteFavOnly": true,
+      "emoteFavStars": true,
+      "emoteFavorites": {
+        "v952": [
+          1
+        ]
+      },
+      "emoteGridGapPx": 1,
+      "emoteHoverNames": true,
+      "emoteHoverNamesMs": 500,
+      "errorSpriteCustom": true,
+      "errorSpritePath": "v723",
+      "export": {
+        "fps": 6,
+        "heightPx": 240,
+        "loop": true,
+        "quality": 20,
+        "textScale": 50
+      },
+      "extProfiles": {
+        "v572": "v672"
+      },
+      "extrasBg": "v332",
+      "extrasBg2": "v432",
+      "extrasBorder": "v532",
+      "extrasGradient": true,
+      "extrasText": "v732",
+      "extrasTitle": "v632",
+      "favEmoteBox": true,
+      "favorites": [
+        {
+          "description": "v082",
+          "name": "v872",
+          "url": "v972"
+        }
+      ],
+      "followEnabled": true,
+      "fontCensus": true,
+      "fontEverywhere": true,
+      "fontPaths": "v571",
+      "fontWarnThemes": [
+        "v411"
+      ],
+      "forceCharNames": true,
+      "formatAutoDetect": true,
+      "fpsCap": 2,
+      "friendGlowPulse": true,
+      "friendHighlight": true,
+      "friendNotify": true,
+      "friendOSToast": true,
+      "friendSound": true,
+      "friendSoundFile": "v531",
+      "ghostCrawlText": true,
+      "globalFallbacksEnabled": true,
+      "groupChatButton": true,
+      "groupInviteOSToast": true,
+      "hiddenPanels": [
+        "v382"
+      ],
+      "hideDesk": true,
+      "hideReactions": true,
+      "hideSpriteStyles": true,
+      "highlightColor": 1,
+      "holdClearKey": "v132",
+      "holdClearMs": 300,
+      "holdClearOn": true,
+      "holdDebugTint": true,
+      "holdPrevMaxAgeMs": 100,
+      "hotkeys": {
+        "v803": "v903"
+      },
+      "hotkeysEnabled": true,
+      "icCustomColor": 2,
+      "icLogDepth": 2,
+      "icPhraseKeys": {
+        "v152": "v252"
+      },
+      "icQueueCap": 8,
+      "icTimestamps": true,
+      "idleBreath": true,
+      "idleFps": 1,
+      "inputGraceFrames": 1,
+      "inputHeightPercent": 75,
+      "instantDisconnect": true,
+      "instantReplay": true,
+      "instantReplaySeconds": 10,
+      "lastServerName": "v21",
+      "lastServerURL": "v31",
+      "layoutGridPx": 2,
+      "layoutPartColors": [
+        "v072",
+        "v172",
+        "v272",
+        "v372"
+      ],
+      "layoutProfiles": {
+        "v391": {
+          "classic": {
+            "v491": [
+              0.5,
+              0.5,
+              0.5,
+              0.5
+            ]
+          },
+          "gridPx": 2,
+          "hidden": [
+            "v302"
+          ],
+          "rotations": {
+            "v502": 1
+          }
+        }
+      },
+      "learnedFormats": {
+        "v542": [
+          "v642"
+        ]
+      },
+      "legacyDevTheme": true,
+      "localAssetsEnabled": true,
+      "localAssetsLayered": true,
+      "localAssetsPaths": [
+        "v772"
+      ],
+      "logScalePercent": 75,
+      "macros": [
+        {
+          "key": "v771",
+          "lines": [
+            "v871"
+          ],
+          "name": "v671"
+        }
+      ],
+      "masterListUrl": "v242",
+      "masterVolMuted": true,
+      "masterVolume": 1,
+      "mentionSelf": true,
+      "messageCounter": true,
+      "modBanSFX": true,
+      "modBanSoundFile": "v631",
+      "modDurations": [
+        "v652"
+      ],
+      "modKickSFX": true,
+      "modKickSoundFile": "v731",
+      "modMuteSFX": true,
+      "modMuteSoundFile": "v831",
+      "modReasonTemplates": [
+        "v552"
+      ],
+      "modcallToast": true,
+      "motionRedrawPerEvent": true,
+      "multiTabCap": 2,
+      "musicAcrossTabs": true,
+      "musicDucking": true,
+      "musicFlags": 1,
+      "musicHistory": true,
+      "musicHosts": [
+        "v823"
+      ],
+      "musicStreaming": true,
+      "musicVolMode": true,
+      "musicVolMuted": true,
+      "musicVolume": 1,
+      "mutedSFX": [
+        "v352"
+      ],
+      "mySpriteStyle": {
+        "b": 1,
+        "brightness": 1,
+        "dropShadow": true,
+        "flipH": true,
+        "g": 2,
+        "glitch": true,
+        "glitchAB": 1,
+        "glitchAG": 2,
+        "glitchAR": 1,
+        "glitchBB": 2,
+        "glitchBG": 1,
+        "glitchBR": 2,
+        "glitchMode": 2,
+        "glow": true,
+        "grayscale": true,
+        "hueCycle": true,
+        "invert": true,
+        "motion": 2,
+        "motionPath": [
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2
+        ],
+        "motionPathLen": 1,
+        "opacity": 2,
+        "outline": true,
+        "outlineB": 2,
+        "outlineG": 1,
+        "outlineR": 2,
+        "paint2B": 1,
+        "paint2G": 2,
+        "paint2R": 1,
+        "paintSplit": 2,
+        "posterize": true,
+        "r": 1,
+        "restyle": 1,
+        "rotation": 1,
+        "scale": 2,
+        "sepia": true,
+        "spin": true,
+        "tint": true,
+        "wobble": true
+      },
+      "nameColorSat": 1,
+      "nameColorVal": 50,
+      "nameColors": true,
+      "notFoundTTLSec": 30,
+      "notifyOnOOC": true,
+      "oocInLogTab": true,
+      "oocName": "v712",
+      "oocScalePercent": 75,
+      "openTabs": [
+        {
+          "name": "v371",
+          "url": "v471"
+        }
+      ],
+      "panelFonts": {
+        "v111": {
+          "family": "v211"
+        }
+      },
+      "perAreaScrollback": true,
+      "plainLobby": true,
+      "playerListAreaSort": 2,
+      "playerListSort": 1,
+      "postCRT": true,
+      "postGrain": true,
+      "postScanlines": true,
+      "postVignette": true,
+      "preanimTimeoutMs": 200,
+      "preferAnimated": true,
+      "previewHeightPx": 96,
+      "previewHoverMs": 500,
+      "previewPinned": true,
+      "previewWinRectH": 1,
+      "previewWinRectValid": true,
+      "previewWinRectW": 2,
+      "previewWinRectX": 2,
+      "previewWinRectY": 1,
+      "profile": {
+        "artURL": "v421",
+        "bio": "v221",
+        "enabled": true,
+        "name": "v911",
+        "pronouns": "v021",
+        "showOnList": true,
+        "tag": "v121",
+        "themeSong": "v321"
+      },
+      "proxyMode": 2,
+      "proxyUrl": "v011",
+      "quitConfirmSkip": true,
+      "rainbowMessages": true,
+      "rainbowPairDesync": true,
+      "rainbowPerChar": true,
+      "rainbowSpriteGlow": true,
+      "rainbowSpriteSpeed": 1,
+      "rainbowSpriteVividness": 1,
+      "rainbowSprites": true,
+      "randomEmote": true,
+      "randomMessageColor": true,
+      "recordingsKeepAssets": true,
+      "reduceMotion": true,
+      "reflectStrength": 2,
+      "reflection": true,
+      "replaySpeed": 25,
+      "restoreTabs": true,
+      "rightClickHideSprite": true,
+      "screenEffects": true,
+      "serverWarm": {
+        "v482": {
+          "audioBlip": 2,
+          "audioMaster": 1,
+          "audioMusic": 2,
+          "audioOn": true,
+          "audioSFX": 1,
+          "autoLogin": true,
+          "background": "v682",
+          "backgrounds": [
+            "v103"
+          ],
+          "char": "v582",
+          "charKeys": {
+            "v192": "v292"
+          },
+          "chars": [
+            "v003"
+          ],
+          "favBackgroundFolder": {
+            "v982": "v092"
+          },
+          "favBackgrounds": [
+            "v882"
+          ],
+          "friends": [
+            "v203"
+          ],
+          "ignored": [
+            "v303"
+          ],
+          "loginPass": "v503",
+          "loginUser": "v403",
+          "origin": "v592",
+          "theme": "v603",
+          "wardrobe": [
+            "v782"
+          ],
+          "wardrobeFolder": {
+            "v392": "v492"
+          }
+        }
+      },
+      "sfxFavorites": [
+        "v452"
+      ],
+      "sfxOnIdle": true,
+      "sfxVolMuted": true,
+      "sfxVolume": 2,
+      "shoutBypassQueue": true,
+      "shoutDurationMs": 100,
+      "shoutPunch": true,
+      "showFriendButton": true,
+      "showMissingPlaceholder": true,
+      "showPairStatus": true,
+      "showRecordButton": true,
+      "showSongURL": true,
+      "showname": "v742",
+      "shownameKeys": {
+        "v942": "v052"
+      },
+      "shownamePresets": [
+        "v842"
+      ],
+      "smoothLogScroll": true,
+      "smoothScaling": true,
+      "spotlight": true,
+      "spotlightStrength": 10,
+      "spriteDownscaleOff": true,
+      "spriteDownscalePct": 50,
+      "spriteLoadMode": 2,
+      "spriteMove": true,
+      "spritePreview": true,
+      "spriteScaling": 2,
+      "spriteScalingMigrated": true,
+      "spriteSolidTint": true,
+      "spriteSpin": true,
+      "spriteTintColor": 2,
+      "spriteWaitMs": 50,
+      "spriteWaitPair": true,
+      "spriteWaitPreanim": true,
+      "spriteWobble": true,
+      "stageFrame": 1,
+      "stickyEffects": true,
+      "stickyPreanims": true,
+      "stickySounds": true,
+      "streamerMode": true,
+      "stylePresets": [
+        {
+          "color": 2,
+          "emote": "v401",
+          "key": "v501",
+          "name": "v26",
+          "style": {
+            "b": 2,
+            "brightness": 2,
+            "dropShadow": true,
+            "flipH": true,
+            "g": 1,
+            "glitch": true,
+            "glitchAB": 2,
+            "glitchAG": 1,
+            "glitchAR": 2,
+            "glitchBB": 1,
+            "glitchBG": 2,
+            "glitchBR": 1,
+            "glitchMode": 1,
+            "glow": true,
+            "grayscale": true,
+            "hueCycle": true,
+            "invert": true,
+            "motion": 1,
+            "motionPath": [
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1
+            ],
+            "motionPathLen": 2,
+            "opacity": 1,
+            "outline": true,
+            "outlineB": 1,
+            "outlineG": 2,
+            "outlineR": 1,
+            "paint2B": 2,
+            "paint2G": 1,
+            "paint2R": 2,
+            "paintSplit": 1,
+            "posterize": true,
+            "r": 2,
+            "restyle": 2,
+            "rotation": 2,
+            "scale": 1,
+            "sepia": true,
+            "spin": true,
+            "tint": true,
+            "wobble": true
+          }
+        }
+      ],
+      "subtheme": "v612",
+      "texBudgetMiB": 32,
+      "texCompression": 1,
+      "textCrawlMs": 5,
+      "textStayMs": 1,
+      "themeDir": "v512",
+      "themeFit": 1,
+      "themeFitDefaultMigrated": true,
+      "themeFitPanX": 1,
+      "themeFitPanY": 2,
+      "themeFitZoom": 50,
+      "themeFonts": true,
+      "themeLayout": true,
+      "themeName": "v412",
+      "themeRectOverrides": {
+        "v971": {
+          "v081": [
+            2,
+            1,
+            2,
+            1
+          ]
+        }
+      },
+      "themeRectRotations": {
+        "v581": {
+          "v681": 2
+        }
+      },
+      "timerRepeat": true,
+      "timerSeconds": 2,
+      "toolboxSeen": true,
+      "uiScaleAuto": true,
+      "uiScalePercent": 75,
+      "unfocusedFps": 2,
+      "unfocusedFullRate": true,
+      "updateCheck": true,
+      "updateExperimental": true,
+      "validateTLSCerts": true,
+      "viewportExactW": 256,
+      "viewportPercent": 40,
+      "volStripOn": true,
+      "wardrobe": [
+        "v182"
+      ],
+      "weatherIntensity": 2,
+      "weatherType": 1,
+      "windowFullscreen": true,
+      "windowHeight": 2,
+      "windowWidth": 1,
+      "wordDelete": true,
+      "wsOrigin": "v701"
+    },
+    "output_delta": {
+      "adaptiveLatMultiple": 2,
+      "alertVolume": 2,
+      "animDecodeConcurrency": 2,
+      "animateEntrances": true,
+      "animatedBudgetMiB": 64,
+      "animatedSpriteCapPx": 240,
+      "areaHighlightHex": "v832",
+      "assetCharCase": 1,
+      "assetOrigin": "v601",
+      "assetTypes": {
+        "v342": {
+          "fallbacksEnabled": true,
+          "formatOrder": [
+            "v442"
+          ]
+        }
+      },
+      "autoConnectOnLaunch": true,
+      "autoReconnect": true,
+      "autoStatus": {
+        "afkWords": "v213",
+        "busyWords": "v313",
+        "clearWords": "v113",
+        "enabled": true,
+        "lfrpWords": "v513",
+        "writingWords": "v413"
+      },
+      "bgSlideshow": true,
+      "bgSlideshowSecs": 3,
+      "blipOnSpaces": true,
+      "blipRate": 1,
+      "blipVolMuted": true,
+      "blipVolume": 1,
+      "blipVolumes": {
+        "v752": 1
+      },
+      "boldNamesOff": true,
+      "breathAmp": 2,
+      "breathNoBob": true,
+      "breathNoScale": true,
+      "breathSpeed": 1,
+      "callWords": [
+        "v703"
+      ],
+      "callwordOSToast": true,
+      "callwordSoundFile": "v931",
+      "callwordsOOC": true,
+      "casingEnabled": true,
+      "casingRoles": 1,
+      "catchUpLingerMs": 1,
+      "catchUpWhenBehind": true,
+      "changelogSeenVersion": "v641",
+      "chatBoxPercent": 50,
+      "chatRateLimitMs": 2,
+      "chatScalePercent": 50,
+      "chatboxOpacity": 2,
+      "chatboxTint": true,
+      "chromeShapeTier": 1,
+      "chromeTheme": "v613",
+      "classicAnchors": {
+        "cc": {
+          "mode": "cc",
+          "winH": 600,
+          "winW": 800
+        }
+      },
+      "classicLayout": {
+        "v881": [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "classicRotations": {
+        "v212": 2
+      },
+      "crossfadeMs": 50,
+      "customChrome": [
+        "v362",
+        "v462",
+        "v562",
+        "v662",
+        "v762",
+        "v862",
+        "v962"
+      ],
+      "debugOverlay": true,
+      "depthOfField": true,
+      "disableAltEmoteRow": true,
+      "disableEffects": true,
+      "disableFrameLimiter": true,
+      "discord": {
+        "appId": "v013",
+        "showArea": true
+      },
+      "diskCacheBudgetMiB": 128,
+      "dndPersist": true,
+      "dndSaved": true,
+      "dyslexiaFont": true,
+      "emoteCaptions": true,
+      "emoteFavOnly": true,
+      "emoteFavStars": true,
+      "emoteFavorites": {
+        "v952": [
+          1
+        ]
+      },
+      "emoteGridGapPx": 1,
+      "emoteHoverNamesMs": 500,
+      "errorSpriteCustom": true,
+      "errorSpritePath": "v723",
+      "export": {
+        "fps": 6,
+        "heightPx": 240,
+        "quality": 20,
+        "textScale": 50
+      },
+      "extProfiles": {
+        "v572": "v672"
+      },
+      "extrasBg": "v332",
+      "extrasBg2": "v432",
+      "extrasBorder": "v532",
+      "extrasGradient": true,
+      "extrasText": "v732",
+      "extrasTitle": "v632",
+      "favEmoteBox": true,
+      "favorites": [
+        {
+          "description": "v082",
+          "name": "v872",
+          "url": "v972"
+        }
+      ],
+      "followEnabled": true,
+      "fontEverywhere": true,
+      "fontPaths": "v571",
+      "fontWarnThemes": [
+        "v411"
+      ],
+      "forceCharNames": true,
+      "fpsCap": 2,
+      "friendGlowPulse": true,
+      "friendHighlight": true,
+      "friendNotify": true,
+      "friendOSToast": true,
+      "friendSound": true,
+      "friendSoundFile": "v531",
+      "globalFallbacksEnabled": true,
+      "groupInviteOSToast": true,
+      "hiddenPanels": [
+        "v382"
+      ],
+      "hideDesk": true,
+      "hideReactions": true,
+      "hideSpriteStyles": true,
+      "highlightColor": 1,
+      "holdClearKey": "v132",
+      "holdClearMs": 300,
+      "holdDebugTint": true,
+      "holdPrevMaxAgeMs": 100,
+      "hotkeys": {
+        "v803": "v903"
+      },
+      "hotkeysEnabled": true,
+      "icCustomColor": 2,
+      "icLogDepth": 2,
+      "icPhraseKeys": {
+        "v152": "v252"
+      },
+      "icQueueCap": 8,
+      "icTimestamps": true,
+      "idleBreath": true,
+      "idleFps": 1,
+      "inputGraceFrames": 1,
+      "inputHeightPercent": 75,
+      "instantDisconnect": true,
+      "instantReplay": true,
+      "instantReplaySeconds": 10,
+      "lastServerName": "v21",
+      "lastServerURL": "v31",
+      "layoutGridPx": 2,
+      "layoutPartColors": [
+        "v072",
+        "v172",
+        "v272",
+        "v372"
+      ],
+      "layoutProfiles": {
+        "v391": {
+          "classic": {
+            "v491": [
+              0.5,
+              0.5,
+              0.5,
+              0.5
+            ]
+          },
+          "gridPx": 2,
+          "hidden": [
+            "v302"
+          ],
+          "rotations": {
+            "v502": 1
+          }
+        }
+      },
+      "learnedFormats": {
+        "v542": [
+          "v642"
+        ]
+      },
+      "legacyDevTheme": true,
+      "localAssetsEnabled": true,
+      "localAssetsLayered": true,
+      "localAssetsPaths": [
+        "v772"
+      ],
+      "logScalePercent": 75,
+      "macros": [
+        {
+          "key": "v771",
+          "lines": [
+            "v871"
+          ],
+          "name": "v671"
+        }
+      ],
+      "masterListUrl": "v242",
+      "masterVolMuted": true,
+      "masterVolume": 1,
+      "mentionSelf": true,
+      "modBanSFX": true,
+      "modBanSoundFile": "v631",
+      "modDurations": [
+        "v652"
+      ],
+      "modKickSFX": true,
+      "modKickSoundFile": "v731",
+      "modMuteSFX": true,
+      "modMuteSoundFile": "v831",
+      "modReasonTemplates": [
+        "v552"
+      ],
+      "modcallToast": true,
+      "multiTabCap": 2,
+      "musicAcrossTabs": true,
+      "musicDucking": true,
+      "musicFlags": 1,
+      "musicHosts": [
+        "v823"
+      ],
+      "musicVolMode": true,
+      "musicVolMuted": true,
+      "musicVolume": 1,
+      "mutedSFX": [
+        "v352"
+      ],
+      "mySpriteStyle": {
+        "b": 1,
+        "brightness": 1,
+        "dropShadow": true,
+        "flipH": true,
+        "g": 2,
+        "glitch": true,
+        "glitchAB": 1,
+        "glitchAG": 2,
+        "glitchAR": 1,
+        "glitchBB": 2,
+        "glitchBG": 1,
+        "glitchBR": 2,
+        "glitchMode": 2,
+        "glow": true,
+        "grayscale": true,
+        "hueCycle": true,
+        "invert": true,
+        "motion": 2,
+        "motionPath": [
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2,
+          1,
+          2
+        ],
+        "motionPathLen": 1,
+        "opacity": 2,
+        "outline": true,
+        "outlineB": 2,
+        "outlineG": 1,
+        "outlineR": 2,
+        "paint2B": 1,
+        "paint2G": 2,
+        "paint2R": 1,
+        "paintSplit": 2,
+        "posterize": true,
+        "r": 1,
+        "restyle": 1,
+        "rotation": 1,
+        "scale": 2,
+        "sepia": true,
+        "spin": true,
+        "tint": true,
+        "wobble": true
+      },
+      "nameColorSat": 1,
+      "nameColorVal": 50,
+      "nameColors": true,
+      "notFoundTTLSec": 30,
+      "notifyOnOOC": true,
+      "oocInLogTab": true,
+      "oocName": "v712",
+      "oocScalePercent": 75,
+      "openTabs": [
+        {
+          "name": "v371",
+          "url": "v471"
+        }
+      ],
+      "panelFonts": {
+        "v111": {
+          "family": "v211"
+        }
+      },
+      "perAreaScrollback": true,
+      "playerListAreaSort": 2,
+      "playerListSort": 1,
+      "postCRT": true,
+      "postGrain": true,
+      "postScanlines": true,
+      "postVignette": true,
+      "preanimTimeoutMs": 200,
+      "previewHeightPx": 96,
+      "previewHoverMs": 500,
+      "previewPinned": true,
+      "previewWinRectH": 1,
+      "previewWinRectValid": true,
+      "previewWinRectW": 2,
+      "previewWinRectX": 2,
+      "previewWinRectY": 1,
+      "profile": {
+        "artURL": "v421",
+        "bio": "v221",
+        "enabled": true,
+        "name": "v911",
+        "pronouns": "v021",
+        "showOnList": true,
+        "tag": "v121",
+        "themeSong": "v321"
+      },
+      "proxyMode": 2,
+      "proxyUrl": "v011",
+      "quitConfirmSkip": true,
+      "rainbowMessages": true,
+      "rainbowPairDesync": true,
+      "rainbowPerChar": true,
+      "rainbowSpriteGlow": true,
+      "rainbowSpriteSpeed": 1,
+      "rainbowSpriteVividness": 1,
+      "rainbowSprites": true,
+      "randomEmote": true,
+      "randomMessageColor": true,
+      "reduceMotion": true,
+      "reflectStrength": 2,
+      "reflection": true,
+      "replaySpeed": 25,
+      "restoreTabs": true,
+      "serverWarm": {
+        "v482": {
+          "audioBlip": 2,
+          "audioMaster": 1,
+          "audioMusic": 2,
+          "audioOn": true,
+          "audioSFX": 1,
+          "autoLogin": true,
+          "background": "v682",
+          "backgrounds": [
+            "v103"
+          ],
+          "char": "v582",
+          "charKeys": {
+            "v192": "v292"
+          },
+          "chars": [
+            "v003"
+          ],
+          "favBackgroundFolder": {
+            "v982": "v092"
+          },
+          "favBackgrounds": [
+            "v882"
+          ],
+          "friends": [
+            "v203"
+          ],
+          "ignored": [
+            "v303"
+          ],
+          "loginPass": "v503",
+          "loginUser": "v403",
+          "origin": "v592",
+          "theme": "v603",
+          "wardrobe": [
+            "v782"
+          ],
+          "wardrobeFolder": {
+            "v392": "v492"
+          }
+        }
+      },
+      "sfxFavorites": [
+        "v452"
+      ],
+      "sfxOnIdle": true,
+      "sfxVolMuted": true,
+      "sfxVolume": 2,
+      "shoutDurationMs": 100,
+      "shoutPunch": true,
+      "showPairStatus": true,
+      "showRecordButton": true,
+      "showSongURL": true,
+      "showname": "v742",
+      "shownameKeys": {
+        "v942": "v052"
+      },
+      "shownamePresets": [
+        "v842"
+      ],
+      "smoothLogScroll": true,
+      "spotlight": true,
+      "spotlightStrength": 10,
+      "spriteDownscaleOff": true,
+      "spriteDownscalePct": 50,
+      "spriteLoadMode": 2,
+      "spriteMove": true,
+      "spriteScaling": 2,
+      "spriteSolidTint": true,
+      "spriteSpin": true,
+      "spriteTintColor": 2,
+      "spriteWaitMs": 50,
+      "spriteWaitPair": true,
+      "spriteWaitPreanim": true,
+      "spriteWobble": true,
+      "stageFrame": 1,
+      "stickyEffects": true,
+      "stickyPreanims": true,
+      "stickySounds": true,
+      "streamerMode": true,
+      "stylePresets": [
+        {
+          "color": 2,
+          "emote": "v401",
+          "key": "v501",
+          "name": "v26",
+          "style": {
+            "b": 2,
+            "brightness": 2,
+            "dropShadow": true,
+            "flipH": true,
+            "g": 1,
+            "glitch": true,
+            "glitchAB": 2,
+            "glitchAG": 1,
+            "glitchAR": 2,
+            "glitchBB": 1,
+            "glitchBG": 2,
+            "glitchBR": 1,
+            "glitchMode": 1,
+            "glow": true,
+            "grayscale": true,
+            "hueCycle": true,
+            "invert": true,
+            "motion": 1,
+            "motionPath": [
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1,
+              2,
+              1
+            ],
+            "motionPathLen": 2,
+            "opacity": 1,
+            "outline": true,
+            "outlineB": 1,
+            "outlineG": 2,
+            "outlineR": 1,
+            "paint2B": 2,
+            "paint2G": 1,
+            "paint2R": 2,
+            "paintSplit": 1,
+            "posterize": true,
+            "r": 2,
+            "restyle": 2,
+            "rotation": 2,
+            "scale": 1,
+            "sepia": true,
+            "spin": true,
+            "tint": true,
+            "wobble": true
+          }
+        }
+      ],
+      "subtheme": "v612",
+      "texBudgetMiB": 32,
+      "texCompression": 1,
+      "textCrawlMs": 5,
+      "textStayMs": 1,
+      "themeDir": "v512",
+      "themeFit": 1,
+      "themeFitPanX": 1,
+      "themeFitPanY": 2,
+      "themeFitZoom": 50,
+      "themeName": "v412",
+      "themeRectOverrides": {
+        "v971": {
+          "v081": [
+            2,
+            1,
+            2,
+            1
+          ]
+        }
+      },
+      "themeRectRotations": {
+        "v581": {
+          "v681": 2
+        }
+      },
+      "timerRepeat": true,
+      "timerSeconds": 2,
+      "toolboxSeen": true,
+      "uiScalePercent": 75,
+      "unfocusedFps": 2,
+      "unfocusedFullRate": true,
+      "updateExperimental": true,
+      "validateTLSCerts": true,
+      "viewportExactW": 256,
+      "viewportPercent": 40,
+      "volStripOn": true,
+      "wardrobe": [
+        "v182"
+      ],
+      "weatherIntensity": 2,
+      "weatherType": 1,
+      "windowFullscreen": true,
+      "windowHeight": 2,
+      "windowWidth": 1,
+      "wsOrigin": "v701"
+    }
+  }
+]

@@ -1,18 +1,14 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+)
 
-// The floating Favourite-Emotes box (#85): a small, movable, on-top panel showing
-// just the current character's STARRED emotes as clickable sprite buttons — a
-// curated palette so the handful of emotes you actually use are one click away,
-// without paging the full grid. Press a button to select that emote (it sends on
-// your next message), exactly like the grid. OFF by default (the FavEmoteBox
-// pref); opened by its rebindable hotkey (default Ctrl+A) or the Settings tick.
-//
-// Non-invasive, like the Extras box: the scene/chat/logs stay live underneath,
-// and it shares the Extras surface's single per-frame mouse-press edge so exactly
-// one box grabs a given press. Drawn only while open, so it's free when closed.
-// The render loop (render.Viewport) is untouched.
+// The floating Favourite-Emotes box: a small movable on-top panel of the current character's starred emotes as sprite
+// buttons; pressing one selects it like the grid. Off by default (FavEmoteBox pref), opened by its hotkey or Settings.
+// It shares the Extras surface's per-frame press edge so exactly one box grabs a given press.
 
 const (
 	favBoxCols   = int32(4)     // max emote buttons per row
@@ -22,18 +18,11 @@ const (
 	favBoxEmptyW = int32(264)   // width when empty, so the "how to fill it" hint fits
 )
 
-// favBoxRect is the box's screen rect: sized to its favourites grid (or a hint
-// when empty), clamped fully on-screen at its dragged position, else a default
-// near the top-right where it's out of the way.
+// favBoxRect is the box's screen rect: sized to its grid (or a hint when empty), clamped on-screen, default top-right.
 func (a *App) favBoxRect(w, h int32) sdl.Rect {
 	n := int32(len(a.favBoxList))
 	cols := n
-	if cols > favBoxCols {
-		cols = favBoxCols
-	}
-	if cols < 1 {
-		cols = 1
-	}
+	cols = value.Clamp(cols, 1, favBoxCols)
 	rows := (n + cols - 1) / cols
 	if rows < 1 {
 		rows = 1
@@ -63,13 +52,11 @@ func (a *App) favBoxRect(w, h int32) sdl.Rect {
 	if maxY < 8 {
 		maxY = 8
 	}
-	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}
+	return sdl.Rect{X: value.Clamp(x, 8, maxX), Y: value.Clamp(y, 8, maxY), W: bw, H: bh}
 }
 
-// drawFavEmoteBox paints the favourite-emotes box and handles its clicks. It
-// rebuilds the favourites view ITSELF (the emote grid is a hideable panel — if
-// it's hidden but this box is open, nothing else would refresh favBoxList).
-// pressed is the Extras surface's shared press edge (title-bar drag consumes it).
+// drawFavEmoteBox paints the box and handles its clicks. It rebuilds the favourites view itself, since the emote grid
+// is hideable and nothing else would refresh favBoxList. pressed is the Extras surface's shared press edge.
 func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 	c := a.ctx
 	a.refreshEmoteView() // owns its data; never assume the grid ran this frame
@@ -81,7 +68,17 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, ColPanelHi)
 	c.Label(r.X+8, r.Y+6, "★ Favourite Emotes", ColStar)
 	if c.Button(sdl.Rect{X: r.X + r.W - 24, Y: r.Y + 4, W: 18, H: extrasTitleH - 8}, "x") {
-		a.d.Prefs.SetFavEmoteBox(false)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FavEmoteBox =
+
+				false
+
+		})
+
 		return
 	}
 	a.handleFavBoxDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 28, H: extrasTitleH}, w, h, pressed)
@@ -93,9 +90,9 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 	}
 
 	me := a.activeCharName()
-	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
-	// Emote-name hover tooltip config, read ONCE (RLock off the per-cell loop).
-	hoverNamesOn := a.d.Prefs.EmoteHoverNamesEnabled()
+	useImages := a.d.Prefs.Load().EmoteButtonImages
+	// Emote-name hover tooltip config, read once (RLock) outside the per-cell loop.
+	hoverNamesOn := a.d.Prefs.Load().EmoteHoverNamesOn
 	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	cols := int32(len(a.favBoxList))
 	if cols > favBoxCols {
@@ -126,16 +123,14 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 		if c.HoverPreview("favemote:"+a.emotes[i].Anim, btn) {
 			a.previewEmote(me, &a.emotes[i])
 		}
-		// Emote-name tooltip (parity with the grid): hover dwell shows the name.
-		// Gated on hovering(btn) so the id concat runs only for the hovered cell.
+		// Emote-name tooltip as in the grid; gated on hovering(btn) so the id concat runs only for the hovered cell.
 		if hoverNamesOn && c.hovering(btn) {
 			c.TooltipAfterDelay("favemotename:"+a.emotes[i].Anim, btn, label, hoverNamesDelay)
 		}
 	}
 }
 
-// handleFavBoxDrag moves the box by its title bar, mirroring handleExtrasDrag and
-// sharing the per-frame press edge (zeroed on grab, so one press moves one box).
+// handleFavBoxDrag moves the box by its title bar, like handleExtrasDrag; the shared press edge is zeroed on grab.
 func (a *App) handleFavBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	c := a.ctx
 	if *pressed && pointIn(c.mouseX, c.mouseY, handle) {

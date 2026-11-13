@@ -8,12 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -284,7 +283,7 @@ func TestOverlayResolveNeedsAnOriginAndAManager(t *testing.T) {
 	}
 
 	// An origin but no Manager: nil-checked everywhere else in this package
-	// (mountlayer.go:37,75; scenemaker.go:276) and a nil-Manager PrefetchChain would
+	// (localfolders.go, scenemaker.go) and a nil-Manager PrefetchChain would
 	// panic on the render thread.
 	noMgr := &App{}
 	noMgr.urls = courtroom.NewURLBuilder("https://one.test/base")
@@ -508,7 +507,7 @@ func drawableEffectsApp(t *testing.T, iconPath string) *App {
 	if err != nil {
 		t.Skipf("Ctx unavailable: %v", err)
 	}
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}

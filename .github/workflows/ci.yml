@@ -1,261 +1,101 @@
-# AsyncAO CI: lint + race tests + alloc-gated benchmarks, then binary builds
-# for every platform. Pull requests get downloadable binaries as artifacts.
-#
-# Each platform builds TWICE via a `variant` matrix: the full default binary
-# (Discord Rich Presence bundled — pure stdlib IPC, no DLL, off by default; voice
-# chat included) and a lean `-tags "nodiscord novoice"` binary with BOTH the
-# Discord integration and the LemmyAO/Nyathena voice chat compiled out entirely.
-# Neither is ever a forced dependency; the second artifact exists for anyone who
-# wants a binary with zero Discord and zero voice code at all.
+# PR CI. Draft PRs only package the client on every platform, which proves it compiles
+# and leaves test builds as artifacts; a PR that is ready for review also gets every
+# check and a smoke test. Merging to main runs no CI: release.yml does its own checks.
+# Require `ci-ok`: it stays the one status whatever the jobs behind it are. Branches
+# with no PR use branch-build.yml. See docs/RELEASING.md.
 name: CI
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
-env:
-  GO_VERSION: "1.24"
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    name: Lint & race tests (Linux)
-    runs-on: ubuntu-latest
+  scope:
+    name: Choose checks
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Install SDL2 + libwebp + libavif dev packages
+          fetch-depth: 0
+      - id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libwebp-dev libavif-dev libopus-dev libopusfile-dev cmake ninja-build pkg-config
+          mode=full
+          if [ "$IS_DRAFT" = true ]; then
+            mode=package
+          fi
+          # Changing nothing but docs needs no checks. This can't be a paths-ignore
+          # filter: a required `ci-ok` that never reports would block the PR.
+          if [ "$EVENT" != workflow_dispatch ] && changed="$(git diff --name-only "$PR_BASE" "$GITHUB_SHA")" &&
+            [ -n "$changed" ] && ! grep -qvE '^docs/|^[^/]+\.md$|^LICENSE' <<<"$changed"; then
+            mode=none
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
 
-      - name: Build + install SDL Mixer X (crossfade + gapless loop points)
-        run: |
-          sudo bash scripts/build-sdl-mixer-x.sh /usr/local
-          echo "CGO_CFLAGS=-I/usr/local/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L/usr/local/lib" >> "$GITHUB_ENV"
+  # Lint runs alone first, drafts included: the race tests and the three platform builds wait for it, so a lint
+  # failure starts none of them.
+  lint:
+    needs: scope
+    if: needs.scope.outputs.mode != 'none'
+    uses: ./.github/workflows/lint.yml
 
-      - name: go vet
-        run: go vet ./...
+  checks:
+    needs: [scope, lint]
+    if: needs.scope.outputs.mode == 'full'
+    uses: ./.github/workflows/checks.yml
+    with:
+      lint: false
 
-      # PINNED, not "latest". A floating version hands our CI to someone else's
-      # release schedule: 2026.2 landed 2026-08-20 and 2026.2.1 the day after,
-      # and the next push went red on SA4006 that the older staticcheck installed
-      # locally never reported — so it passed every local gate on the way in and
-      # only CI saw it (dfd514d). This job also gates every binary build below,
-      # so an upstream release can block a release mid-flight. Bump this
-      # deliberately: install the same version locally (go install
-      # honnef.co/go/tools/cmd/staticcheck@<version>), clear what it finds, and
-      # move the pin in the same commit.
-      - name: staticcheck
-        uses: dominikh/staticcheck-action@v1
-        with:
-          version: "2026.2.1"
-          install-go: false
+  build:
+    needs: [scope, lint]
+    if: needs.scope.outputs.mode != 'none'
+    uses: ./.github/workflows/build.yml
+    with:
+      smoke-test: ${{ needs.scope.outputs.mode == 'full' }}
 
-      - name: Tests (race detector — §17.8 gate)
-        run: go test -race -timeout 600s -count=1 ./...
-
-      - name: "Tests (lean build — Discord + voice compiled out; nodiscord+novoice stubs must build & pass)"
-        run: go test -tags "nodiscord novoice" -timeout 600s -count=1 ./...
-
-      - name: Benchmarks (alloc gates — §15)
-        run: |
-          go test -run=NONE -bench=. -benchmem -benchtime=200ms -count=1 ./... | tee bench.txt
-          # Gate: the learned resolver path must stay ≤ 1 alloc/op and the
-          # cache hits + render frame at 0 allocs/op.
-          ! grep -E "BenchmarkBuildCandidates_Learned.*	 *[2-9] allocs/op" bench.txt
-          ! grep -E "BenchmarkCacheHit_T[12].*	 *[1-9] allocs/op" bench.txt
-          ! grep -E "BenchmarkRenderFrame.*	 *[1-9] allocs/op" bench.txt
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmarks
-          path: bench.txt
-
-  build-linux:
-    name: Binary (Linux x86_64)${{ matrix.variant.label }}
-    runs-on: ubuntu-latest
-    needs: test
-    strategy:
-      matrix:
-        variant:
-          - { label: "", tags: "", suffix: "" }
-          - { label: " - Discord-free, no voice", tags: "nodiscord novoice", suffix: "-nodiscord" }
+  # Only after a first attempt that ran everything it was going to: a partial re-run
+  # would make the jobs it skipped look unused.
+  clean-caches:
+    name: Remove unused caches
+    needs: [scope, lint, checks, build]
+    # !cancelled(): without a status function, the skipped checks job would skip this too.
+    if: >-
+      !cancelled() && github.run_attempt == 1 && needs.build.result == 'success' &&
+      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
+      (needs.checks.result == 'success' || needs.checks.result == 'skipped') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      - name: Install SDL2 + libwebp + libavif dev packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libwebp-dev libavif-dev libopus-dev libopusfile-dev cmake ninja-build pkg-config
-      - name: Build + install SDL Mixer X (crossfade + gapless loop points)
-        run: |
-          sudo bash scripts/build-sdl-mixer-x.sh /usr/local
-          echo "CGO_CFLAGS=-I/usr/local/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L/usr/local/lib" >> "$GITHUB_ENV"
-      - name: Build
-        run: |
-          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
-      - uses: actions/upload-artifact@v4
-        with:
-          name: asyncao-linux-x86_64${{ matrix.variant.suffix }}
-          path: asyncao
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: bash scripts/clean-caches.sh "$REF" "$GITHUB_RUN_ID"
 
-  build-windows:
-    name: Binary (Windows x86_64)${{ matrix.variant.label }}
-    runs-on: windows-latest
-    needs: test
-    strategy:
-      matrix:
-        variant:
-          - { label: "", tags: "", suffix: "" }
-          - { label: " - Discord-free, no voice", tags: "nodiscord novoice", suffix: "-nodiscord" }
-    defaults:
-      run:
-        shell: msys2 {0}
+  ci-ok:
+    name: ci-ok
+    needs: [scope, lint, checks, build]
+    if: always()
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-pkgconf
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-SDL2
-            mingw-w64-ucrt-x86_64-SDL2_ttf
-            mingw-w64-ucrt-x86_64-libwebp
-            mingw-w64-ucrt-x86_64-libavif
-            mingw-w64-ucrt-x86_64-opus
-            mingw-w64-ucrt-x86_64-opusfile
-            git
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      # setup-go only edits the *Windows* PATH and no longer exports GOROOT
-      # (that stopped at Go 1.9), while the msys2 shell rebuilds a minimal
-      # PATH of its own — so the toolchain is invisible in the build step.
-      # Publish GOROOT via GITHUB_ENV; non-PATH env vars do cross into MSYS2.
-      - name: Expose GOROOT to the MSYS2 shell
-        shell: pwsh
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          "GOROOT=$(go env GOROOT)" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Build + install SDL Mixer X (crossfade + gapless loop points)
-        run: |
-          bash scripts/build-sdl-mixer-x.sh /ucrt64
-          echo "CGO_CFLAGS=-I/ucrt64/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L/ucrt64/lib" >> "$GITHUB_ENV"
-      - name: Build + bundle DLLs
-        run: |
-          export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
-          export CGO_ENABLED=1
-          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o dist/asyncao.exe ./cmd/asyncao
-          # Ship the runtime DLLs next to the exe so it runs anywhere.
-          ldd dist/asyncao.exe | grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do
-            cp "$dll" dist/
-          done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: asyncao-windows-x86_64${{ matrix.variant.suffix }}
-          path: dist/
-
-  build-macos:
-    name: Binary (macOS arm64)${{ matrix.variant.label }}
-    runs-on: macos-latest
-    needs: test
-    strategy:
-      matrix:
-        variant:
-          - { label: "", tags: "", suffix: "" }
-          - { label: " - Discord-free, no voice", tags: "nodiscord novoice", suffix: "-nodiscord" }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      # dylibbundler is needed by scripts/bundle-macos.sh. Ogg-Opus MUSIC
-      # decode/seek comes from the opusfile FORMULA, hard-linked into
-      # libSDL2_mixer by its formula (--enable-music-opus with the shared/dlopen
-      # path disabled); the bare `opus` formula is only the codec (voice chat)
-      # and provides no Ogg demuxing/seeking. brew already pulls opusfile as an
-      # sdl2_mixer dependency — naming it here pins that requirement explicitly
-      # (release.yml installs the same list — keep them consistent).
-      - name: Install SDL2 + libwebp + libavif
-        run: brew install sdl2 sdl2_ttf webp libavif opus opusfile cmake ninja pkg-config dylibbundler
-      - name: Build + install SDL Mixer X (crossfade + gapless loop points)
-        run: |
-          bash scripts/build-sdl-mixer-x.sh "$(brew --prefix)"
-          echo "CGO_CFLAGS=-I$(brew --prefix)/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L$(brew --prefix)/lib" >> "$GITHUB_ENV"
-      - name: Build
-        run: |
-          export CGO_ENABLED=1
-          # Embed NSHighResolutionCapable so the bare binary (no .app/Info.plist)
-          # still gets a 2x Retina backing store on macOS instead of 1x compat mode.
-          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w -extldflags=-Wl,-sectcreate,__TEXT,__info_plist,$PWD/packaging/macos/Info.plist" -o asyncao ./cmd/asyncao
-      # Run the release-time dylib bundler here too, BLOCKING, purely for its
-      # built-in otool assertion: if a new dependency ever links against a
-      # Homebrew path that the bundler can't rewrite, this fails the build and
-      # catches the "Library not loaded on a clean Mac" regression before release.
-      - name: Bundle dylibs + assert no Homebrew paths remain
-        run: |
-          bash scripts/bundle-macos.sh asyncao macos-stage
-      - uses: actions/upload-artifact@v4
-        with:
-          name: asyncao-macos-arm64${{ matrix.variant.suffix }}
-          path: asyncao
-
-  # The bare Linux binary above runs only where SDL2/webp/avif are already
-  # installed. This job packages a self-contained AppImage — one executable that
-  # bundles the runtime libraries — so non-Windows users get a download that
-  # "just works" like the Windows DLL bundle does. (Default variant; the
-  # Discord-free flavor remains available as the bare binary artifact.)
-  appimage-linux:
-    name: AppImage (Linux x86_64)${{ matrix.variant.label }}
-    runs-on: ubuntu-latest
-    needs: test
-    strategy:
-      matrix:
-        variant:
-          - { label: "", tags: "", suffix: "", output: "AsyncAO-x86_64.AppImage" }
-          - { label: " - Discord-free, no voice", tags: "nodiscord novoice", suffix: "-nodiscord", output: "AsyncAO-nodiscord-x86_64.AppImage" }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      - name: Install SDL2 + libwebp + libavif dev packages + AppImage tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libwebp-dev libavif-dev libopus-dev libopusfile-dev cmake ninja-build pkg-config \
-            patchelf desktop-file-utils
-      - name: Build + install SDL Mixer X (crossfade + gapless loop points)
-        run: |
-          sudo bash scripts/build-sdl-mixer-x.sh /usr/local
-          echo "CGO_CFLAGS=-I/usr/local/include $(pkg-config --cflags sdl2)" >> "$GITHUB_ENV"
-          echo "CGO_LDFLAGS=-L/usr/local/lib" >> "$GITHUB_ENV"
-      - name: Build the binary
-        run: |
-          export CGO_ENABLED=1
-          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
-      - name: Package the AppImage
-        run: |
-          chmod +x scripts/build-appimage.sh
-          APPIMAGE_OUTPUT="${{ matrix.variant.output }}" scripts/build-appimage.sh ./asyncao
-      - uses: actions/upload-artifact@v4
-        with:
-          name: asyncao-linux-x86_64-AppImage${{ matrix.variant.suffix }}
-          path: dist/${{ matrix.variant.output }}
+          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$NEEDS"

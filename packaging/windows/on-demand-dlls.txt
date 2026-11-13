@@ -1,0 +1,3 @@
+libopusfile-0.dll
+vulkan-1.dll
+vulkan_lvp.dll

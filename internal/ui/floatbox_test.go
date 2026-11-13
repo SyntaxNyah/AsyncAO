@@ -3,9 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestExtrasBoxVisibility pins when the floating Extras box draws: opened, in a
@@ -16,16 +15,16 @@ func TestExtrasBoxVisibility(t *testing.T) {
 	a.room = &courtroom.Courtroom{}
 
 	a.showWidgets = true
-	if !a.extrasBoxVisible() {
+	if !(a.showWidgets && a.extrasSurfaceLive()) {
 		t.Fatal("open box in a live courtroom must be visible")
 	}
-	a.showIni = true // a blocking courtroom popup (showEvid is non-blocking now, #5)
-	if a.extrasBoxVisible() {
+	a.showJukebox = true // a blocking courtroom popup (showEvid is non-blocking now, #5)
+	if a.showWidgets && a.extrasSurfaceLive() {
 		t.Error("a blocking popup must hide the box (it reappears when that closes)")
 	}
-	a.showIni = false
+	a.showJukebox = false
 	a.showWidgets = false
-	if a.extrasBoxVisible() {
+	if a.showWidgets && a.extrasSurfaceLive() {
 		t.Error("a closed box must not be visible")
 	}
 }
@@ -342,7 +341,7 @@ func TestTornWidgetPersistence(t *testing.T) {
 	if _, ok := a.classicOv[tornWidgetSlotKey(id)]; !ok {
 		t.Fatalf("persist did not write the torn slot into classicOv")
 	}
-	if _, ok := a.d.Prefs.ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; !ok {
+	if _, ok := a.d.Prefs.Load().ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; !ok {
 		t.Fatalf("persist did not write the torn slot to prefs")
 	}
 
@@ -373,7 +372,7 @@ func TestTornWidgetPersistence(t *testing.T) {
 	if _, ok := a.classicOv[tornWidgetSlotKey(id)]; ok {
 		t.Fatalf("reattach left the slot in classicOv")
 	}
-	if _, ok := a.d.Prefs.ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; ok {
+	if _, ok := a.d.Prefs.Load().ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; ok {
 		t.Fatalf("reattach left the slot in prefs")
 	}
 	a.extrasTornRebuilt = false

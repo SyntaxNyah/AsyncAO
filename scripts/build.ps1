@@ -20,17 +20,19 @@ $env:PKG_CONFIG_PATH = "$msys\lib\pkgconfig"
 
 $flags = @()
 if ($Release) {
-    # Stamp the build version for the self-update check (M13) from the git tag,
-    # e.g. v1.2.3 or v1.2.3-5-gabc1234-dirty. No tag -> stays "dev" (a dev build
-    # never self-updates). Dev (non -Release) builds are intentionally unstamped.
+    # Stamp the version only when HEAD is exactly a tag. Anything else stays "dev",
+    # which never self-updates: a describe string like v2.0.1-470-gabc reads as a
+    # prerelease of v2.0.1 and would be offered the latest release as an update.
     # -H=windowsgui links a GUI-subsystem exe so no console window opens on
     # launch (release builds only; dev builds keep the console for logs).
     $ldflags = "-s -w -H=windowsgui"
-    $ver = (git describe --tags --dirty 2>$null)
+    $ver = (git describe --tags --exact-match 2>$null)
     if ($LASTEXITCODE -eq 0 -and $ver) {
         $ldflags = "$ldflags -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=$ver"
         Write-Host "Stamping version $ver"
     }
+    $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $ldflags = "$ldflags -X github.com/SyntaxNyah/AsyncAO/internal/update.BuildTime=$built"
     $flags = @("-pgo=auto", "-trimpath", "-ldflags", $ldflags)
 }
 
@@ -42,13 +44,27 @@ Write-Host "Built bin\asyncao.exe"
 # Stage the runtime DLL closure next to the exe so it runs without MSYS2 on PATH.
 # Walked recursively from the exe's import table (objdump) and resolved against
 # the UCRT64 bin, rather than a hardcoded list: that list silently rotted once
-# (SDL2_mixer pulled in libFLAC/libjpeg-8, the list didn't, the dev build broke
+# (the mixer pulled in libFLAC/libjpeg-8, the list didn't, the dev build broke
 # with "DLL missing"). This computes the exact set, so it can't drift again.
-# CI's release path does the equivalent with `ldd`.
+# scripts/package.sh does the equivalent with `ldd` for CI and releases.
+# SDL3_mixer loads its codec libraries on demand, so no import table names
+# them: they are seeded here. Opus (AO's main music format) needs opusfile;
+# Vorbis, MP3, FLAC and WAV are built into SDL3_mixer. MIDI and the LGPL
+# tracker codecs stay out, as they were with the SDL Mixer X build.
+# SDL loads the Vulkan loader on demand too, and the loader loads lavapipe (the
+# software Vulkan driver, for machines without a GPU driver) through the
+# manifest written below; the walk then stages lavapipe's LLVM and SPIRV-Tools.
+$onDemand = Get-Content "$PSScriptRoot\..\packaging\windows\on-demand-dlls.txt"
 $seen = @{}
 $queue = New-Object System.Collections.Generic.Queue[string]
 $queue.Enqueue("bin\asyncao.exe")
 $staged = 0
+foreach ($d in $onDemand) {
+    $seen[$d.ToLower()] = $true
+    Copy-Item (Join-Path "$msys\bin" $d) bin\ -Force
+    $queue.Enqueue((Join-Path "$msys\bin" $d))
+    $staged++
+}
 while ($queue.Count -gt 0) {
     $f = $queue.Dequeue()
     $imports = & "$msys\bin\objdump.exe" -p $f 2>$null |
@@ -67,5 +83,12 @@ while ($queue.Count -gt 0) {
     }
 }
 Write-Host "Runtime DLLs staged in bin\ ($staged)"
+
+# lavapipe's manifest, pointing at the staged DLL. msys2's own copy points into
+# the msys2 tree. A relative path resolves against the manifest's folder, and
+# the client passes this file to the Vulkan loader (cmd/asyncao/softwaregpu_windows.go).
+$lvpManifest = Get-Content "$msys\share\vulkan\icd.d\lvp_icd.x86_64.json" -Raw | ConvertFrom-Json
+$lvpManifest.ICD.library_path = ".\vulkan_lvp.dll"
+[IO.File]::WriteAllText((Join-Path (Resolve-Path bin) "lvp_icd.x86_64.json"), ($lvpManifest | ConvertTo-Json -Depth 4))
 
 if ($Run) { & bin\asyncao.exe }

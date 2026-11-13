@@ -95,11 +95,11 @@ func TestAreaWrappedSlotsAreIndependent(t *testing.T) {
 	}
 }
 
-// TestAreaRowLineHNGeneralizesTwoLine pins that areaRowLineHN(fontH, 2) still
-// matches the historical areaRowLineH formula, and grows for taller rows.
+// TestAreaRowLineHNGeneralizesTwoLine pins that areaRowLineHN(fontH, 2) matches the
+// historical two-line area-card formula, and grows for taller rows.
 func TestAreaRowLineHNGeneralizesTwoLine(t *testing.T) {
-	if got, want := areaRowLineHN(17, 2), areaRowLineH(17); got != want {
-		t.Fatalf("areaRowLineHN(17,2) = %d, want %d (must match areaRowLineH)", got, want)
+	if got, want := areaRowLineHN(17, 2), int32(17*2+11); got != want {
+		t.Fatalf("areaRowLineHN(17,2) = %d, want %d (historical font.Height()*2 + 11)", got, want)
 	}
 	if areaRowLineHN(17, 3) <= areaRowLineHN(17, 2) {
 		t.Fatalf("a 3-line row must be taller than a 2-line row")

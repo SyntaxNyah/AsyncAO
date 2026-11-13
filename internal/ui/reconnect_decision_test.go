@@ -10,7 +10,9 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -61,29 +63,39 @@ func TestPumpConnectionReconnectsOnTransportDrop(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
+	conn, err := protocol.Dial(context.Background(), netproxy.Direct(), "ws"+strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer conn.Close()
 
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
 	// Match the applied theme so Disconnect()→ensureThemeForSession is a no-op
 	// (no async theme reload in a headless test), as the kick test does.
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	a.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.conn = conn
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
-		return conn.Send(context.Background(), p)
+		return conn.Send(p)
 	}, "test-hdid")
 
 	// Prod the server into dropping: send one packet, then pump until the drop
 	// lands. The keepalive Ping in pumpConnection also writes, but sending HI
 	// explicitly makes the server's Read return promptly.
-	if err := conn.Send(context.Background(), protocol.NewPacket("HI", "x")); err != nil {
+	if err := conn.Send(protocol.NewPacket("HI", "x")); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -126,27 +138,37 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
+	conn, err := protocol.Dial(context.Background(), netproxy.Direct(), "ws"+strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer conn.Close()
 
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
-	name, _ := a.d.Prefs.Theme()
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
+	name, _ := a.d.Prefs.Load().Theme()
 	a.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.conn = conn
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
-		return conn.Send(context.Background(), p)
+		return conn.Send(p)
 	}, "test-hdid")
 	// The difference from the test above: a courtroom the user is looking at.
 	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
 	a.screen = ScreenCourtroom
 
-	if err := conn.Send(context.Background(), protocol.NewPacket("HI", "x")); err != nil {
+	if err := conn.Send(protocol.NewPacket("HI", "x")); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -187,8 +209,18 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 // the first keepalive/reply records sendErr.
 func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
-	name, _ := a.d.Prefs.Theme()
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
+	name, _ := a.d.Prefs.Load().Theme()
 	a.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
@@ -202,10 +234,10 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 			return
 		}
 		defer ws.CloseNow()
-		<-r.Context().Done()
+		<-ws.CloseRead(context.Background()).Done()
 	}))
 	defer srv.Close()
-	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
+	conn, err := protocol.Dial(context.Background(), netproxy.Direct(), "ws"+strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -215,7 +247,7 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 	sendFails := func(protocol.Packet) error { return context.DeadlineExceeded }
 	a.sess = courtroom.NewSession(sendFails, "test-hdid")
 	// Record a write failure into the session (as a failed keepalive/reply would).
-	a.sess.Ping()
+	a.sess.SendChat(protocol.OutgoingMS{})
 	if a.sess.SendErr() == nil {
 		t.Fatal("test setup: the failing send should have recorded SendErr")
 	}
@@ -238,8 +270,18 @@ func TestPumpConnectionSurfacesHalfDeadWrite(t *testing.T) {
 // close-trigger stand-in (both drop paths gate on shouldAutoReconnect the same way).
 func TestDeliberateDisconnectDoesNotReconnect(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
-	name, _ := a.d.Prefs.Theme()
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
+	name, _ := a.d.Prefs.Load().Theme()
 	a.themeAppliedName = name
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
@@ -250,17 +292,17 @@ func TestDeliberateDisconnectDoesNotReconnect(t *testing.T) {
 			return
 		}
 		defer ws.CloseNow()
-		<-r.Context().Done()
+		<-ws.CloseRead(context.Background()).Done()
 	}))
 	defer srv.Close()
-	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
+	conn, err := protocol.Dial(context.Background(), netproxy.Direct(), "ws"+strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer conn.Close()
 	a.conn = conn
 	a.sess = courtroom.NewSession(func(protocol.Packet) error { return context.DeadlineExceeded }, "test-hdid")
-	a.sess.Ping() // record a write failure so pumpConnection takes the SendErr branch
+	a.sess.SendChat(protocol.OutgoingMS{}) // record a write failure so pumpConnection takes the SendErr branch
 
 	a.deliberateClose = true // the user meant to leave
 	a.pumpConnection()

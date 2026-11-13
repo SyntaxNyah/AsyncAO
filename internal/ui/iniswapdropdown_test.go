@@ -1,36 +1,25 @@
 package ui
 
 import (
-	"os"
-	"strings"
 	"testing"
 )
 
-// TestIniswapCurrentIndexIsAbsolute pins the index mapping, which is the one
-// destructive thing in this feature: it feeds RemoveWardrobe, which PERSISTS.
-//
-// The tempting implementation is to scan choices[1:] (skipping the own-folder row)
-// and use the loop variable, because index 0 is special. That silently returns
-// i-1, so clicking the X deletes the wardrobe entry ABOVE the one displayed —
-// a saved favourite the user never selected. AO2 scans the whole list from 0 and
-// uses the index directly (courtroom.cpp:5340-5347).
+// TestIniswapCurrentIndexIsAbsolute pins the index mapping: AO2 scans the whole list from 0 and uses the index
+// directly (courtroom.cpp:5340-5347), and an unmatched or empty worn folder is the own folder, row 0.
 func TestIniswapCurrentIndexIsAbsolute(t *testing.T) {
-	choices := []string{"Phoenix", "Edgeworth", "Godot", "Franziska"}
+	choices := []string{"Phoenix", "Edgeworth"}
 	for _, tc := range []struct {
 		active string
 		want   int
 	}{
 		{"Phoenix", 0},
 		{"Edgeworth", 1},
-		{"Godot", 2},
-		{"Franziska", 3},
-		{"godot", 2}, // folder lookups are case-folded
-		{"", 0},      // wearing nothing = own folder
-		{"Maya", 0},  // absent → own folder, never a stale index
+		{"edgeworth", 1}, // folder lookups are case-folded
+		{"", 0},          // wearing nothing = own folder
+		{"Maya", 0},      // absent → own folder, never a stale index
 	} {
 		if got := iniswapCurrentIndex(choices, tc.active); got != tc.want {
-			t.Errorf("iniswapCurrentIndex(%q) = %d, want %d — this index deletes a saved wardrobe entry",
-				tc.active, got, tc.want)
+			t.Errorf("iniswapCurrentIndex(%q) = %d, want %d", tc.active, got, tc.want)
 		}
 	}
 	if got := iniswapCurrentIndex(nil, "Phoenix"); got != 0 {
@@ -38,73 +27,32 @@ func TestIniswapCurrentIndexIsAbsolute(t *testing.T) {
 	}
 }
 
-// TestBuildIniswapChoicesKeepsTheWornFolder is the hole review found: a.iniChar
-// can hold a folder that is NOT in the saved wardrobe, because wearFromMenu takes
-// entries from the SERVER's iniswap.txt and never calls AddWardrobe.
-//
-// Without the trailing entry, iniswapCurrentIndex finds no match and falls back
-// to 0 — so the dropdown would display the player's OWN character while they were
-// visibly wearing something else, and iniswap_remove (gated on cur != 0) would
-// hide itself exactly when it is needed. AO2 cannot hit this: its combobox is
-// editable with InsertAtBottom and it rewrites iniswaps.ini on every change, so
-// what you wear is always in the list.
-func TestBuildIniswapChoicesKeepsTheWornFolder(t *testing.T) {
-	// Worn folder absent from the wardrobe → appended, and findable.
-	got := buildIniswapChoices(nil, "Phoenix", []string{"Edgeworth"}, "ServerOnlyChar")
-	want := []string{"Phoenix", "Edgeworth", "ServerOnlyChar"}
-	if len(got) != len(want) {
-		t.Fatalf("choices = %v, want %v", got, want)
+// TestBuildIniswapChoicesListsOwnThenWorn pins the list: the own folder first (AO2 prepends it,
+// courtroom.cpp:5331), then the worn folder, so the dropdown shows what is worn and iniswap_remove is offered.
+func TestBuildIniswapChoicesListsOwnThenWorn(t *testing.T) {
+	got := buildIniswapChoices(nil, "Phoenix", "Godot")
+	if len(got) != 2 || got[0] != "Phoenix" || got[1] != "Godot" {
+		t.Fatalf("choices = %v, want [Phoenix Godot]", got)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("choices = %v, want %v", got, want)
-		}
+	if idx := iniswapCurrentIndex(got, "Godot"); idx != 1 {
+		t.Errorf("the worn folder resolved to %d, want 1: the remove button would hide", idx)
 	}
-	if idx := iniswapCurrentIndex(got, "ServerOnlyChar"); idx == 0 {
-		t.Error("a worn-but-unsaved folder resolved to index 0 — the dropdown would show the " +
-			"player's own character and the remove button would hide itself")
-	}
-
-	// Own folder is always index 0 (AO2 prepends it, courtroom.cpp:5331).
-	if got[0] != "Phoenix" {
-		t.Errorf("index 0 = %q, want the player's own folder", got[0])
-	}
-
-	// The own folder must not also appear as a wardrobe row, in either casing —
-	// AO2 removeDuplicates'es, and a duplicate would make "remove" offerable on
-	// the player's own character.
-	dup := buildIniswapChoices(nil, "Phoenix", []string{"phoenix", "Edgeworth", "Edgeworth"}, "")
-	if len(dup) != 2 || dup[0] != "Phoenix" || dup[1] != "Edgeworth" {
-		t.Errorf("choices = %v, want the own folder once and Edgeworth once", dup)
-	}
-
-	// Wearing the own folder adds nothing.
-	own := buildIniswapChoices(nil, "Phoenix", nil, "Phoenix")
-	if len(own) != 1 {
+	// Wearing the own folder, in either casing, adds nothing: a duplicate would offer remove on the own character.
+	if own := buildIniswapChoices(nil, "Phoenix", "phoenix"); len(own) != 1 {
 		t.Errorf("choices = %v, want just the own folder", own)
 	}
-
-	// No character claimed yet → empty, which is AO2 hiding the pair outright
-	// (courtroom.cpp:5323-5328 on m_cid == -1).
-	if none := buildIniswapChoices(nil, "", []string{"Edgeworth"}, "Edgeworth"); len(none) != 0 {
+	// No character claimed yet → empty, which is AO2 hiding the pair (courtroom.cpp:5323-5328 on m_cid == -1).
+	if none := buildIniswapChoices(nil, "", "Godot"); len(none) != 0 {
 		t.Errorf("choices = %v, want empty with no character claimed", none)
 	}
 }
 
-// TestBuildIniswapChoicesReusesItsBuffer pins the allocation contract. The draw
-// site calls the ensure wrapper every frame; the pure builder must refill the
-// caller's slice rather than returning a fresh one.
+// TestBuildIniswapChoicesReusesItsBuffer pins the allocation contract: the builder refills the caller's slice.
 func TestBuildIniswapChoicesReusesItsBuffer(t *testing.T) {
-	buf := make([]string, 0, 8)
-	buf = buildIniswapChoices(buf, "Phoenix", []string{"Edgeworth", "Godot"}, "")
-	first := &buf[:1][0]
-	buf = buildIniswapChoices(buf, "Phoenix", []string{"Edgeworth", "Godot"}, "")
-	if &buf[:1][0] != first {
-		t.Error("buildIniswapChoices reallocated instead of refilling — it runs behind a " +
-			"per-frame draw site, so the buffer must be reused")
-	}
+	const bufCap = 2
+	buf := make([]string, 0, bufCap)
 	if n := testing.AllocsPerRun(100, func() {
-		buf = buildIniswapChoices(buf, "Phoenix", []string{"Edgeworth", "Godot"}, "")
+		buf = buildIniswapChoices(buf, "Phoenix", "Godot")
 	}); n != 0 {
 		t.Errorf("buildIniswapChoices allocates %v/op into a sized buffer, want 0", n)
 	}
@@ -181,51 +129,5 @@ func TestCharacterChangeClearsTheDeclaredSide(t *testing.T) {
 	}
 	if posRemoveVisible(a.mySide(), a.defaultSide()) {
 		t.Error("pos_remove must be hidden in the window between an iniswap and its char.ini")
-	}
-}
-
-// TestThemedMusicPanelForcesTheTrackList pins the trap in dropping the Volume
-// toggle under a theme: musicVolMode PERSISTS across restarts.
-//
-// Hiding the button alone would strand anyone who left the panel in volume mode
-// and then applied a theme — they would open to a volume view with no control to
-// leave it, because the only way back is the button that is no longer drawn. So
-// themed mode forces the track list rather than merely hiding the toggle.
-//
-// Goes red if the themed branch stops forcing volMode false, or if the draw site
-// starts reading a.musicVolMode directly again instead of the local.
-//
-// The force used to be a `volMode = false` statement inside an `if themed` block
-// and the persist used to sit in the header's own Volume toggle; the debloat
-// turned the first into one guarded initialiser and moved the second to the
-// overflow menu's action table. Both properties still hold, so this asserts them
-// where they now live rather than against the old spellings.
-func TestThemedMusicPanelForcesTheTrackList(t *testing.T) {
-	src, err := os.ReadFile("screens.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(src)
-
-	// The themed panel must resolve to the track list whatever the pref says...
-	if !strings.Contains(body, "a.musicVolMode && !themed") {
-		t.Error("the themed branch no longer forces the track list — a user who left the " +
-			"panel in volume mode and then applied a theme has no control to get back")
-	}
-	// ...and the render must consult the LOCAL, not the persisted field, or the
-	// force is dead code.
-	if !strings.Contains(body, "if volMode {") {
-		t.Error("drawMusicList renders from a.musicVolMode rather than the themed-adjusted " +
-			"local, so forcing it has no effect")
-	}
-	// The user's choice must still be persisted from wherever the control now
-	// lives (musicMenuAct's Volume row). Dropping the write would turn a
-	// themed-only rule into a global behaviour change.
-	menu, err := os.ReadFile("musicheader.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(menu), "a.d.Prefs.SetMusicVolMode(a.musicVolMode)") {
-		t.Error("the Volume view toggle must still persist the user's choice")
 	}
 }

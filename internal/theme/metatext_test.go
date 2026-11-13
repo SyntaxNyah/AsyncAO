@@ -1,12 +1,6 @@
 package theme
 
 // THE METADATA-CAP RULING's gates (v1.90.0 W8).
-//
-// The ruling has two halves and both are load-bearing:
-//   - a metadata value past its cap DEGRADES — the theme loads, the string is
-//     shortened, a note says so;
-//   - a structural value past its cap still REFUSES, naming the line.
-//
 // Every gate here DRIVES the shipped path (ParseSidecar / Sidecar.Bytes /
 // Sidecar.Validate) rather than restating truncMetaRunes, because a mirror-test
 // of a truncation is a second implementation of it and would stay green with the
@@ -147,7 +141,6 @@ func TestMetadataDegradeNeverRewritesTheAuthorsLine(t *testing.T) {
 // TestEveryMetadataFieldDegradesThroughTheOneTable drives ALL of metaTextFields
 // at once: a file with every metadata key over the cap must load, shorten every
 // one of them, and report each by name.
-//
 // It is the seam's encapsulation gate. A field dropped from metaTextFields, or a
 // reader assignment that quietly goes back to the refusing helper, fails here and
 // cannot be argued away as an oversight in one key.
@@ -184,7 +177,6 @@ func TestEveryMetadataFieldDegradesThroughTheOneTable(t *testing.T) {
 
 // TestTheDocumentPublishesExactlyTheMetadataClass pins docs/THEME-FORMAT.md's
 // metadata row against metaTextFields, in BOTH directions.
-//
 // The spec is written so a third party can implement a reader without this
 // source, so "which keys degrade" is a promise; a promise nothing checks drifts,
 // and a third-party writer would then emit a file we refuse for a key our own

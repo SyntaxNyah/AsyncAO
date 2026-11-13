@@ -11,8 +11,8 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -161,11 +161,11 @@ func TestWarmRoom(t *testing.T) {
 // TestTickGifLoadErrorTeardown pins the async-load error path: a load failure
 // tears the export down cleanly — a.gif nil, a.gifExporting false, the error on
 // the warnLine — with nothing to leak (the loading shell holds no capture target
-// or encoder yet, so a failed load can't strand the scale bracket or an ffmpeg).
+// or encoder yet, so a failed load can't strand the scale bracket or an encoder).
 func TestTickGifLoadErrorTeardown(t *testing.T) {
 	a := testTabApp(t)
 	loadCh := make(chan gifLoadResult, gifLoadBuf)
-	a.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "broken.demo", loadPath: "broken.demo", loadKind: exportVideo}
+	a.gif = &gifExportJob{loading: true, loadCh: loadCh, loadName: "broken.demo", loadPath: "broken.demo", loadKind: exportWebP}
 	a.gifExporting = true
 	loadCh <- gifLoadResult{err: errors.New("bad file")}
 
@@ -219,7 +219,7 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
 	a.ctx.Ren = ren
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -240,26 +240,33 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    assets.NewLocalFetcher([]string{t.TempDir()}),
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   assets.NewLocalFetcher([]string{t.TempDir()}),
+		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
+	a.d.Manager.SetFolders([]string{t.TempDir()}, nil)
 
 	// This test isolates the load→WARM transition; turn OFF format auto-detect so
 	// the new pre-warm format-seed phase doesn't interpose (it's covered by
 	// TestExportSeedBeforeWarm). With autodetect off, startSceneExport skips seeding
 	// and the job enters warming directly, exactly as before this phase existed.
-	a.d.Prefs.SetFormatAutoDetect(false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
 
 	// A one-message scene (no StartBg → no audio touched during the transition):
 	// SceneAssets yields this speaker's bg/desk/sprite refs.
@@ -332,7 +339,7 @@ func newWarmHarness(t *testing.T) (*App, *render.TextureStore) {
 	ren, cleanup := newCaptureHarness(t)
 	t.Cleanup(cleanup)
 	a.ctx.Ren = ren
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -348,20 +355,18 @@ func newWarmHarness(t *testing.T) (*App, *render.TextureStore) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    assets.NewLocalFetcher([]string{t.TempDir()}),
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   assets.NewLocalFetcher([]string{t.TempDir()}),
+		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
+	a.d.Manager.SetFolders([]string{t.TempDir()}, nil)
 	// Stand-in for the app's per-frame channel drains: soak everything the
 	// submitted probes emit (transient errors, decodes, warnings) so pool
 	// workers can never block on a full channel. The test asserts on T1

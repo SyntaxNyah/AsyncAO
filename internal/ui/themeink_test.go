@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -292,7 +292,7 @@ func TestElemInkOnlyOnCanvas(t *testing.T) {
 // only reason this feature needs no preference of its own.
 func TestThemeFontsOffClearsInk(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetThemeFonts(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false })
 	th := loadAceAttorney2x(t)
 	res := &themeApply{}
 	res.buildThemeFontTable(th, nil)
@@ -313,7 +313,17 @@ func TestThemeFontsOffClearsInk(t *testing.T) {
 // theme's palette too.
 func TestElemInkSurvivesAUserFontOverride(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetDyslexiaFont(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DyslexiaFont =
+
+			true
+
+	})
+
 	th := loadAceAttorney2x(t)
 	res := &themeApply{}
 	res.buildThemeFontTable(th, nil)

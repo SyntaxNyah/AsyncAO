@@ -11,7 +11,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -32,14 +31,16 @@ func buildManager(t *testing.T, source assets.Fetcher, localMode bool) (*assets.
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
-		Source: source, LocalMode: localMode, Pool: pool, Decoder: decoder,
+		Source: source, Decoder: decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
+		mgr.SetFolders(lf.Mounts(), nil)
+	}
 	return mgr, resolver
 }
 
@@ -72,7 +73,7 @@ func TestExportReplayRoundTrip(t *testing.T) {
 		r, _ := strings.CutPrefix(base, origin)
 		return r + config.ExtWebP
 	}
-	bgPart, deskPart := courtroom.PositionScene("wit")
+	bgPart, deskPart := "witnessempty", "stand" // legacy art; the export bundles every name and each name's desk
 	idleBytes := []byte("PHOENIX-IDLE")
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteIdle)), idleBytes)
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteTalk)), []byte("PHOENIX-TALK"))
@@ -130,7 +131,7 @@ func TestExportNestedBackgroundSubfolder(t *testing.T) {
 		return r + config.ExtWebP
 	}
 	const nestedBg = "cases/case1"
-	bgPart, deskPart := courtroom.PositionScene("wit")
+	bgPart, deskPart := "witnessempty", "stand" // legacy art; the export bundles every name and each name's desk
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteIdle)), []byte("IDLE"))
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteTalk)), []byte("TALK"))
 	writeFixture(t, srcDir, rel(urls.Background(nestedBg, bgPart)), []byte("BG"))
@@ -182,7 +183,7 @@ func TestExportDecodesBundleNames(t *testing.T) {
 	// raw-first); the export is what must decode.
 	writeFixture(t, srcDir, rel(urls.Emote(char, "normal", courtroom.EmoteIdle)), idle)
 	writeFixture(t, srcDir, rel(urls.Emote(char, "normal", courtroom.EmoteTalk)), []byte("TALK"))
-	bgPart, deskPart := courtroom.PositionScene("wit")
+	bgPart, deskPart := "witnessempty", "stand" // legacy art; the export bundles every name and each name's desk
 	writeFixture(t, srcDir, rel(urls.Background("gs4", bgPart)), []byte("BG"))
 	writeFixture(t, srcDir, rel(urls.Background("gs4", deskPart)), []byte("DESK"))
 	srcMgr, _ := buildManager(t, srcLocal, true)
@@ -236,6 +237,30 @@ func TestDiskPathDecodesAndClamps(t *testing.T) {
 	for in, want := range cases {
 		if got := DiskPath(in); got != want {
 			t.Errorf("DiskPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestWriteAssetGuardsByPathSegments: only a whole ".." segment can traverse, so a
+// name that merely contains ".." is a legal file, while a drive or stream name
+// (anything with ':') must never reach the filesystem.
+func TestWriteAssetGuardsByPathSegments(t *testing.T) {
+	const (
+		legal     = "characters/Mr..Edgeworth/a..b.png"
+		driveName = "C:/escape.png"
+		decoded   = "characters/a%5C..%5C..%5Cescape.png"
+	)
+	data := []byte("x")
+	dir := t.TempDir()
+	if err := WriteAsset(dir, legal, data); err != nil {
+		t.Fatalf("legal name %q refused: %v", legal, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(legal))); err != nil {
+		t.Fatalf("legal name was not written: %v", err)
+	}
+	for _, bad := range []string{driveName, decoded} {
+		if err := WriteAsset(dir, bad, data); err == nil {
+			t.Errorf("unsafe name %q was written", bad)
 		}
 	}
 }

@@ -5,7 +5,8 @@ import (
 	"image"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // previewFixtureImage builds a small opaque RGBA fixture — a stand-in for
@@ -21,14 +22,12 @@ func previewFixtureImage(w, h int) *image.RGBA {
 // --- the "closed = free" contract -------------------------------------------
 
 // TestPreviewWindowClosedPresentIsZeroAlloc is the structural half of the
-// "closed = free" rule for the preview window — the SAME pattern as
-// internal/assets/mountserve_test.go's TestNoMountsIsExactlyOneAtomicLoad for
-// local mounts: with no window open, the per-frame touch point the main loop
+// "closed = free" rule for the preview window: with no window open, the per-frame touch point the main loop
 // calls (Present) must resolve to a nil check and stop, touching no SDL call
 // and allocating nothing. Deliberately needs no sdl.Init at all — that is
 // the point: a closed PreviewWindow never touches SDL.
 func TestPreviewWindowClosedPresentIsZeroAlloc(t *testing.T) {
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if pw.IsOpen() {
 		t.Fatal("a freshly constructed PreviewWindow reports open")
 	}
@@ -42,14 +41,10 @@ func TestPreviewWindowClosedPresentIsZeroAlloc(t *testing.T) {
 }
 
 // BenchmarkPreviewWindowPresentClosed / BenchmarkPreviewWindowPresentOpen are
-// the closed-vs-open comparison pair, modeled directly on
-// internal/assets/mountserve_test.go's BenchmarkActiveMountLayerNoMounts /
-// BenchmarkActiveMountLayerConfigured. Run together (same process, same
+// the closed-vs-open comparison pair. Run together (same process, same
 // machine) so the ratio is the meaningful number, not either absolute:
-//
-//	go test ./internal/render/... -run NONE -bench PreviewWindowPresent -benchmem
 func BenchmarkPreviewWindowPresentClosed(b *testing.B) {
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -60,7 +55,7 @@ func BenchmarkPreviewWindowPresentClosed(b *testing.B) {
 func BenchmarkPreviewWindowPresentOpen(b *testing.B) {
 	_, cleanup := newHeadlessRenderer(b) // sdl.Init(dummy) + a throwaway main-style window/renderer
 	defer cleanup()
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("bench-preview", 320, 240); err != nil {
 		b.Skipf("preview window unavailable: %v", err)
 	}
@@ -86,7 +81,7 @@ func TestPreviewWindowOpenCloseLifecycle(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t) // sdl.Init(dummy) + a throwaway main-style window/renderer
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("test-preview", 320, 240); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -129,7 +124,7 @@ func TestPreviewWindowSetFrameRespectsBudget(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("test-preview-budget", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -181,7 +176,7 @@ func TestPreviewWindowShowAnimFrameCachesAfterFirstPass(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("test-preview-anim-cache", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -215,7 +210,7 @@ func TestPreviewWindowShowAnimFrameInvalidatesOnBaseOrSourceChange(t *testing.T)
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("test-preview-anim-invalidate", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -270,7 +265,7 @@ func TestPreviewWindowShowAnimFrameRespectsCacheBudget(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("test-preview-anim-budget", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -326,18 +321,6 @@ func TestPreviewWindowShowAnimFrameRespectsCacheBudget(t *testing.T) {
 
 // TestPreviewWindowShowAnimFrameFailedSwitchClearsTheOldPick pins the one
 // case where a stale frame could outlive the pick it belongs to.
-//
-// A pick that OVERFLOWED the aggregate cache budget is displayed with
-// texIsCached false — the display slot owns that texture outright, and
-// animFrames never held it. If the next pick's very first fill then FAILS
-// (readTexturePixels has a documented failure mode: a backend without
-// render-target support, or a transient device loss), the identity fields
-// have already moved to the new pick. A resetAnimCache that cleared the
-// display slot only in the cache-owned case would leave the window PAINTING
-// THE PREVIOUS EMOTE under the new pick's identity, and the split would
-// stick: internal/ui marks a pick fed before the fill that might fail, so
-// nothing retries until the user picks a third, different emote.
-//
 // Delete the `p.tex != nil && !p.texIsCached` destroy or the unconditional
 // clear that follows it in resetAnimCache and this test fails on the
 // "still displaying the previous pick" assertion.
@@ -345,7 +328,7 @@ func TestPreviewWindowShowAnimFrameFailedSwitchClearsTheOldPick(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("test-preview-anim-stale", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -400,7 +383,7 @@ func TestPreviewWindowShowAnimFrameFailedSwitchClearsTheOldPick(t *testing.T) {
 // documented "closed = free, no-op" contract: a closed window must not call
 // fill at all, and must not error.
 func TestPreviewWindowShowAnimFrameClosedIsNoOp(t *testing.T) {
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	fillCalls := 0
 	fill := previewAnimFillCounter(32, 32, &fillCalls)
 	if err := pw.ShowAnimFrame("base", &TexturePage{}, 0, fill); err != nil {
@@ -416,12 +399,10 @@ func TestPreviewWindowShowAnimFrameClosedIsNoOp(t *testing.T) {
 // for, modeled on BenchmarkPreviewWindowPresentClosed/Open: run together so
 // the RATIO (a cache hit must be dramatically cheaper than a fill+upload) is
 // the meaningful evidence, not either absolute.
-//
-//	go test ./internal/render/... -run NONE -bench PreviewWindowShowAnimFrame -benchmem
 func BenchmarkPreviewWindowShowAnimFrameCacheHit(b *testing.B) {
 	_, cleanup := newHeadlessRenderer(b)
 	defer cleanup()
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("bench-preview-anim-hit", 320, 240); err != nil {
 		b.Skipf("preview window unavailable: %v", err)
 	}
@@ -446,7 +427,7 @@ func BenchmarkPreviewWindowShowAnimFrameCacheHit(b *testing.B) {
 func BenchmarkPreviewWindowShowAnimFrameCacheMiss(b *testing.B) {
 	_, cleanup := newHeadlessRenderer(b)
 	defer cleanup()
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("bench-preview-anim-miss", 320, 240); err != nil {
 		b.Skipf("preview window unavailable: %v", err)
 	}
@@ -472,7 +453,7 @@ func TestPreviewWindowCloseEventClosesItself(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.Open("test-preview-close", 64, 64); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -493,7 +474,7 @@ func TestPreviewWindowOpenAtPlacesTheWindow(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.OpenAt("test-preview-openat", 111, 222, 320, 240); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -517,7 +498,7 @@ func TestPreviewWindowOpenAtPlacesTheWindow(t *testing.T) {
 // "no window" apart from a legitimate (0,0) rect without a separate bool of
 // its own.
 func TestPreviewWindowPositionSizeClosedReportNotOK(t *testing.T) {
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if _, _, ok := pw.Position(); ok {
 		t.Error("Position() ok=true on a never-opened window")
 	}
@@ -540,7 +521,7 @@ func TestPreviewWindowLastRectSurvivesItsOwnClose(t *testing.T) {
 	_, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 
-	pw := NewPreviewWindow()
+	pw := NewPreviewWindow(host.OpenExtraWindow)
 	if err := pw.OpenAt("test-preview-lastrect", 50, 60, 300, 200); err != nil {
 		t.Skipf("preview window unavailable: %v", err)
 	}
@@ -630,5 +611,16 @@ func TestPreviewFitRectDegenerateInputsFillTheWindow(t *testing.T) {
 		if got.W != 320 || got.H != 240 {
 			t.Errorf("previewFitRect(320,240,%d,%d) = %+v, want the whole 320x240 window", c.srcW, c.srcH, got)
 		}
+	}
+}
+
+func TestPreviewWindowOpenFailureStaysClosed(t *testing.T) {
+	want := errors.New("no window")
+	pw := NewPreviewWindow(func(string, int32, int32) (*sdl.Window, *sdl.Renderer, error) { return nil, nil, want })
+	if err := pw.Open("preview", 1, 1); !errors.Is(err, want) {
+		t.Errorf("got %v, want %v", err, want)
+	}
+	if pw.IsOpen() {
+		t.Error("a failed open left the preview open")
 	}
 }

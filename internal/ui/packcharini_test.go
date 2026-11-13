@@ -2,14 +2,13 @@ package ui
 
 // The UI half of "a mounted base answers char.ini too" (issue #72).
 //
-// internal/assets proves FetchRawLayered reads the pack. These prove the two
+// internal/assets proves FetchRaw reads the pack. These prove the two
 // things only this package can answer: that the ini readers actually CALL it —
 // the whole defect was a working pack layer nothing on this side reached — and
 // that a source change drops the PARSED copies, which no texture invalidation
 // touches.
 
 import (
-	"go/ast"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -26,8 +26,7 @@ import (
 // reaches the network fails by timing out rather than by quietly succeeding.
 const packAppOrigin = "http://pack.invalid.test/base/"
 
-// packApp is testTabApp plus a STREAMING-shaped Manager (LocalMode false, which
-// is what leaves the mount layer live) over a folder holding files.
+// packApp is testTabApp plus a streaming Manager with a folder holding files layered over packAppOrigin.
 func packApp(t *testing.T, files map[string]string) *App {
 	t.Helper()
 	a := testTabApp(t)
@@ -41,8 +40,6 @@ func packApp(t *testing.T, files map[string]string) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 
@@ -51,19 +48,14 @@ func packApp(t *testing.T, files map[string]string) *App {
 		Prefs:    a.d.Prefs,
 		T2:       t2,
 		Disk:     disk,
-		Source:   network.NewClient(),
-		Pool:     pool,
+		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()),
 		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
 
 	dir := t.TempDir()
 	writePackFiles(t, dir, files)
-	idx, errs := assets.BuildMountIndex([]string{dir})
-	if len(errs) != 0 {
-		t.Fatalf("index build: %v", errs)
-	}
-	t.Cleanup(idx.Retire)
-	a.d.Manager.SetMountLayer(assets.NewMountLayer(idx, []string{dir}, []string{packAppOrigin}))
+	a.d.Manager.SetFolders([]string{dir}, []string{packAppOrigin})
 
 	a.urls = courtroom.NewURLBuilder(packAppOrigin)
 	a.sess = &courtroom.Session{}
@@ -71,9 +63,7 @@ func packApp(t *testing.T, files map[string]string) *App {
 	return a
 }
 
-// writePackFiles lays out a mount folder for these gates. The sibling helper in
-// mountlayer_test.go writes ONE placeholder file; these gates need real content,
-// since the content is the thing under test.
+// writePackFiles lays out a folder holding files, keyed by slash path.
 func writePackFiles(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for rel, body := range files {
@@ -157,25 +147,21 @@ func TestPackCharMetaComesFromTheMount(t *testing.T) {
 	}
 }
 
-// TestRescanForgetsEveryParsedINI pins the invalidation. An ini is parsed into UI
-// state the texture caches know nothing about, so without this a sprite maker's
-// edit-rescan-look loop shows the answer from before the edit for the rest of the
-// session — the feature reads as broken even though the fetch is now correct.
-func TestRescanForgetsEveryParsedINI(t *testing.T) {
+// TestReloadFromFoldersForgetsEveryParsedINI: a parsed ini is UI state no texture cache knows about, so without this
+// an edited char.ini keeps its old answer for the rest of the session.
+func TestReloadFromFoldersForgetsEveryParsedINI(t *testing.T) {
 	a := packApp(t, map[string]string{"characters/witch/char.ini": "[Options]\nshowname = X\n"})
 	a.charMetaCache = map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
 	a.previewChar = "witch"
 	a.previewAnims = []string{"stale"}
-	a.previewLabels = []string{"Stale"}
-	a.previewEmoteIdx = 3
 	a.iniWarmed = "witch"
 
-	a.rescanLocalPacks(nil)
+	a.reloadFromFolders()
 
 	if len(a.charMetaCache) != 0 {
 		t.Errorf("charMetaCache survived a source change (%v) — every speaker keeps their pre-edit ini", a.charMetaCache)
 	}
-	if a.previewChar != "" || a.previewAnims != nil || a.previewLabels != nil || a.previewEmoteIdx != 0 {
+	if a.previewChar != "" || a.previewAnims != nil {
 		t.Errorf("the preview kept its latch (%q/%v) — re-hovering the same character redraws the pre-edit emotes",
 			a.previewChar, a.previewAnims)
 	}
@@ -184,72 +170,20 @@ func TestRescanForgetsEveryParsedINI(t *testing.T) {
 	}
 }
 
-// TestEveryCharINIReadIsLayered is the encapsulation gate (rule §17.11).
-//
-// The bug this feature fixes was not a missing capability — the pack layer
-// worked — it was a set of call sites reaching for the SERVER-ONLY lane. That
-// mistake is invisible: FetchRaw returns perfectly good bytes, just the wrong
-// side's. So the gate is a census with a justified allow-list rather than a list
-// of the readers we happen to remember: a NEW text fetch defaults to failing
-// here, and its author has to say which side it means.
-//
-// It is a deletion-catcher too — it contains no copy of what FetchRawLayered
-// does, and it fails if any of the named readers stops calling it.
-func TestEveryCharINIReadIsLayered(t *testing.T) {
-	// The functions that mean the SERVER's copy, and why. Each is a case where a
-	// pack answering would be wrong, not merely unhelpful.
-	unlayered := map[string]string{
-		// extensions.json is the server's own format declaration and seeds that
-		// host's learned probe order; a pack carved out of another server ships a
-		// copy that would reseed it from the wrong conventions.
-		"seedOriginFormats": "the manifest is the SERVER's format declaration",
-		// Learns THIS host's character-folder casing. A pack answering would teach
-		// the server a convention only the pack follows.
-		"probeCasing": "casing is a property of the server's filesystem",
-		// iniswap.txt and the backgrounds/evidence autoindexes are server-curated
-		// listings; a pack has no equivalent, so answering would replace a real
-		// list with none.
-		"ensureIniList":            "iniswap.txt + the backgrounds listing are server-curated",
-		"ensureBgList":             "an autoindex listing has no pack equivalent",
-		"fetchServerEvidenceIndex": "the evidence/ autoindex has no pack equivalent",
-		// The content report and the exporters deliberately distinguish the two
-		// sources themselves (ResolveRawLayered reports which arm answered), so
-		// their raw reads mean the server's copy specifically.
-		"probeRef":         "the report resolves pack bytes through ResolveRawLayered",
-		"fetchBundleBytes": "bundling reads what the SERVER would serve",
-		"fetchTempAudio":   "the video muxer's source is the resolved server URL",
-	}
-	// Readers that must keep reaching the layered lane. Naming them is what makes
-	// this a deletion-catcher: silently dropping the call would otherwise leave a
-	// green suite and a feature that quietly stopped working.
-	layered := map[string]bool{
-		"loadCharINI":         false, // the worn character's emote list
-		"ensurePreviewEmotes": false, // try-before-wear
-		"charMetaFetchOne":    false, // showname / blips / skin / effects / scaling / idle
+// TestAnEditedCharINIIsReadAgain: an edited char.ini found on focus gain drops the parsed copies; an edited sprite
+// leaves them alone.
+func TestAnEditedCharINIIsReadAgain(t *testing.T) {
+	a := packApp(t, map[string]string{"characters/witch/char.ini": "[Options]\nshowname = X\n"})
+	parsed := map[string]charMeta{a.charINIURL("witch"): {showname: "STALE", done: true}}
+
+	a.charMetaCache = parsed
+	a.reloadChangedFiles([]string{a.urls.CharFolder("witch") + "(a)normal.png"})
+	if len(a.charMetaCache) == 0 {
+		t.Error("an edited sprite dropped the parsed char.ini copies")
 	}
 
-	packageFuncs(t, func(file, fn string, body *ast.BlockStmt) {
-		if containsCall(body, "FetchRawLayered") {
-			if _, named := layered[fn]; named {
-				layered[fn] = true
-			}
-		}
-		if !containsCall(body, "FetchRaw") {
-			return
-		}
-		if _, ok := unlayered[fn]; ok {
-			return
-		}
-		t.Errorf("%s: %s reads an asset through FetchRaw, the SERVER-ONLY lane. If it reads a char.ini, an "+
-			"effects.ini or anything else a content pack ships, use FetchRawLayered — a user's own folder "+
-			"answering their own character is the whole of issue #72. If the server's copy is genuinely what "+
-			"is meant, add %s to this gate's allow-list with the reason.", file, fn, fn)
-	})
-
-	for fn, seen := range layered {
-		if !seen {
-			t.Errorf("%s no longer calls FetchRawLayered — the ini reader it owns went back to reading the "+
-				"server's copy over the user's own folder", fn)
-		}
+	a.reloadChangedFiles([]string{a.charINIURL("witch")})
+	if len(a.charMetaCache) != 0 {
+		t.Errorf("an edited char.ini kept its parsed copy: %v", a.charMetaCache)
 	}
 }

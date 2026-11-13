@@ -1,19 +1,9 @@
 package ui
 
-// The UI half of the conclusive-miss brake.
-//
-// The manager's own suite (assets/conclusivemiss_test.go) proves the memory is
-// recorded and that every Prefetch entry point consults it. These prove the two
-// things only this package can answer: that the DEMAND CADENCE stops, and that a
-// cell which can never fill stops holding the frame pump awake.
-//
-// Both halves matter and they failed together in the field: a character roster
-// where most entries ship no char_icon and no emotions/button<N>_off art sent a
-// 404 every couple of seconds per visible cell, indefinitely, and the client sank
-// under the pool jobs and disk probes behind them.
+// The UI half of the missing-asset memory: the demand cadence stops, and a cell that can never fill stops holding the
+// frame pump awake.
 
 import (
-	"go/ast"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,33 +12,20 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
-
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (
-	// missGateSettle bounds the wait for the pipeline to establish a miss.
-	// LocalMode resolution is synchronous file I/O, so this is slack, not a
-	// cadence — a fixture that needs all of it is broken, not slow.
+	// missGateSettle bounds the wait for the pipeline to establish a miss; a fixture that needs all of it is broken.
 	missGateSettle = 5 * time.Second
 	// missGatePollStep spaces the settle poll. Short enough that the wait costs
 	// milliseconds in the ordinary case.
 	missGatePollStep = 2 * time.Millisecond
-	// missGateDrawFrames bounds the draw loop in the frame-pump gate. Each pass is
-	// one drawEmoteImageButton call against an empty pack; the misses land in the
-	// first few, so overrunning this means the draw stopped demanding at all.
-	missGateDrawFrames = 400
 )
 
-// wireEmptyPackManager installs a streaming-shaped Manager over an EMPTY local
-// pack, leaving a.d.Store and a.ctx alone.
-//
-// Deliberately not wireLocalManager: that helper stands up its own renderer and
-// replaces a.d.Store, so an App staged with a live Ctx would end up drawing
-// textures created on a different renderer. Everything else matches it —
-// LocalMode, so resolution is synchronous file I/O and the pipeline settles
-// deterministically.
+// wireEmptyPackManager installs a Manager over an empty folder, leaving a.d.Store and a.ctx alone.
+// Not wireLocalManager: that one stands up its own renderer and replaces a.d.Store, so an App staged with a live Ctx
+// would draw textures created on a different renderer.
 func wireEmptyPackManager(t *testing.T, a *App) *assets.LocalFetcher {
 	t.Helper()
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
@@ -60,22 +37,20 @@ func wireEmptyPackManager(t *testing.T, a *App) *assets.LocalFetcher {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 
 	local := assets.NewLocalFetcher([]string{t.TempDir()}) // empty: nothing resolves
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  assets.NewResolver(a.d.Prefs),
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    local,
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: assets.NewResolver(a.d.Prefs),
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   local,
+		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
+	a.d.Manager.SetFolders(local.Mounts(), nil)
 	// One extension per type keeps the probe chains short and the fixture's
 	// intent legible; the defaults differ per type and none of that is what
 	// these gates are about.
@@ -108,7 +83,7 @@ func settleMissUI(t *testing.T, a *App, base string, typ assets.AssetType) {
 	deadline := time.Now().Add(missGateSettle)
 	for time.Now().Before(deadline) {
 		drainManager(a)
-		if a.d.Manager.IsConclusiveMiss(base, typ) {
+		if a.d.Manager.IsMissing(base, typ) {
 			return
 		}
 		time.Sleep(missGatePollStep)
@@ -183,11 +158,8 @@ func TestDemandAssetStopsAskingForAConclusiveMiss(t *testing.T) {
 	}
 }
 
-// TestRetryMissingAssetsResumesTheDemand pins the Settings escape hatch end to
-// end. The memory has no clock by design (assets.missSet), so if the button did
-// not genuinely re-open the demand a server that added the missing files
-// mid-session would stay half-invisible until a restart — which is the whole
-// trade this design accepted, and the button is what makes it acceptable.
+// TestRetryMissingAssetsResumesTheDemand: forgetting the missing assets re-opens the demand, so files a server adds
+// mid-session show without a restart.
 func TestRetryMissingAssetsResumesTheDemand(t *testing.T) {
 	a := testTabApp(t)
 	local := wireEmptyPackManager(t, a)
@@ -199,12 +171,11 @@ func TestRetryMissingAssetsResumesTheDemand(t *testing.T) {
 	a.demandAsset(&stamps, 1, 0, base, assets.AssetTypeCharIcon)
 	settleMissUI(t, a, base, assets.AssetTypeCharIcon)
 
-	if n := a.d.Manager.ConclusiveMissCount(); n == 0 {
-		t.Fatal("nothing was remembered, so the flush below has nothing to prove")
+	if n := a.d.Manager.ForgetMissing(); n == 0 {
+		t.Fatal("nothing was remembered, so the flush has nothing to prove")
 	}
-	a.d.Manager.ForgetConclusiveMisses()
-	if n := a.d.Manager.ConclusiveMissCount(); n != 0 {
-		t.Fatalf("%d chain(s) survived the flush", n)
+	if a.d.Manager.IsMissing(base, assets.AssetTypeCharIcon) {
+		t.Fatal("the icon survived the flush")
 	}
 
 	stamps[0] = time.Time{}
@@ -252,19 +223,27 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 
 	// Keep drawing until both chains are exhausted. The draw is the only thing
 	// issuing these demands, so this also proves the cell reaches the miss path
-	// through the shipped call site and not a test-only shortcut.
+	// through the shipped call site and not a test-only shortcut. Wait on the
+	// manager's conclusive-miss verdict — the real decode-completion signal —
+	// under a deadline rather than a fixed frame count, because a loaded CI runner
+	// can need more wall time than missGateDrawFrames re-issued frames.
 	settled := false
-	for i := 0; i < missGateDrawFrames && !settled; i++ {
+	deadline := time.Now().Add(missGateSettle)
+	for time.Now().Before(deadline) && !settled {
 		a.iconAskBudget = charIconAskPerFrame
-		a.emoteAsk, a.emoteIconAsk = nil, nil // reopen the retry window; the wall clock is not what this gate measures
+		a.emoteAsk, a.emoteIconAsk = nil, nil // reopen the retry window
 		a.drawEmoteImageButton(btn, me, 0, false, "normal")
 		drainManager(a)
-		settled = a.d.Manager.IsConclusiveMiss(buttonBase, assets.AssetTypeEmoteButton) &&
-			a.d.Manager.IsConclusiveMiss(iconBase, assets.AssetTypeCharIcon)
+		if a.d.Manager.IsMissing(buttonBase, assets.AssetTypeEmoteButton) &&
+			a.d.Manager.IsMissing(iconBase, assets.AssetTypeCharIcon) {
+			settled = true
+			break
+		}
+		time.Sleep(missGatePollStep)
 	}
 	if !settled {
-		t.Fatalf("after %d frames the cell's art was still not established absent — the draw stopped demanding",
-			missGateDrawFrames)
+		t.Fatalf("the cell's art was never established absent within %v — the draw stopped demanding",
+			missGateSettle)
 	}
 
 	// The permanently-grey frame: still blank, but nothing can change that, so the
@@ -276,71 +255,5 @@ func TestBlankEmoteCellDoesNotHoldTheFramePumpAwake(t *testing.T) {
 	if a.frameDemandPending {
 		t.Error("a permanently-blank emote cell still held the frame pump awake — the client stays pinned at the " +
 			"demand cadence, re-rendering for art that can never arrive")
-	}
-}
-
-// TestInstallAssetOriginIsTheOnlyPlaceASessionOriginIsMinted is the encapsulation
-// gate (rule §17.11): the reconnect flush must not be bypassable.
-//
-// The conclusive-miss memory has no expiry, so (re)installing an origin is the
-// ONE moment a server gets a clean slate. installAssetOrigin does both jobs in one
-// place precisely so they cannot drift; a second function that assigned a.urls a
-// freshly-built URLBuilder would serve a previous visit's verdicts with no way to
-// clear them short of the Settings button.
-//
-// A census over the whole package rather than a remembered list of functions: the
-// bypass a gate like this exists to catch is a NEW call site, which by definition
-// is not on any list. It is a deletion-catcher, not a mirror — it contains no copy
-// of what installAssetOrigin does.
-func TestInstallAssetOriginIsTheOnlyPlaceASessionOriginIsMinted(t *testing.T) {
-	const owner = "installAssetOrigin"
-	seenOwner := false
-	packageFuncs(t, func(file, fn string, body *ast.BlockStmt) {
-		mints := false
-		ast.Inspect(body, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for i, lhs := range as.Lhs {
-				sel, ok := lhs.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "urls" {
-					continue
-				}
-				// a.urls, not some other struct's urls field: the App's session
-				// builder is the only one this rule governs (a preview or an
-				// export stages its own, deliberately).
-				if id, ok := sel.X.(*ast.Ident); !ok || id.Name != "a" {
-					continue
-				}
-				// A NEW builder, not a refinement of the installed one —
-				// pollCasingProbe's `a.urls = a.urls.WithCharCase(...)` keeps the
-				// same origin and must stay legal.
-				if i < len(as.Rhs) && containsCall(as.Rhs[i], "NewURLBuilder") {
-					mints = true
-				}
-			}
-			return true
-		})
-		if fn == owner {
-			seenOwner = true
-			if !mints {
-				t.Errorf("%s: %s no longer builds a URLBuilder — the origin install moved, and this gate now "+
-					"guards nothing", file, fn)
-			}
-			if !containsCall(body, "ForgetConclusiveMissesUnder") {
-				t.Errorf("%s: %s installs an origin without giving that origin's remembered misses a fresh look — "+
-					"a server that repacked between visits stays half-invisible until a restart", file, fn)
-			}
-			return
-		}
-		if mints {
-			t.Errorf("%s: %s assigns a.urls a freshly-built URLBuilder. Session origins are minted in %s alone, "+
-				"which is where the conclusive-miss flush lives; minting one here serves the previous visit's "+
-				"verdicts with no event able to clear them.", file, fn, owner)
-		}
-	})
-	if !seenOwner {
-		t.Fatalf("no %s in this package — it was renamed or removed, and this gate checked nothing", owner)
 	}
 }

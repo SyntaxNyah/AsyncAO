@@ -2,98 +2,138 @@ package network
 
 import (
 	"context"
+	"io"
 	"net/http"
-	"net/url"
+	"net/http/httptest"
+	"slices"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy/netproxytest"
 )
 
-// withProxyFor routes every request whose host matches to a fake proxy, for one
-// test. The resolver is process-wide, so the cleanup is not optional.
-func withProxyFor(t *testing.T, host string) {
+const proxiedAddr = "asyncao-test.invalid:80"
+
+func proxiedTarget(t *testing.T, body string) (*netproxy.Factory, *netproxytest.Proxy) {
 	t.Helper()
-	via := &url.URL{Scheme: "http", Host: "proxy.invalid:8080"}
-	netproxy.SetResolver(func(r *http.Request) (*url.URL, error) {
-		if r.URL.Host == host {
-			return via, nil
-		}
-		return nil, nil
-	})
-	t.Cleanup(func() { netproxy.SetResolver(nil) })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	proxy := netproxytest.Start(t, strings.TrimPrefix(srv.URL, "http://"))
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, proxy.URL, "")
+	return sockets, proxy
 }
 
-// TestAssetTransportCarriesTheProxy: every sprite, background, track and piece of
-// evidence in the app goes through this one transport, and a nil Proxy field
-// means NEVER proxy. Without it a proxied user fetched the lobby list through
-// their proxy (that path inherits http.DefaultTransport) and then streamed every
-// asset around it.
-func TestAssetTransportCarriesTheProxy(t *testing.T) {
-	c := NewClient()
-	tr, ok := c.httpClient.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("asset client transport is %T, want *http.Transport", c.httpClient.Transport)
-	}
-	if tr.Proxy == nil {
-		t.Fatal("the asset transport has no Proxy — all asset traffic would ignore the user's proxy")
-	}
-	withProxyFor(t, "assets.invalid")
-	got, err := tr.Proxy(&http.Request{URL: &url.URL{Scheme: "https", Host: "assets.invalid", Path: "/x"}})
+func TestAssetsGoThroughTheProxy(t *testing.T) {
+	const body = "sprite"
+	sockets, proxy := proxiedTarget(t, body)
+	got, err := NewClientNotFoundTTL(0, sockets).Fetch(context.Background(), "http://"+proxiedAddr+"/a.png")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got == nil || got.Host != "proxy.invalid:8080" {
-		t.Errorf("asset request resolved to proxy %v, want proxy.invalid:8080 — the field is set but not to our resolver", got)
+	if string(got) != body {
+		t.Errorf("body = %q", got)
+	}
+	// An http asset is forwarded, so it loads through a proxy that only allows CONNECT to 443.
+	if !slices.Equal(proxy.Forwards(), []string{proxiedAddr}) {
+		t.Errorf("proxy was asked to forward %v", proxy.Forwards())
 	}
 }
 
-// TestPreResolveSkipsProxiedHosts is the privacy half of the fix. Behind a proxy
-// the transport dials the PROXY and the proxy resolves the origin, so the origin
-// name never needs to reach this machine's resolver. Warming the cache anyway
-// would publish to the local (and typically the ISP's) DNS precisely the server
-// name the user routed through a proxy in order not to disclose.
+func TestServerListGoesThroughTheProxy(t *testing.T) {
+	sockets, proxy := proxiedTarget(t, "[]")
+	if _, err := FetchServerList(context.Background(), sockets, "http://"+proxiedAddr+"/servers"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(proxy.Forwards(), []string{proxiedAddr}) {
+		t.Errorf("proxy was asked to forward %v", proxy.Forwards())
+	}
+}
+
+// A client lives for the whole process, so it must follow a changed setting.
+func TestAssetsFollowAChangedSetting(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "sprite")
+	}))
+	defer srv.Close()
+	target := strings.TrimPrefix(srv.URL, "http://")
+	first, second := netproxytest.Start(t, target), netproxytest.Start(t, target)
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, first.URL, "")
+	c := NewClientNotFoundTTL(0, sockets)
+	if _, err := c.Fetch(context.Background(), "http://"+proxiedAddr+"/a.png"); err != nil {
+		t.Fatal(err)
+	}
+	sockets.Apply(netproxy.ModeManual, second.URL, "")
+	if _, err := c.Fetch(context.Background(), "http://"+proxiedAddr+"/b.png"); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(first.Forwards()); got != 1 {
+		t.Errorf("the old proxy saw %d requests, want 1", got)
+	}
+	if got := len(second.Forwards()); got != 1 {
+		t.Errorf("the new proxy saw %d requests, want 1", got)
+	}
+}
+
+// Tunnelling must not cost the asset client its HTTP/2: a room's sprites share one connection.
+func TestAssetsKeepHTTP2ThroughTheProxy(t *testing.T) {
+	const (
+		requests   = 8
+		http2Major = 2
+		asset      = "https://asyncao-test.invalid:443/a"
+	)
+	var sawProto atomic.Int64
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawProto.Store(int64(r.ProtoMajor))
+		_, _ = io.WriteString(w, "sprite")
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	proxy := netproxytest.Start(t, strings.TrimPrefix(srv.URL, "https://"))
+	sockets := netproxy.New(nil)
+	sockets.Apply(netproxy.ModeManual, proxy.URL, "")
+	c := NewClientNotFoundTTL(0, sockets)
+	c.tune = func(tr *http.Transport) {
+		tuneAssetTransport(tr)
+		tr.TLSClientConfig.InsecureSkipVerify = true // the test server's certificate is self-signed
+	}
+
+	for i := range requests {
+		if _, err := c.Fetch(context.Background(), asset+strconv.Itoa(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sawProto.Load() != http2Major {
+		t.Errorf("server saw HTTP/%d", sawProto.Load())
+	}
+	if got := len(proxy.Asked()); got != 1 {
+		t.Errorf("used %d tunnels, want 1", got)
+	}
+}
+
+// The proxy resolves a proxied name.
 func TestPreResolveSkipsProxiedHosts(t *testing.T) {
-	withProxyFor(t, "localhost")
-	c := NewClient()
-	c.PreResolve(context.Background(), "localhost")
-	if addrs, _, found := c.dns.lookup("localhost"); found {
-		t.Errorf("pre-resolved a PROXIED host to %v — the origin's name must not reach the local resolver", addrs)
+	const host = "asyncao-test.invalid"
+	sockets, _ := proxiedTarget(t, "")
+	c := NewClientNotFoundTTL(0, sockets)
+	c.PreResolve(context.Background(), host)
+	if _, _, found := c.dns.lookup(host); found {
+		t.Error("a proxied host was looked up locally")
 	}
 }
 
-// TestPreResolveStillWarmsDirectHosts: the guard must not turn the warm path off
-// for everyone. Without a proxy the pre-resolve is what keeps the first asset
-// probe after connect from paying a DNS round-trip.
-func TestPreResolveStillWarmsDirectHosts(t *testing.T) {
-	withProxyFor(t, "somewhere.else.invalid")
-	c := NewClient()
-	c.PreResolve(context.Background(), "localhost")
-	if _, _, found := c.dns.lookup("localhost"); !found {
-		t.Skip("localhost did not resolve in this environment")
-	}
-}
-
-// TestProxiedHostChecksBothSchemes: NO_PROXY-style rules and the http/https
-// split make the answer per-scheme, so warming is only safe when NEITHER scheme
-// is proxied. A checker that asked about https alone would leak every plain-http
-// asset origin.
-func TestProxiedHostChecksBothSchemes(t *testing.T) {
-	for _, proxied := range []string{"http", "https"} {
-		t.Run(proxied, func(t *testing.T) {
-			via := &url.URL{Scheme: "http", Host: "proxy.invalid:8080"}
-			netproxy.SetResolver(func(r *http.Request) (*url.URL, error) {
-				if r.URL.Scheme == proxied {
-					return via, nil
-				}
-				return nil, nil
-			})
-			t.Cleanup(func() { netproxy.SetResolver(nil) })
-			if !proxiedHost("assets.invalid") {
-				t.Errorf("a host proxied over %s alone reported DIRECT", proxied)
-			}
-		})
-	}
-	if proxiedHost("") {
-		t.Error("an empty host must not report proxied")
+func TestPreResolveWarmsDirectHosts(t *testing.T) {
+	const host = "localhost"
+	c := NewClientNotFoundTTL(0, netproxy.Direct())
+	c.PreResolve(context.Background(), host)
+	if _, _, found := c.dns.lookup(host); !found {
+		t.Skip("this machine can't resolve localhost")
 	}
 }

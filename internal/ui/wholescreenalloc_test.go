@@ -57,20 +57,20 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	// the gate of the log raster (empty list, no rows drawn). With the real
 	// default scales (viewport 66%) a 1280×720 frame gives the log list a
 	// realistic positive height, so drawICLogList actually rasters its lines.
-	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
+	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.Load().LayoutScales()
 	// The FIVE remaining panel zooms, seeded EXACTLY the way loadPrefs does (app.go)
 	// and with no normalization on top: the fixture must reproduce a real install,
 	// not a tidied-up one. (This used to carry an `if a.oocPct == 0 { = logPct }`
 	// patch, which quietly papered over a shipped first-run bug — OOCScalePct had no
 	// entry in the config defaults block — AND hid the divergent-zoom allocation the
 	// sibling gate below now pins. Both are fixed; the patch is gone.)
-	a.oocPct = a.d.Prefs.OOCScale()
+	a.oocPct = a.d.Prefs.Load().OOCScalePct
 	a.musicPct, a.playerPct, a.areaPct, a.modDashPct = a.logPct, a.logPct, a.logPct, a.logPct
 	// Pin a fixed frame clock so the append-time IC stamps (and anything else
 	// that reads a.now()) are deterministic across the measured frames.
 	a.frameNow = time.Date(2026, 7, 12, 16, 11, 0, 0, time.UTC)
 
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		cleanup()
 		t.Skipf("texture store unavailable: %v", err)
@@ -152,7 +152,7 @@ func TestDrawCourtroomZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled drawCourtroom allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -181,7 +181,7 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 	const w, h = 1280, 720
 	draw := func() { a.drawCourtroom(w, h) }
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed-font drawCourtroom allocates %.1f/op, want 0 — the per-element font path leaks (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -218,8 +218,8 @@ func stageThemedCourtroom(t testing.TB) (*App, func()) {
 	// editor's Reset writes themeRectsOrig back into themeRects, so aliasing one
 	// map would silently make Reset a no-op for anyone who extends this fixture.
 	a.themeRectsOrig = cloneRects(a.themeRects)
-	a.d.Prefs.SetThemeLayout(true) // default-ON today; pinned here so a default flip can't silently un-gate this
-	a.themeLay.valid = false       // force the first frame to build the cache from the rects above
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true }) // default-ON today; pinned here so a default flip can't silently un-gate this
+	a.themeLay.valid = false                                                // force the first frame to build the cache from the rects above
 	return a, cleanup
 }
 
@@ -247,7 +247,7 @@ func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
 		t.Fatal("drawCourtroom took the CLASSIC branch — only drawCourtroomThemed arms toolboxThemeRectOn")
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }
@@ -284,7 +284,7 @@ func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
 		t.Fatal("the fixture did not reach the themed branch")
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with divergent panel zooms allocates %.1f/op, want 0 — "+
 			"two panels are sharing one fontSet and rebuilding it every frame (fix the alloc, don't equalise the fixture)", n)
 	}
@@ -327,7 +327,7 @@ func TestDrawCourtroomThemedCentredShownameZeroAlloc(t *testing.T) {
 		t.Fatalf("the staged showname %q measures %d px — the centring path is doing no work", name, px)
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed drawCourtroom with a centred showname allocates %.1f/op, want 0 — "+
 			"the showname measure is not hitting a cache (fix the alloc, don't left-align the fixture)", n)
 	}
@@ -361,7 +361,7 @@ func TestDrawLobbyZeroAlloc(t *testing.T) {
 	// instead of shipping unmeasured.
 	draw := func() { a.noteScreenTransition(); a.drawLobby(w, h) }
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled drawLobby allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
 	}
 }

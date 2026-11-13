@@ -2,16 +2,9 @@ package assets
 
 import "sync"
 
-// Pixel-buffer pooling: decoded frame composition draws into pooled RGBA
-// backing arrays sized by class, released by the render thread after texture
-// upload (Decoded.Release). This keeps the decode pool's steady-state
-// allocation churn near zero for the common sprite sizes.
+// Pooled pixel buffers by size class, released by the render thread after upload.
 
-// pixClassSizes are the pooled buffer capacities. AO sprites are typically
-// 256×192×4 ≈ 200 KiB; backgrounds up to 1920×1080×4 ≈ 8 MiB.
-// An 8 MiB class sits between 4 and 16: native animated frames (~7.3 MiB at
-// 1600x1200x4) landed in the 16 MiB class and wasted ~2x per frame; the 8 MiB
-// class keeps that overhead near 1.1x and halves the decode-burst heap.
+// pixClassSizes are the pooled capacities; 8 MiB fits 1600x1200 animated frames, which waste 2x in the 16 MiB class.
 var pixClassSizes = [...]int{256 << 10, 1 << 20, 4 << 20, 8 << 20, 16 << 20}
 
 var pixPools = func() [len(pixClassSizes)]*sync.Pool {
@@ -26,9 +19,7 @@ var pixPools = func() [len(pixClassSizes)]*sync.Pool {
 	return pools
 }()
 
-// getPixBuf returns a zeroed pixel buffer with len ≥ n from the smallest
-// fitting class, or a plain allocation when n exceeds every class. The
-// second return is the pool token to hand to putPixBuf (nil when unpooled).
+// getPixBuf returns a zeroed buffer from the smallest fitting class, or an unpooled one with a nil token.
 func getPixBuf(n int) ([]byte, *[]byte) {
 	for i, size := range pixClassSizes {
 		if n <= size {
@@ -41,8 +32,7 @@ func getPixBuf(n int) ([]byte, *[]byte) {
 	return make([]byte, n), nil
 }
 
-// putPixBuf returns a pooled buffer to its class. nil tokens (unpooled
-// oversize buffers) are ignored.
+// putPixBuf returns a pooled buffer to its class; nil tokens are ignored.
 func putPixBuf(token *[]byte) {
 	if token == nil {
 		return

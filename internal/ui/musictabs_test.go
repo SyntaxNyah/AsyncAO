@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -149,7 +150,17 @@ func TestBackgroundMusicFollow(t *testing.T) {
 	// ON + this tab owns the audible stream + a real track: FOLLOW (switch to its URL).
 	a := testTabApp(t)
 	a.d.Audio = &render.Audio{}
-	a.d.Prefs.SetMusicAcrossTabs(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
 	a.musicOwnerKey = bgKey
 	s := newSession("Battle.opus")
 	url, ok := a.backgroundMusicFollow(s)
@@ -160,7 +171,17 @@ func TestBackgroundMusicFollow(t *testing.T) {
 	// OFF: bookkeeping only — never switch the (silent-isolated) stream.
 	b := testTabApp(t)
 	b.d.Audio = &render.Audio{}
-	b.d.Prefs.SetMusicAcrossTabs(false)
+	b.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			false
+
+	})
+
 	b.musicOwnerKey = bgKey
 	if _, ok := b.backgroundMusicFollow(newSession("Battle.opus")); ok {
 		t.Error("OFF must not switch the stream (acoustic isolation)")
@@ -169,7 +190,17 @@ func TestBackgroundMusicFollow(t *testing.T) {
 	// ON but ANOTHER tab owns the stream: don't hijack it.
 	c := testTabApp(t)
 	c.d.Audio = &render.Audio{}
-	c.d.Prefs.SetMusicAcrossTabs(true)
+	c.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
 	c.musicOwnerKey = "wss://other:2096"
 	if _, ok := c.backgroundMusicFollow(newSession("Battle.opus")); ok {
 		t.Error("ON but not the owner: must not switch a foreign-owned stream")
@@ -178,7 +209,17 @@ func TestBackgroundMusicFollow(t *testing.T) {
 	// ON + owner but a ~stop left MusicTrack empty: nothing to switch to.
 	d := testTabApp(t)
 	d.d.Audio = &render.Audio{}
-	d.d.Prefs.SetMusicAcrossTabs(true)
+	d.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
 	d.musicOwnerKey = bgKey
 	if _, ok := d.backgroundMusicFollow(newSession("")); ok {
 		t.Error("~stop (empty track) must not switch")
@@ -193,7 +234,17 @@ func TestBackgroundMusicFollow(t *testing.T) {
 func TestRouteBackgroundEventMusicPreservesLatch(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Audio = &render.Audio{}
-	a.d.Prefs.SetMusicAcrossTabs(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
 	tab := &courtTab{state: sessionState{serverName: "BG", serverKey: "wss://bg:2096", urls: courtroom.NewURLBuilder("https://cdn.example/base/")}}
 	tab.state.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
 	tab.state.sess.MusicTrack = "Song.opus"

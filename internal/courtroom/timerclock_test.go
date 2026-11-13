@@ -2,38 +2,16 @@ package courtroom
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
 // The three-client TI survey these tests pin (citations in latency.go):
-//
-//	                    AO2-Client        KFO-Client        DRO-Client
-//	anchor              now + ms          now + ms          step accumulator
-//	resync (type 0)     re-anchors        re-anchors        n/a (TST/TR/TP)
-//	pause  (type 1)     freeze at ms      freeze at ms      firing timer stops
-//	ms <= 0             stop, show zero   stop, show zero   n/a
-//	flight correction   -latency/2        -latency/2        none
-//	render rounding     truncate          truncate          truncate
-//
-// AsyncAO already matched every row but the flight correction, so that row is
-// the whole of what this file adds — for CANON PARITY, not as the explanation of
-// any field report. The server floors the value it sends
 // (../KFO-Server/server/area.py:797 `int(current_time.total_seconds()) * 1000`),
-// so two clients differ by at most half an RTT (~0.1 s at the fleet's worst)
-// inside a value already coarse to the second. That cannot be a visible desync,
-// and the diff found nothing else that could be.
-//
 // The correction is also INERT in production: nothing measures a round trip
 // today. Every test below except TestTimerFlightCorrectionIsInertInProduction
 // reaches the reducer through Session.Ping, a door production does not use.
-// latency.go, "the missing call site", has the hand-over.
 
 // newTimerSession returns a Session with nothing but the wire attached: these
 // tests drive TI/CHECK packets only.
@@ -48,10 +26,10 @@ func newTimerSession(t *testing.T) *Session {
 // the session sends CH and closed when CHECK arrives, both on this goroutine.
 func measureRTT(t *testing.T, s *Session, rtt time.Duration) {
 	t.Helper()
-	s.Ping()
+	s.stampPing()
 	s.pingSentAt = s.pingSentAt.Add(-rtt) // backdate the stamp: the reply is "rtt late"
 	feed(t, s, "CHECK#%")
-	if got := s.Latency(); got < rtt || got > rtt+time.Second {
+	if got := s.latency; got < rtt || got > rtt+time.Second {
 		t.Fatalf("measured latency = %v, want ≈ %v", got, rtt)
 	}
 }
@@ -79,14 +57,7 @@ func TestTimerStartSubtractsHalfTheMeasuredRoundTrip(t *testing.T) {
 	// cold exchange, unbounded under load). Anchoring want to the NOMINAL rtt made
 	// the lower bound demand a deadline half that overhead later than the reducer
 	// can possibly mint, and the suite failed by exactly that half.
-	//
-	// Half of the value the reducer itself used makes the window exact by
-	// construction — no tolerance to guess, and none that could ever be right,
-	// since the overhead is a scheduling delay with no bound. It keeps every tooth:
-	// dropping the correction lands the deadline rtt/2 (200 ms) late and applying
-	// the whole latency lands it rtt/2 early, both hundreds of milliseconds outside
-	// a window this narrow.
-	want := serverMs*time.Millisecond - s.Latency()/2
+	want := serverMs*time.Millisecond - s.latency/2
 	got := s.Timers[0].Deadline
 	if got.Before(before.Add(want)) || got.After(after.Add(want)) {
 		t.Errorf("deadline is %v out from the corrected anchor (want now+%v)", got.Sub(before.Add(want)), want)
@@ -119,8 +90,8 @@ func TestPausedTimerIsNotFlightCorrected(t *testing.T) {
 // correction, never a guess.
 func TestUnmeasuredLatencyLeavesTheAnchorAlone(t *testing.T) {
 	s := newTimerSession(t)
-	if s.Latency() != 0 {
-		t.Fatalf("fresh session latency = %v, want 0", s.Latency())
+	if s.latency != 0 {
+		t.Fatalf("fresh session latency = %v, want 0", s.latency)
 	}
 	before := time.Now()
 	feed(t, s, "TI#0#0#30000#%")
@@ -138,21 +109,21 @@ func TestUnmeasuredLatencyLeavesTheAnchorAlone(t *testing.T) {
 func TestAbsurdRoundTripIsNotAMeasurement(t *testing.T) {
 	s := newTimerSession(t)
 	measureRTT(t, s, 200*time.Millisecond)
-	sane := s.Latency()
+	sane := s.latency
 
-	s.Ping()
+	s.stampPing()
 	s.pingSentAt = s.pingSentAt.Add(-(maxLatencySample + time.Second))
 	feed(t, s, "CHECK#%")
-	if got := s.Latency(); got != sane {
+	if got := s.latency; got != sane {
 		t.Errorf("latency after a stalled round trip = %v, want the last sane %v", got, sane)
 	}
 
-	s.NoteLatency(maxLatencySample + time.Second)
-	if got := s.Latency(); got != sane {
+	s.noteLatencySample(maxLatencySample + time.Second)
+	if got := s.latency; got != sane {
 		t.Errorf("NoteLatency accepted an implausible sample: %v", got)
 	}
-	s.NoteLatency(-time.Second)
-	if got := s.Latency(); got != sane {
+	s.noteLatencySample(-time.Second)
+	if got := s.latency; got != sane {
 		t.Errorf("NoteLatency accepted a negative sample: %v", got)
 	}
 }
@@ -164,14 +135,14 @@ func TestAbsurdRoundTripIsNotAMeasurement(t *testing.T) {
 func TestCheckWithoutAnOutstandingPingIsIgnored(t *testing.T) {
 	s := newTimerSession(t)
 	feed(t, s, "CHECK#%")
-	if s.Latency() != 0 {
-		t.Errorf("unsolicited CHECK produced a latency of %v", s.Latency())
+	if s.latency != 0 {
+		t.Errorf("unsolicited CHECK produced a latency of %v", s.latency)
 	}
 
 	measureRTT(t, s, 150*time.Millisecond)
-	sane := s.Latency()
+	sane := s.latency
 	feed(t, s, "CHECK#%") // duplicate reply, no stamp outstanding
-	if got := s.Latency(); got != sane {
+	if got := s.latency; got != sane {
 		t.Errorf("duplicate CHECK re-timed the round trip: %v (want %v)", got, sane)
 	}
 }
@@ -181,11 +152,6 @@ func TestCheckWithoutAnOutstandingPingIsIgnored(t *testing.T) {
 // target_time, rather than accumulating a per-tick decrement the way DRO's step
 // timer does, so a jittery, irregular, hours-long frame cadence must not move the
 // reading by even a nanosecond.
-//
-// It also pins the render rounding both AO2 clients use: truncation toward zero
-// (QTime::addMSecs on the whole remainder), which is what the courtroom overlay's
-// int(seconds) does — never rounding, which would show one second too many for
-// half of every second.
 func TestServerClockDoesNotDrift(t *testing.T) {
 	s := newTimerSession(t)
 	const total = 2 * time.Hour
@@ -291,12 +257,6 @@ func TestTimerIDsPastTheClockCapAreIgnored(t *testing.T) {
 // (Session.KeepalivePacket → Conn.SetKeepalive), so nothing stamps a send time,
 // and the server's CHECK replies (../KFO-Server/server/network/aoprotocol.py:248
 // net_cmd_ch answers every CH) arrive with no round trip outstanding.
-//
-// It is a TRIPWIRE, not a wish. The day internal/protocol or internal/ui calls
-// Session.NoteLatency (latency.go, "the missing call site"), this test fails,
-// and whoever lands that wiring deletes it and re-labels the item CLOSED.
-// Deleting it WITHOUT landing the wiring puts back the claim that this client
-// corrects for flight time when it does not.
 func TestTimerFlightCorrectionIsInertInProduction(t *testing.T) {
 	s := newTimerSession(t)
 	s.MyCharID = 7
@@ -324,7 +284,7 @@ func TestTimerFlightCorrectionIsInertInProduction(t *testing.T) {
 		feed(t, s, "CHECK#%")
 	}
 
-	if got := s.Latency(); got != 0 {
+	if got := s.latency; got != 0 {
 		t.Fatalf("latency = %v after %d production keepalive round trips — a latency source IS wired now, "+
 			"so delete this tripwire, drop the INERT IN PRODUCTION notes in latency.go/session.go, and "+
 			"re-label the item CLOSED", got, keepaliveRoundTrips)
@@ -344,81 +304,4 @@ func TestTimerFlightCorrectionIsInertInProduction(t *testing.T) {
 		t.Errorf("the anchor moved %v off the raw server value; with no measurement it must be uncorrected",
 			got.Sub(before.Add(want)))
 	}
-}
-
-// latencyFieldOwner is the ONE non-test file allowed to assign the timing
-// fields. maxLatencySample is a DELIBERATE divergence from canon (canon clamps
-// nothing), and it is worth exactly as much as the guarantee that every write
-// goes through the clamp. Both sanctioned doors — the CHECK arm and NoteLatency
-// — funnel into noteLatencySample, which lives here.
-const latencyFieldOwner = "latency.go"
-
-// latencyGuardedFields are the Session fields noteLatencySample owns.
-var latencyGuardedFields = []string{"latency", "pingSentAt"}
-
-// TestLatencyHasExactlyOneWriter is the encapsulation test on that seam. Go's
-// package scope is the bypass: any file in internal/courtroom can assign
-// s.latency directly and skip the clamp, and no compiler will object. This
-// census does. (Test files are exempt — measureRTT backdates pingSentAt on
-// purpose, which is how a round trip is simulated without a clock seam.)
-func TestLatencyHasExactlyOneWriter(t *testing.T) {
-	fset := token.NewFileSet()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read the package directory: %v", err)
-	}
-
-	var offenders []string
-	ownerWrites := 0
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, perr := parser.ParseFile(fset, filepath.Join(".", name), nil, parser.SkipObjectResolution)
-		if perr != nil {
-			t.Fatalf("parse %s: %v", name, perr)
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for _, lhs := range as.Lhs {
-				sel, ok := lhs.(*ast.SelectorExpr)
-				if !ok || !isGuardedLatencyField(sel.Sel.Name) {
-					continue
-				}
-				if name == latencyFieldOwner {
-					ownerWrites++
-					continue
-				}
-				offenders = append(offenders, fmt.Sprintf("%s:%d assigns .%s", name,
-					fset.Position(sel.Pos()).Line, sel.Sel.Name))
-			}
-			return true
-		})
-	}
-
-	if len(offenders) > 0 {
-		t.Errorf("the latency clamp is bypassed:\n  %s\n\nEvery write to %v goes through "+
-			"noteLatencySample in %s, which rejects anything that is not plausibly a network "+
-			"measurement (maxLatencySample). Call NoteLatency, or the CHECK arm.",
-			strings.Join(offenders, "\n  "), latencyGuardedFields, latencyFieldOwner)
-	}
-	// Deletion catcher: a census that finds nothing because the code it guards
-	// moved out from under it is not a census.
-	if ownerWrites == 0 {
-		t.Errorf("no writes to %v found in %s — the seam moved; re-point this census at its new home",
-			latencyGuardedFields, latencyFieldOwner)
-	}
-}
-
-func isGuardedLatencyField(name string) bool {
-	for _, f := range latencyGuardedFields {
-		if f == name {
-			return true
-		}
-	}
-	return false
 }

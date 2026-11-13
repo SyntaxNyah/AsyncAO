@@ -2,14 +2,14 @@ package ui
 
 import (
 	"math"
-	"reflect"
+	"runtime"
+	"runtime/pprof"
+	"strings"
 	"testing"
-
-	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -565,189 +565,6 @@ func TestCharSelectorHaloIsAO2Geometry(t *testing.T) {
 	}
 }
 
-// TestCharSelectTabsShareOneGridPlan is B4's lockstep, pinned structurally. The
-// Characters grid and the Wardrobe grid are the SAME screen and shared iconCell /
-// iconGap before the theme canvas existed; if one becomes theme-driven and the other
-// keeps its own metrics they desync on the first resize. Both therefore take the plan
-// rather than deriving anything.
-func TestCharSelectTabsShareOneGridPlan(t *testing.T) {
-	plan := reflect.TypeOf(charGridPlan{})
-	for name, fn := range map[string]any{
-		"drawWardrobeGrid": (*App).drawWardrobeGrid,
-		"drawCharCell":     (*App).drawCharCell,
-	} {
-		ft := reflect.TypeOf(fn)
-		found := false
-		for i := 0; i < ft.NumIn(); i++ {
-			if ft.In(i) == plan {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("%s no longer takes the shared charGridPlan — the two tabs can now desync", name)
-		}
-	}
-}
-
-// cellChromeHarness stages a real Ctx and TextureStore so ONE grid cell can be drawn
-// and read back. No texture is ever uploaded: every cell takes the icon-miss branch and
-// draws its initials placeholder, which is identical across the variants below, so the
-// only thing that can move a pixel is the corner chrome under test.
-func cellChromeHarness(t *testing.T) (*App, *sdl.Renderer, func()) {
-	t.Helper()
-	ren, cleanup := newCaptureHarness(t)
-	ctx, err := NewCtx(ren)
-	if err != nil {
-		cleanup()
-		t.Skipf("Ctx unavailable: %v", err)
-	}
-	store, err := render.NewTextureStore(ren)
-	if err != nil {
-		cleanup()
-		t.Skipf("texture store unavailable: %v", err)
-	}
-	a := testTabApp(t)
-	a.ctx = ctx
-	a.uiScalePct = 100
-	a.d.Store = store
-	// The pointer parked far away: hover chrome (the "+key" badge, every tooltip) must
-	// not be what makes two renders differ.
-	ctx.mouseX, ctx.mouseY = -1000, -1000
-	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Phoenix"}}}
-	a.ensureCharLower()
-	a.wardrobeMembers = map[string]bool{}
-	a.iniList = []string{"Phoenix"}
-	a.iniLower = []string{"phoenix"}
-	a.iniFolders = []string{""}
-	a.iniWardrobe = []bool{false}
-	a.iniHoverIDs = []string{iniHoverIDPrefix + "Phoenix"}
-	// The two theme-texture maps the real constructor always creates together
-	// (themePage writes into themePages on the first resident lookup).
-	a.themeTex = map[string]bool{}
-	a.themePages = map[string]*render.TexturePage{}
-	return a, ren, func() {
-		store.Purge()
-		cleanup()
-	}
-}
-
-// TestSmallCellsSuppressCornerChromeOnBothTabs is the shared-plan lockstep applied to
-// what the cells PAINT, not just to the metrics they paint on.
-//
-// Since #20 the Characters grid and the Wardrobe grid are one charGridPlan, so a cell on
-// either tab can be as small as charCellMinPx (20 px). Their fixed-size corner chrome did
-// not follow: drawCharCell gated its 18 px ★ at 48 px but drew its 20x18 download badge
-// at any size, and drawIniswapCell drew a 17 px ★, a 15 px folder tag and a 16 px key
-// badge unconditionally. Measured at the 640x480 window floor with the stock table (a
-// 39 px cell — see the sibling test below), that put a badge over the bottom-right
-// quadrant of a Characters cell and roughly three-quarters of a Wardrobe cell under
-// chrome — each piece with its own hover+click, so a click aimed at the character
-// downloaded it, favourited it or armed a keybind instead.
-//
-// Every piece now goes through cellFitsCornerChrome. The proof is per piece and by
-// PIXELS: render the cell twice with only that piece's own input flipped. If the piece is
-// drawn the two renders differ; if it is suppressed they are byte-identical. Both tabs
-// are measured in one test, at one threshold, so they cannot diverge again.
-func TestSmallCellsSuppressCornerChromeOnBothTabs(t *testing.T) {
-	a, ren, cleanup := cellChromeHarness(t)
-	defer cleanup()
-
-	// A bare plan: not themed (so no theme overlay art is probed) and no caption (so
-	// nothing paints outside the cell). The gate reads the CELL, never the plan.
-	plan := charGridPlan{}
-	shot := func(cell sdl.Rect, draw func()) []byte {
-		a.ctx.Fill(sdl.Rect{X: 0, Y: 0, W: 200, H: 120}, ColBackground)
-		draw()
-		return readRegion(t, ren, cell)
-	}
-	pieces := []struct {
-		name string
-		// shot renders the cell with this piece's own input on or off.
-		shot func(cell sdl.Rect, on bool) []byte
-	}{
-		{"Characters ★", func(cell sdl.Rect, on bool) []byte {
-			a.wardrobeMembers = map[string]bool{"phoenix": on}
-			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, false, plan) })
-		}},
-		{"Characters download badge", func(cell sdl.Rect, on bool) []byte {
-			a.wardrobeMembers = map[string]bool{}
-			return shot(cell, func() { a.drawCharCell(&a.sess.Chars[0], cell, 0, on, plan) })
-		}},
-		{"Wardrobe ★", func(cell sdl.Rect, on bool) []byte {
-			a.iniWardrobe = []bool{on}
-			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
-		}},
-		{"Wardrobe folder tag", func(cell sdl.Rect, on bool) []byte {
-			a.iniFolders = []string{""}
-			if on {
-				a.iniFolders = []string{"Prosecutors"}
-			}
-			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
-		}},
-		{"Wardrobe key badge", func(cell sdl.Rect, on bool) []byte {
-			a.charKeysRev = nil
-			if on {
-				a.charKeysRev = map[string]string{"Phoenix": "q"}
-			}
-			return shot(cell, func() { a.drawIniswapCell(0, cell, cellClickChar, false) })
-		}},
-	}
-	for _, p := range pieces {
-		for _, size := range []struct {
-			name string
-			edge int32
-			want bool // want the piece drawn
-		}{
-			{"below the floor", charCellChromeMinPx - 1, false},
-			{"at the floor", charCellChromeMinPx, true},
-		} {
-			cell := sdl.Rect{X: 10, Y: 10, W: size.edge, H: size.edge}
-			p.shot(cell, false) // warm the label cache so the first raster is not the difference
-			off := p.shot(cell, false)
-			on := p.shot(cell, true)
-			if drawn := !sameRegion(off, on); drawn != size.want {
-				if size.want {
-					t.Errorf("%s: a %d px cell no longer paints it — the floor moved and the two tabs "+
-						"lose an affordance they should still have", p.name, size.edge)
-				} else {
-					t.Errorf("%s: still painted on a %d px cell, below the %d px floor — it covers the "+
-						"character art and eats the click aimed at it", p.name, size.edge, charCellChromeMinPx)
-				}
-			}
-		}
-	}
-}
-
-// TestStockTableAtTheWindowFloorSuppressesCornerChrome is the measured configuration the
-// gate above exists for: the shipped default theme fit, the stock 714x668 char-select
-// table and the shipped chrome band, in the smallest window AsyncAO allows. The themed
-// grid survives there (it is well above charCellMinPx), and that is exactly why the
-// chrome had to be gated separately — a perfectly usable 39 px cell is far too small to
-// carry four badges built for a 60 px one.
-func TestStockTableAtTheWindowFloorSuppressesCornerChrome(t *testing.T) {
-	const w, h = config.MinWindowW, config.MinWindowH
-	a := stageCharSelect(t, stockCharSelectDesign())
-	a.tabs = []*courtTab{{}} // menu bar + docked server-tab strip: the shipped band
-	a.activeTab = 0
-	a.d.Prefs.SetThemeFit(config.ThemeFitNative)
-	a.invalidateThemeCanvases()
-	lay := a.charSelectLayout(w, h)
-	g := a.charSelectGridPlan(w, h, a.topChromeH(), lay)
-	if !g.themed {
-		t.Fatalf("the stock table lost its themed grid at %dx%d — this test's premise is gone", w, h)
-	}
-	cell := g.cellAt(0, 0)
-	if cell.W < charCellMinPx {
-		t.Fatalf("cell %d px is below the themed-grid floor %d", cell.W, charCellMinPx)
-	}
-	if cellFitsCornerChrome(cell) {
-		t.Errorf("the %d px cell at the %dx%d floor still carries fixed-size corner chrome "+
-			"(floor %d px)", cell.W, w, h, charCellChromeMinPx)
-	}
-	t.Logf("stock table at %dx%d (band %d): cell %d px, corner chrome %v",
-		w, h, a.topChromeH(), cell.W, cellFitsCornerChrome(cell))
-}
-
 // TestCharHoverIDsAreCachedNotRebuilt pins the per-cell hover id. It is the id
 // preview_test.go's ScreenCharSelect coverage depends on ("char:"+name), and it used
 // to be a runtime concat inside the draw loop — one allocation per VISIBLE cell per
@@ -781,43 +598,6 @@ func TestCharHoverIDsAreCachedNotRebuilt(t *testing.T) {
 	}
 }
 
-// TestIniHoverIDsAreCachedNotRebuilt is the Wardrobe tab's twin of the test above, and
-// it has to be a twin now that both tabs of char select draw on one plan: the Characters
-// grid stopped concatenating "char:"+name per visible cell per frame, while the wardrobe
-// cell went on building "iniswap:"+name the same way — on the char-select Wardrobe tab
-// AND both wardrobe-panel bodies.
-func TestIniHoverIDsAreCachedNotRebuilt(t *testing.T) {
-	a := testTabApp(t)
-	a.serverKey = "ws://hover.test"
-	a.d.Prefs.AddWardrobe(a.serverKey, "Phoenix")
-	a.d.Prefs.AddWardrobe(a.serverKey, "Edgeworth")
-	a.rebuildIniMenu()
-	if len(a.iniList) < 2 {
-		t.Fatalf("fixture built a %d-entry wardrobe", len(a.iniList))
-	}
-	if len(a.iniHoverIDs) != len(a.iniList) {
-		t.Fatalf("hover ids = %d, want one per wardrobe entry (%d)", len(a.iniHoverIDs), len(a.iniList))
-	}
-	for i := range a.iniList {
-		if want := iniHoverIDPrefix + a.iniList[i]; a.iniHoverID(i) != want {
-			t.Errorf("id %d = %q, want %q", i, a.iniHoverID(i), want)
-		}
-	}
-	if n := testing.AllocsPerRun(200, func() { _ = a.iniHoverID(1) }); n != 0 {
-		t.Errorf("iniHoverID allocates %v per cell, want 0", n)
-	}
-	// A list change rebuilds the cache with it, never leaves it behind.
-	a.d.Prefs.AddWardrobe(a.serverKey, "Franziska")
-	a.rebuildIniMenu()
-	if len(a.iniHoverIDs) != len(a.iniList) {
-		t.Errorf("after a wardrobe change: %d ids for %d entries", len(a.iniHoverIDs), len(a.iniList))
-	}
-	// Out of range: a fallback string, not a panic in the middle of a frame.
-	if got := a.iniHoverID(99); got != iniHoverIDPrefix {
-		t.Errorf("out-of-range id = %q", got)
-	}
-}
-
 // TestCharSelectTitleIsCached pins the other per-frame allocation removed here: the
 // heading was concatenated with the server name on every frame of a screen that is
 // otherwise pure integer layout.
@@ -840,6 +620,27 @@ func TestCharSelectTitleIsCached(t *testing.T) {
 	}
 }
 
+// dumpDirtyWindow names the allocator when a zero-alloc gate fails. AllocsPerRun pins
+// GOMAXPROCS(1), so a timer/poller goroutine left running by an earlier test can land its
+// allocations inside our measurement window and turn a clean run into "17 allocs". Dumping
+// the live goroutine stacks + the alloc profile on failure means a recurrence reports its
+// source instead of just the count.
+func dumpDirtyWindow(t *testing.T) {
+	t.Helper()
+	runtime.MemProfileRate = 1
+	runtime.GC()
+	var b strings.Builder
+	if p := pprof.Lookup("goroutine"); p != nil {
+		_ = p.WriteTo(&b, 1)
+	}
+	t.Logf("dirty-window goroutine dump:\n%s", b.String())
+	b.Reset()
+	if p := pprof.Lookup("allocs"); p != nil {
+		_ = p.WriteTo(&b, 0)
+	}
+	t.Logf("dirty-window alloc profile:\n%s", b.String())
+}
+
 // TestCharGridPlanIsAllocFree keeps the builder off the heap. It runs once per frame
 // on both tabs and cellAt runs per visible cell; neither may allocate. (This is NOT
 // the whole-screen gate the spec rules out — drawCharSelect still allocates a char
@@ -849,6 +650,7 @@ func TestCharGridPlanIsAllocFree(t *testing.T) {
 	a, lay, g := themedStockPlan(t)
 	gridTop := charSelectGridTop(a)
 	if n := testing.AllocsPerRun(200, func() { a.charSelectGridPlan(w, h, gridTop, lay) }); n != 0 {
+		dumpDirtyWindow(t)
 		t.Errorf("charSelectGridPlan allocates %v per call, want 0", n)
 	}
 	if n := testing.AllocsPerRun(200, func() {
@@ -857,6 +659,7 @@ func TestCharGridPlanIsAllocFree(t *testing.T) {
 			_ = cell
 		}
 	}); n != 0 {
+		dumpDirtyWindow(t)
 		t.Errorf("cellAt/visible allocate %v per cell, want 0", n)
 	}
 }

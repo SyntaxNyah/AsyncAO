@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/coder/websocket"
 )
 
@@ -23,7 +24,15 @@ func wsTestServer(t *testing.T) string {
 			return
 		}
 		defer ws.CloseNow()
-		<-r.Context().Done()
+		// Drain until the client's close frame (or the request context) ends the
+		// stream. Draining is what answers the client's graceful Close() handshake,
+		// so a.conn.Close() in testTabApp's cleanup returns at once instead of
+		// waiting out the full close-handshake timeout (5s per dialled test).
+		for {
+			if _, _, err := ws.Read(r.Context()); err != nil {
+				return
+			}
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return "ws" + strings.TrimPrefix(srv.URL, "http")
@@ -66,6 +75,7 @@ func TestReconnectFromDialogRestoresLogOnSameServer(t *testing.T) {
 	}
 
 	a.reconnectFromDisconnectDialog()
+	awaitDial(t, a)
 
 	if a.conn == nil {
 		t.Fatal("the redial to a real, reachable server must have succeeded")
@@ -103,6 +113,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 
 		a.Disconnect()
 		a.Connect("Test Server", url)
+		awaitDial(t, a)
 
 		if a.conn == nil {
 			t.Fatal("the redial to a real, reachable server must have succeeded")
@@ -124,6 +135,7 @@ func TestDeliberateLeavePathsNeverCarryTheLog(t *testing.T) {
 
 		a.closeDisconnectDialogToLobby()
 		a.Connect("Test Server", url)
+		awaitDial(t, a)
 
 		if a.conn == nil {
 			t.Fatal("the redial to a real, reachable server must have succeeded")
@@ -154,6 +166,7 @@ func TestKickAndBanNeverCarryTheLog(t *testing.T) {
 			}
 
 			a.Connect("Test Server", url)
+			awaitDial(t, a)
 			if a.conn == nil {
 				t.Fatal("the redial to a real, reachable server must have succeeded")
 			}
@@ -178,7 +191,16 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	a.lastConnName, a.lastConnURL = "Test Server", goodURL
 	seedCarryableLog(a, "before")
 	a.room = nil // roomless drop: takes handleInvoluntaryDrop's plain-teardown branch
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
 
 	a.handleInvoluntaryDrop("connection closed")
 	if a.screen != ScreenLobby {
@@ -200,6 +222,7 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	a.lastConnURL = badURL
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
+	awaitDial(t, a)
 	if a.conn != nil {
 		t.Fatal("test setup: the bad address must fail to dial")
 	}
@@ -211,6 +234,7 @@ func TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry(t *testing.T) {
 	a.lastConnURL = goodURL
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 	a.pollAutoReconnect()
+	awaitDial(t, a)
 
 	if a.conn == nil {
 		t.Fatal("the retry against a real, reachable server must have succeeded")
@@ -242,7 +266,16 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	a.lastConnName, a.lastConnURL = "Server A", urlA
 	seedCarryableLog(a, "server-a")
 	a.room = nil // roomless drop: takes the plain-teardown+carry branch
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
 
 	a.handleInvoluntaryDrop("connection closed")
 	if a.pendingSessionCarry == nil {
@@ -253,6 +286,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	// DIFFERENT server (Connect cancels the pending auto-retry but must NOT
 	// let A's stale carry follow them onto B).
 	a.Connect("Server B", urlB)
+	awaitDial(t, a)
 	if a.conn == nil {
 		t.Fatal("the join to server B must have succeeded")
 	}
@@ -268,6 +302,7 @@ func TestReconnectToADifferentServerNeverCarriesTheLog(t *testing.T) {
 	// it back up under the wrong session entirely.
 	a.Disconnect()
 	a.Connect("Server A", urlA)
+	awaitDial(t, a)
 	if a.conn == nil {
 		t.Fatal("the rejoin to server A must have succeeded")
 	}
@@ -301,6 +336,7 @@ func TestSessionCarryDoesNotLeakIntoAParkedTab(t *testing.T) {
 		t.Fatal("test setup: expected the dialog to freeze open")
 	}
 	a.reconnectFromDisconnectDialog()
+	awaitDial(t, a)
 
 	if a.conn == nil {
 		t.Fatal("the redial to a real, reachable server must have succeeded")

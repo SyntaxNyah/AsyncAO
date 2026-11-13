@@ -4,7 +4,7 @@ import (
 	"image"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestCaptureTargetReadsBack is the render-to-target spike: render a known fill

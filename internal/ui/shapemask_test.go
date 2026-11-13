@@ -3,9 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // newShapeTestApp builds a headless App with a real Ctx + texture store so the
@@ -21,7 +20,7 @@ func newShapeTestApp(t *testing.T) (*App, func()) {
 	}
 	a := testTabApp(t)
 	a.ctx = ctx
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		cleanup()
 		t.Skipf("texture store unavailable: %v", err)

@@ -4,9 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestManualUIScaleCommitOnRelease drives the manual UI-scale slider through a
@@ -20,7 +19,7 @@ func TestManualUIScaleCommitOnRelease(t *testing.T) {
 	defer cleanup()
 	a := testTabApp(t)
 	a.ctx.Ren = ren
-	a.d.Prefs.SetUIScaleAuto(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.UIScaleAutoOn = false })
 	a.uiScalePct = 100
 	a.ctx.SetUIScale(100)
 
@@ -65,7 +64,7 @@ func TestManualUIScaleCommitOnRelease(t *testing.T) {
 	if a.uiScalePct != config.MaxUIScalePercent {
 		t.Fatalf("release must apply the dragged value, uiScalePct = %d, want %d", a.uiScalePct, config.MaxUIScalePercent)
 	}
-	if got := a.d.Prefs.UIScale(); got != config.MaxUIScalePercent {
+	if got := a.d.Prefs.Load().UIScalePct; got != config.MaxUIScalePercent {
 		t.Fatalf("release must persist the scale, prefs = %d", got)
 	}
 

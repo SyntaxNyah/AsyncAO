@@ -45,21 +45,17 @@ package ui
 // SDL: skips (never fails) without a video driver, via newCaptureHarness.
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -72,9 +68,8 @@ const (
 	// frameHarnessDt is the per-frame delta handed to App.Frame — one 60 Hz tick.
 	// FIXED rather than wall-clock so a slow machine cannot change what a gate sees.
 	frameHarnessDt = 16 * time.Millisecond
-	// frameHarnessPoolWorkers is the network pool the harness's Manager owns. Two:
-	// the manager refuses to be built without a pool, and no gate here fetches
-	// anything (LocalMode, a t.TempDir source, autodetect off).
+	// frameHarnessPoolWorkers is the harness Manager's decode workers; no gate here fetches anything (a t.TempDir
+	// folder, autodetect off).
 	frameHarnessPoolWorkers = 2
 	// frameHarnessApplyFrames bounds how many frames driveUntilThemeApplied spends
 	// waiting for an apply goroutine. At 16 ms of simulated time each this is a
@@ -89,7 +84,7 @@ const (
 // Everything it adds beyond stageThemedCourtroom is either a dependency Frame
 // dereferences without a nil check, or a one-shot latch that would otherwise start a
 // goroutine or a network read on frame 1. Nothing here changes what is DRAWN.
-func stageFrameDrivenApp(t *testing.T) (*App, func()) {
+func stageFrameDrivenApp(t testing.TB) (*App, func()) {
 	t.Helper()
 	a, cleanup := stageThemedCourtroom(t)
 
@@ -106,27 +101,31 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(frameHarnessPoolWorkers)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(frameHarnessPoolWorkers)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    assets.NewLocalFetcher([]string{t.TempDir()}),
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   assets.NewLocalFetcher([]string{t.TempDir()}),
+		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
+	a.d.Manager.SetFolders([]string{t.TempDir()}, nil)
 	a.d.Pump = render.NewPump(a.d.Store, a.d.Manager, nil)
-	// The REAL audio sink, built exactly as cmd/asyncao builds it. NewAudio degrades
-	// to a disabled-but-functional device when the mixer cannot open one (which is
-	// the headless case), and Frame drains the manager's audio channel through it
+	// The REAL audio sink, built exactly as cmd/asyncao builds it. A nil mixer gives
+	// a disabled-but-functional device (which is the headless case), and Frame drains the manager's audio channel through it
 	// either way — a zero-value &render.Audio{} would nil-deref on that drain.
-	a.d.Audio = render.NewAudio(a.d.Manager)
-	t.Cleanup(a.d.Audio.Close) // pair the device (or the failed open) exactly as the app does
+	mixer, _ := host.AudioDevices{}.OpenMixer()
+	a.d.Audio = render.NewAudio(a.d.Manager, mixer)
+	// The device closes before the courtroom's SDL teardown, as in the app: an
+	// SDL3_mixer device destroyed after SDL_Quit crashes the process.
+	sdlCleanup := cleanup
+	cleanup = func() {
+		a.d.Audio.Close()
+		sdlCleanup()
+	}
 
 	// --- latches: a headless frame stays off the network and off the wall clock ---
 	// maybeKickUpdateCheck spawns two goroutines on frame 1 (a .old cleanup and the
@@ -137,7 +136,18 @@ func stageFrameDrivenApp(t *testing.T) (*App, func()) {
 	// call is guarded, but latching it keeps the frame free of first-frame-only work
 	// so frame 1 and frame 2 are comparable.
 	a.presenceInit = true
-	a.d.Prefs.SetFormatAutoDetect(false) // no extensions.json probe interposes
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			false
+
+	})
+
+	// no extensions.json probe interposes
 	// macroBind is the one App field whose ZERO VALUE means "armed" — slot 0 of the
 	// macro key-capture — which is why the real constructor spells it out
 	// (app.go:3322). A hand-built fixture that leaves it at 0 reports
@@ -307,66 +317,6 @@ func TestTheFrameHarnessReallyDrivesAFrame(t *testing.T) {
 	if got := a.themeFXFrame - one; got != 1 {
 		t.Fatalf("one frame advanced the FX pass by %d, want exactly 1 — the pass hook fired %d times "+
 			"in one frame, which halves themeFXIdleFrames for every one-shot", got, got)
-	}
-}
-
-// TestFrameGatesDriveTheRealFrame is the harness's anti-bypass gate.
-//
-// A fixture whose users can quietly stop using it is not a seam. Every file that
-// stages the frame harness must also drive it through driveFrame / driveFrames /
-// driveUntilThemeApplied — i.e. through App.Frame — because the moment one of them
-// reaches for a.drawCourtroom instead, it is back to testing the function while the
-// wiring goes uncovered, which is exactly the state this file was written to end.
-func TestFrameGatesDriveTheRealFrame(t *testing.T) {
-	files, err := filepath.Glob("*_test.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("glob the package tests: %v (%d files)", err, len(files))
-	}
-	const stager = "stageFrameDrivenApp"
-	drivers := []string{"driveFrame", "driveFrames", "driveUntilThemeApplied"}
-	fset := token.NewFileSet()
-	staged := 0
-	for _, name := range files {
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		file, err := parser.ParseFile(fset, name, src, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		uses, drives := false, false
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			id, ok := call.Fun.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			if id.Name == stager {
-				uses = true
-			}
-			for _, d := range drivers {
-				if id.Name == d {
-					drives = true
-				}
-			}
-			return true
-		})
-		if !uses {
-			continue
-		}
-		staged++
-		if !drives {
-			t.Errorf("%s stages the frame harness but never drives a frame (%s) — a gate on this "+
-				"fixture that calls a screen draw directly is testing the function, not the wiring",
-				name, strings.Join(drivers, " / "))
-		}
-	}
-	if staged == 0 {
-		t.Fatalf("no test file stages %s — the harness has no users, so it pins nothing", stager)
 	}
 }
 

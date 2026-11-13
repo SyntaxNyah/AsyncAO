@@ -11,20 +11,22 @@ func TestGroupInviteOSToastIsOffByDefaultAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.GroupInviteOSToastOn() {
+	if p.Load().GroupInviteOSToast {
 		t.Error("on by default")
 	}
-	p.SetGroupInviteOSToast(true)
+	p.Update(func(sn *Settings) { sn.GroupInviteOSToast = true })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	p.Close()
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
 	reloaded, err := New(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer reloaded.Close()
-	if !reloaded.GroupInviteOSToastOn() {
+	if !reloaded.Load().GroupInviteOSToast {
 		t.Error("the setting did not persist")
 	}
 }

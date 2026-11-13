@@ -5,11 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestReactionTargetMatch pins the ref match: it finds a recent entry's ref, ignores a 0
@@ -86,7 +85,17 @@ func TestOnIncomingReactionGate(t *testing.T) {
 	}
 	// Viewer opted out → suppressed.
 	a.reactionFloats = a.reactionFloats[:0]
-	prefs.SetHideReactions(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			HideReactions =
+
+			true
+
+	})
+
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
 	if len(a.reactionFloats) != 0 {
 		t.Error("HideReactions didn't suppress an incoming float")
@@ -99,7 +108,9 @@ func TestOnIncomingReactionGate(t *testing.T) {
 func TestQueueReactionSnapshot(t *testing.T) {
 	a := &App{}
 	a.lastReactRef, a.lastReactName = 777, "Phoenix"
-	a.toggleReactPicker() // opens + snapshots 777
+	// The opener that took this snapshot was removed with the IC-bar React button; set
+	// the state it produced and keep the consuming half under test.
+	a.showReactPicker, a.reactTargetRef, a.reactTargetName = true, a.lastReactRef, a.lastReactName
 	if !a.showReactPicker || a.reactTargetRef != 777 {
 		t.Fatalf("open didn't snapshot: show=%v target=%d", a.showReactPicker, a.reactTargetRef)
 	}

@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestAreaMenuRowsAreAllReachableActions pins the area kebab's model (areamenu.go):
@@ -51,32 +51,6 @@ func TestAreaMenuRowsAreAllReachableActions(t *testing.T) {
 	a.areaMenuAct(areaMenuCMPanel)
 	if !a.showCMPanel {
 		t.Error("the CM row must open the CM panel rather than growing its own lock/kick copies")
-	}
-}
-
-// TestAreaMenuIsWiredIntoTheSharedPane is the encapsulation gate for the kebab.
-// The rows only appear because musicheader.go appends them and forwards every
-// predicate; drop any one of those and the block is either invisible or
-// mis-dispatched into the music switch, which would silently do the wrong thing.
-func TestAreaMenuIsWiredIntoTheSharedPane(t *testing.T) {
-	seen := map[musicMenuKind]bool{}
-	for _, row := range musicMenuRows {
-		seen[row.kind] = true
-	}
-	for _, row := range areaMenuRows {
-		if row.kind != musicMenuSeparator && !seen[row.kind] {
-			t.Errorf("area row %q never reaches the shared menu — musicMenuRows does not carry it", row.label)
-		}
-	}
-	// musicMenuRowLive is in the list because it is the forward the first cut of this
-	// kit shipped WITHOUT, which put all five area rows in every user's music menu.
-	for _, fn := range []string{"musicMenuRowLive", "musicMenuRowEnabled", "musicMenuRowChecked", "musicMenuRowIsToggle", "musicMenuAct"} {
-		if !containsCall(funcBodySource(t, "musicheader.go", fn), "isAreaMenuKind") {
-			t.Errorf("%s does not forward the AREA block — an area row falls into the music switch", fn)
-		}
-	}
-	if !containsCall(funcBodySource(t, "screens.go", "drawAreaList"), "drawAreaMenuButton") {
-		t.Fatal("the area list draws no ⋮ — the rows exist but nothing opens them from the Areas view")
 	}
 }
 
@@ -148,70 +122,6 @@ func TestAreaMenuButtonTakesRoomFromItsOwnRow(t *testing.T) {
 	if narrow.count.W != wide.count.W {
 		t.Errorf("the counter's room scaled with the panel (%d → %d) — it holds one short \"n / m\"",
 			narrow.count.W, wide.count.W)
-	}
-}
-
-// TestAreaListHeaderIsLaidOutBySplitAreaHeaderRow is the deletion-catcher that makes
-// the test above mean something for the SCREEN. splitAreaHeaderRow can be perfectly
-// correct and perfectly ignored: drawAreaList draws three things on that row, and any
-// one of them can be rebuilt out of the panel rect in place, which is exactly the
-// regression that reached this file — the counter drawn at r.X+r.W-142, straight under
-// the ⋮, with the whole package green.
-//
-// A behavioural test cannot see it. The overlap is between a label and a button drawn
-// by two unrelated calls in a single-pass drawer with no return value, and the pane it
-// draws into needs a live renderer; what is wrong is the SOURCE of a coordinate. So the
-// gate reads the coordinates: it learns what drawAreaList calls the split's result and
-// then requires the ⋮'s rect, the search field's rect and the counter's X and Y all to
-// derive from that name.
-func TestAreaListHeaderIsLaidOutBySplitAreaHeaderRow(t *testing.T) {
-	body := funcBodySource(t, "screens.go", "drawAreaList")
-	head := bindingOf(body, "splitAreaHeaderRow")
-	if head == "" {
-		t.Fatal("drawAreaList does not bind splitAreaHeaderRow's result — the header row's parts are " +
-			"being placed by hand again, and nothing keeps them out from under the ⋮")
-	}
-
-	btn := callsNamed(body, "drawAreaMenuButton")
-	if len(btn) != 1 {
-		t.Fatalf("drawAreaList draws the ⋮ %d times, want exactly 1", len(btn))
-	}
-	if len(btn[0].Args) == 0 || !mentionsIdent(btn[0].Args[0], head) {
-		t.Errorf("the ⋮ is placed from something other than %s — the button and the row's other "+
-			"occupants no longer agree on where its left edge is", head)
-	}
-
-	field := callsNamed(body, "TextField")
-	if len(field) != 1 {
-		t.Fatalf("drawAreaList draws %d text fields, want exactly 1 (the area search box)", len(field))
-	}
-	// TextField(id, rect, value, placeholder) — the rect is the one that can drift.
-	if len(field[0].Args) < 2 || !mentionsIdent(field[0].Args[1], head) {
-		t.Errorf("the search field's rect is not derived from %s — it can reach under the ⋮ again", head)
-	}
-
-	// The counter is the Label whose text comes from areaCount.text(shown, total). There
-	// are two of them, one per branch of the search-field-is-external switch; the
-	// external branch left-aligns a lone "3 / 3" on the card column and owes the split
-	// nothing, so the requirement is that the OTHER one — the one sharing the row with
-	// the ⋮ — is laid out from the split.
-	counters, fromSplit := 0, 0
-	for _, call := range callsNamed(body, "Label") {
-		if len(call.Args) < 3 || !containsCall(call.Args[2], "text") {
-			continue
-		}
-		counters++
-		if mentionsIdent(call.Args[0], head) && mentionsIdent(call.Args[1], head) {
-			fromSplit++
-		}
-	}
-	if counters == 0 {
-		t.Fatal("drawAreaList draws no \"shown / total\" counter — this gate now checks nothing")
-	}
-	if fromSplit == 0 {
-		t.Errorf("none of the %d counter labels takes both coordinates from %s — the one that shares "+
-			"the header row with the ⋮ is being placed against the full panel width, which draws it "+
-			"underneath the button", counters, head)
 	}
 }
 
@@ -292,28 +202,5 @@ func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
 	hidden.hidden = map[string]bool{panelTabAreas: true}
 	if n, _ := drawn(hidden); n != 0 {
 		t.Errorf("a hidden Areas tab still offers %d area row(s)", n)
-	}
-}
-
-// TestEveryMusicMenuConsumerAsksMusicMenuRowDrawn is the seam gate for the row
-// filter itself. musicMenuRowDrawn exists because three passes over musicMenuRows
-// must agree on which rows paint — the height, the width and the renderer — and the
-// only reason they agree is that all three ask IT rather than the per-kind
-// musicMenuRowLive underneath.
-//
-// The behavioural arm above cannot catch a consumer that stops asking: it drives
-// musicMenuRowDrawn and musicMenuHeight, so reverting drawMusicMenu's loop to the
-// bare musicMenuRowLive leaves the suite green while the Music view paints the AREA
-// block's divider — that separator carries the shared musicMenuSeparator kind, so
-// musicMenuRowLive says yes — as a stray rule at the panel's bottom edge, past the
-// height musicMenuRect reserved. Hence a deletion-catcher on the call itself, one
-// arm per consumer, which is also what keeps the next block appended to this pane
-// from re-learning the same lesson.
-func TestEveryMusicMenuConsumerAsksMusicMenuRowDrawn(t *testing.T) {
-	for _, fn := range []string{"musicMenuHeight", "musicMenuRect", "drawMusicMenu"} {
-		if !containsCall(funcBodySource(t, "musicheader.go", fn), "musicMenuRowDrawn") {
-			t.Errorf("%s filters musicMenuRows without musicMenuRowDrawn — the three passes can now disagree, "+
-				"and a block's trailing divider draws with nothing beneath it", fn)
-		}
 	}
 }

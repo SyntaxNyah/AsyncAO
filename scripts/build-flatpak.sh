@@ -4,16 +4,12 @@
 # Flatpak is a natural distribution channel.
 #
 # Output: dist/<name>.flatpak — a single-file bundle (flatpak install --bundle).
-# Mirrors the CI "Linux x86_64 Flatpak" job; that job is where this is actually
+# CI's build-flatpak job in release.yml runs this; that is where it is actually
 # validated, because the dev box is Windows and can't run flatpak-builder.
-#
-# Usage:
-#   scripts/build-flatpak.sh                 # Discord-bundled default
-#   scripts/build-flatpak.sh nodiscord       # Discord-free variant
 #
 # Env:
 #   ASYNCAO_VERSION   version stamped into the binary (default: git describe / dev)
-#   FLATPAK_OUTPUT    output filename (default derived from the variant)
+#   FLATPAK_OUTPUT    output filename
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,18 +23,11 @@ GENERATED="$FLATPAK_DIR/_build.yaml" # gitignored; lives beside the template so 
 BUILDDIR="$ROOT/.deps/flatpak-build"
 REPO="$ROOT/.deps/flatpak-repo"
 
-VARIANT="${1:-default}"
-TAGS=""
-SUFFIX=""
-if [[ "$VARIANT" == "nodiscord" ]]; then
-	TAGS="nodiscord"
-	SUFFIX="-nodiscord"
-fi
-OUT="${FLATPAK_OUTPUT:-AsyncAO-linux-x86_64${SUFFIX}.flatpak}"
+OUT="${FLATPAK_OUTPUT:-AsyncAO-linux-x86_64.flatpak}"
 VERSION="${ASYNCAO_VERSION:-$(git describe --tags --always 2>/dev/null || echo dev)}"
 
-# Substitute the template's build tags + version, then build that copy.
-sed -e "s/@ASYNCAO_TAGS@/${TAGS}/g" -e "s/@ASYNCAO_VERSION@/${VERSION}/g" "$TEMPLATE" >"$GENERATED"
+# Substitute the template's version, then build that copy.
+sed -e "s/@ASYNCAO_VERSION@/${VERSION}/g" "$TEMPLATE" >"$GENERATED"
 trap 'rm -f "$GENERATED"' EXIT
 
 # Runtime + SDK + the Go SDK extension (from Flathub).

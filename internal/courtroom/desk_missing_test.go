@@ -9,12 +9,10 @@ import (
 
 // TestDeskDrawnTable pins #44's decision function across the full cross product
 // of desk_mod × phase × what we know about the desk image.
-//
 // The DeskUnresolved/DeskResolved columns must reproduce the existing deskVisible
 // table VERBATIM (a regression guard on TestDeskVisiblePhaseMatrix): a desk we have
 // not been told is missing behaves exactly as it did before the fix, so a real desk
 // that is merely still streaming never blinks.
-//
 // The DeskAbsent column must be false for EVERY mod — including DeskShow, and
 // including the unknown-mod default that deskVisible answers "true" to. That is
 // AO2-Client's set_scene: it computes show_desk from desk_mod and then clears it
@@ -60,6 +58,11 @@ func deskRoomWithBackground(t *testing.T) *Courtroom {
 	t.Helper()
 	room, sess, _, _ := newCourtroomRig(t)
 	sess.Background = "gs4"
+	// The def background has loaded as its legacy file, so the desk is known and not yet resident.
+	room.Assets = assetFake{
+		sprite: func(string) bool { return false },
+		files:  map[string]string{room.urls.PositionScenery("gs4", "def", nil).Background: room.urls.Background("gs4", "defenseempty") + ".webp"},
+	}
 	return room
 }
 
@@ -136,12 +139,6 @@ func TestMissingDesksBounded(t *testing.T) {
 
 // TestBackgroundChangeReDerivesDesk pins the reported "the background is missing
 // its desk on purpose, but the default desk appears anyway".
-//
-// ShowDesk is derived from the DESK BASE's residency. setBackground rewrites that
-// base and used to leave ShowDesk alone, so a room whose desk 404s inherited the
-// PREVIOUS room's answer and kept drawing its desk — for the rest of the message,
-// because a settled message has no further phase edge to correct it.
-//
 // It also pins the hazard: applyDeskMods recomputes PairActive and the speaker
 // offsets from c.current too, so re-deriving at the WRONG phase would flip pair
 // state mid-preanim. Passing the current phase must leave both untouched.
@@ -157,6 +154,11 @@ func TestBackgroundChangeReDerivesDesk(t *testing.T) {
 	}
 	room.phase = PhaseTalking
 	room.Scene.Position = "wit"
+	witness := func(bg string) string { return room.urls.Background(bg, defaultPosBackground) + ".webp" }
+	room.Assets = assetFake{sprite: func(string) bool { return false }, files: map[string]string{
+		room.urls.PositionScenery("hasdesk", "wit", nil).Background: witness("hasdesk"),
+		room.urls.PositionScenery("nodesk", "wit", nil).Background:  witness("nodesk"),
+	}}
 	room.setBackground("hasdesk", "", false)
 	if !room.Scene.ShowDesk {
 		t.Fatal("fixture: a DeskShown message on an unknown-but-not-missing desk should draw one")
@@ -166,7 +168,7 @@ func TestBackgroundChangeReDerivesDesk(t *testing.T) {
 	// Now move to a room whose desk is conclusively missing, exactly as the
 	// warning relay reports it.
 	room.Scene.Position = "wit"
-	nextDesk := room.urls.Background("nodesk", func() string { _, d := PositionScene("wit"); return d }())
+	nextDesk := room.urls.Background("nodesk", "stand")
 	room.recordMissingDesk(nextDesk)
 	room.setBackground("nodesk", "", false)
 
@@ -195,19 +197,16 @@ func TestBackgroundChangeWithNoMessageIsSafe(t *testing.T) {
 }
 
 // TestLateDeskUploadHealsTheMissingSet pins the other half of the desk state.
-//
-// missingDesks was insert-only, so a desk that 404'd once stayed absent for the
-// life of the Courtroom — even after it actually arrived (a server repack, a
-// local mount added, a format learned). The RENDER side already self-heals
-// (TextureStore.clearMissing on upload), so the two disagreed: the texture was
-// resident and ShowDesk still said no, for the rest of the session.
-//
 // It also makes DeskResolved a real state. It was declared and unreachable.
 func TestLateDeskUploadHealsTheMissingSet(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	room.current = &protocol.ChatMessage{DeskMod: protocol.DeskShow}
 	room.phase = PhaseTalking
 	room.Scene.Position = "wit"
+	files := map[string]string{
+		room.urls.PositionScenery("repacked", "wit", nil).Background: room.urls.Background("repacked", defaultPosBackground) + ".webp",
+	}
+	room.Assets = assetFake{sprite: func(string) bool { return false }, files: files}
 	room.setBackground("repacked", "", false)
 
 	desk := room.Scene.DeskBase
@@ -222,7 +221,7 @@ func TestLateDeskUploadHealsTheMissingSet(t *testing.T) {
 	// The desk lands after all. The residency probe is the same one the sprite
 	// wait-gate uses; an unwired room keeps the old two-state answer.
 	resident := map[string]bool{}
-	room.SpriteReady = func(base string) bool { return resident[base] }
+	room.Assets = assetFake{sprite: func(base string) bool { return resident[base] }, files: files}
 	if got := room.deskResolution(); got != DeskAbsent {
 		t.Error("a probe that reports NOT resident must leave the miss standing")
 	}

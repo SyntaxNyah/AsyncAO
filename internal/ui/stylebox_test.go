@@ -88,7 +88,7 @@ func TestHuePaintSliderRoundTrip(t *testing.T) {
 // old client decodes carries the full effect (no new bytes, no degradation).
 func TestHuePaintIsExistingWire(t *testing.T) {
 	a := testTabApp(t)
-	p := a.d.Prefs.SpriteStyle()
+	p := a.d.Prefs.Load().MySpriteStyle
 	p.Tint, p.Grayscale = true, true
 	p.R, p.G, p.B = hsvToRGB(200.0/360, 1, 1)
 	a.d.Prefs.SetSpriteStyle(p)

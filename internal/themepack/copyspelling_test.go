@@ -1,18 +1,7 @@
 package themepack
 
 // THE THIRD CASE-FOLD DOOR (v1.90.0 W9 warm-up).
-//
-// Three functions in this package have to answer "which file in this folder is
-// the theme's native tier?". Two of them fold case — readPackSidecar via
-// canonicalSidecarRel, readFolderSidecar via strings.EqualFold — and the third,
-// stampProvenance, used to open the CANONICAL name unconditionally.
-//
 // On a case-sensitive filesystem that is a silent data loss with a delayed fuse:
-// copying a theme whose tier is spelled ASYNCAO_THEME.INI read nothing, created a
-// SECOND empty sidecar beside the author's and wrote the provenance into that. The
-// copy lost its name, author and licence; the editor showed an empty native tier;
-// and the copy's own export was then refused by our one-file-per-name guard,
-// which is the point at which the user finds out.
 
 import (
 	"path/filepath"
@@ -54,14 +43,6 @@ func TestFoundSidecarRelReportsTheSpellingTheFolderActuallyHas(t *testing.T) {
 // TestCopyStampsTheSidecarTheThemeActuallyHas is the integration arm: a theme
 // whose ONLY native tier is shouted must come out of a copy with its metadata
 // intact and exactly one sidecar.
-//
-// ON A CASE-FOLDING FILESYSTEM (Windows, macOS by default) this arm cannot fail:
-// there is one file either way and os.Open finds it under either spelling. It
-// still runs — it costs nothing and it pins the metadata carry — but the defect it
-// is named for is only observable where the pair can exist, so the honest thing is
-// to say so here rather than to let a green run on this box read as proof. That is
-// the same shape TestTheExporterRefusesWhatTheImporterRefuses already uses, with
-// the skip inverted: there the FIXTURE cannot exist, here the BUG cannot.
 func TestCopyStampsTheSidecarTheThemeActuallyHas(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "paper")
 	mustWrite(t, filepath.Join(dir, "courtroom_design.ini"), "courtroom = 0, 0, 256, 192\nviewport = 0, 0, 256, 192\n")

@@ -4,156 +4,82 @@ import (
 	"math"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (
-	// offsetPercentDivisor converts AO offsets (percent) into pixels.
 	offsetPercentDivisor = 100
-	// shakeAmplitudeDivisor scales the screenshake wobble to the viewport
-	// (vp.W / divisor at full strength — a few pixels at 4:3 sizes).
+	// shakeAmplitudeDivisor scales the screenshake wobble to the viewport width.
 	shakeAmplitudeDivisor = 48
-	// shakePeriod is the wobble oscillation period (fast enough to read as
-	// a shake, slow enough that 60 Hz sampling doesn't alias it away).
+	// shakePeriod is fast enough to read as a shake, slow enough that 60 Hz sampling doesn't alias it away.
 	shakePeriod = 90 * time.Millisecond
 
-	// Rainbow-sprite hue speed maps the SpriteFX.Speed slider [1,100] to a
-	// hue-rotation period. minRainbowCycle is a HARD positive floor: the phase
-	// clock does phase%cycle and rainbowMod divides by cycle, so a zero period
-	// would panic the render loop every frame — the period must never reach 0.
-	// (~2.6 s at the default speed 70 reads as a rainbow without strobing.)
+	// minRainbowCycle must stay above 0: phase%cycle and rainbowMod divide by the period, so 0 panics the render loop.
 	minRainbowCycle = 300 * time.Millisecond  // fastest (Speed=100)
 	maxRainbowCycle = 8000 * time.Millisecond // slowest (Speed=1)
 
-	// spriteFloorMax is the channel floor at Vividness=0 (subtlest tint). The
-	// floor lifts every channel of the colour-mod off zero so a saturated hue
-	// tints the sprite instead of crushing two channels to a flat silhouette;
-	// SetColorMod multiplies (out = texel*mod/255), so a higher floor keeps
-	// more of the art's own brightness. Vividness=100 drops the floor to 0.
+	// spriteFloorMax is the floor at Vividness=0; it stops a saturated hue crushing channels to a silhouette.
 	spriteFloorMax = 200
 )
 
-// animState tracks playback of one sprite layer without allocations: the
-// loop bumps an index and swaps texture pointers (spec §12). It also caches
-// the resolved TexturePage against the store generation, so steady-state
-// frames perform zero LRU lookups — pure pointer math.
+// animState tracks a layer's playback and caches its page by store generation, avoiding LRU lookups.
 type animState struct {
 	base     string
 	frame    int
 	elapsed  time.Duration
 	finished bool
-	// startReported guards the one-shot OnPreanimStart duration report: set once
-	// the decoded preanim page first plays, cleared by reset on a base change.
+	// startReported guards the one-shot OnPreanimStart report; reset clears it on a base change.
 	startReported bool
-	// loopReported guards the ONE OnPreanimDone report when the loop-preanim pref
-	// is ON: the clip's first natural completion fires OnPreanimDone once and sets
-	// this, then subsequent wraps (the pref keeps the preanim looping) never
-	// re-fire it — so the courtroom's message lifecycle is byte-identical to
-	// loop-off. Cleared by reset on a base change (a fresh preanim re-arms).
-	loopReported bool
-	// shownSrc is the SOURCE (un-decimated) frame index last reported through
-	// OnFrameShown for this base — the #17 frame-effect trigger uses it to fire
-	// only when the drawn frame moves to a new source frame. -1 = nothing
-	// reported yet for this base (reset on a base change); frame 0 IS a valid
-	// trigger point, so the sentinel can't be 0.
+	// shownSrc is the last source frame reported through OnFrameShown; -1 is none, because frame 0 is a valid trigger.
 	shownSrc int
 
 	page    *TexturePage
 	pageGen uint64
 
-	// coldFor accumulates how long this layer's base has been unresolved (ticked
-	// in Update, reset on a hit) — the hold-previous max-age knob reads it.
+	// coldFor is how long this layer's base has been unresolved; the hold-previous max age reads it.
 	coldFor time.Duration
-	// fadeLeft counts down a speaker-swap crossfade: armed on a base change
-	// (syncAnim) when the knob is on, ticked only while the NEW sprite is
-	// resident (a cold load doesn't consume the fade), and while > 0 the draw
-	// blends lastGood under the alpha-ramped new sprite.
+	// fadeLeft counts down a crossfade, ticking only while the new sprite is resident.
 	fadeLeft time.Duration
-	// thumbKey is this base's precomputed thumb:// T1 key ("" when no base) —
-	// built once in reset so the cold-load miss path stays allocation-free.
-	thumbKey string
-	// heldKey is this base's precomputed held:// pinned key — the held-frame
-	// bridge the store parks a stolen scenery frame under when the LRU must
-	// evict the ON-SCREEN background/desk (the black-flash fix). Precomputed
-	// like thumbKey so the scenery miss path stays allocation-free.
+	// heldKey is the precomputed held:// key the store parks a scenery frame under when the LRU evicts it on screen.
 	heldKey string
 
-	// lastGood is the base of the last sprite this layer actually DREW (set in
-	// drawSprite on a hit). It is deliberately NOT cleared by reset, so when the
-	// layer swaps to a still-loading base the renderer can keep the previous
-	// sprite on screen (SpriteLoadHoldPrev) instead of flashing empty. Held by
-	// STRING, re-Get through the store each frame — never a cached page pointer,
-	// which could be evicted underfoot.
+	// lastGood is the base last drawn; reset keeps it, and a string because a page pointer could be evicted.
 	lastGood string
 
-	// scaleName/scaleIdleH latch the per-sprite filter rule's native height to the
-	// character's own IDLE page (spriteNativeH below). They are deliberately NOT
-	// cleared by reset/restart: a base change is idle -> talk -> preanim WITHIN one
-	// character, and the whole point is that those swaps reuse ONE height. A real
-	// character swap re-arms via scaleName.
+	// scaleName/scaleIdleH hold the idle page height; reset keeps them so a character shares one filter height.
 	scaleName  string
 	scaleIdleH int32
 }
 
-// reset rebinds the state to a new asset base. lastGood survives on purpose (see
-// the field comment) — the cold-load hold reads it after a base change. thumbKey
-// is precomputed HERE (a base change is a rare, event-driven moment) so the
-// per-frame miss path never builds a string.
+// reset rebinds the state to a new asset base, keeping lastGood for the cold-load hold.
 func (a *animState) reset(base string) {
 	a.base = base
 	a.frame = 0
 	a.elapsed = 0
 	a.finished = false
 	a.startReported = false
-	a.loopReported = false
 	a.shownSrc = -1 // nothing reported for the new base yet (frame 0 is a valid trigger)
 	a.page = nil
 	a.pageGen = 0
-	a.thumbKey = ""
 	a.heldKey = ""
 	if base != "" {
-		a.thumbKey = ThumbKeyPrefix + base
 		a.heldKey = HeldKeyPrefix + base
 	}
 }
 
-// restart rebinds playback to a freshly-replaced page WITHOUT changing the base
-// identity: the same base was re-decoded (a stream re-establishing its prefix, or
-// a full upload replacing a partial), so the cursor/finished flags reset but
-// lastGood/thumbKey/heldKey survive (the base is unchanged). The frame cursor
-// must never outlive the page it indexes.
+// restart resets playback for a replaced page, as the frame cursor must not outlive the page it indexes.
 func (a *animState) restart() {
 	a.frame = 0
 	a.elapsed = 0
 	a.finished = false
 	a.startReported = false
-	a.loopReported = false
 	a.shownSrc = -1
 }
 
-// spriteNativeH is the "native art height" the per-sprite filter rule decides on
-// (spriteScaleMode, scalemode_cgo.go): the character's IDLE page height.
-//
-// AO2 settles one filter per SPRITE (issue #21 label 15) from m_frame_size.height()
-// against the widget height, and recomputes it only when the animation FILE
-// changes (AnimationLayer::resetData -> calculateFrameGeometry). Taking the height
-// from whichever page happens to be drawing is not equivalent here, because
-// AsyncAO decodes an ANIMATION down to fit a byte budget scaled by its FRAME COUNT
-// (budgetFitHeight, assets/decoder.go) while a static page is not scaled at all —
-// so a character's talk/preanim page can decode at a different height than its
-// idle and the rule re-decided the filter mid-animation. That is the reported
-// "swaps to smooth scaling for animations": one character flipping filter as its
-// bases swapped underneath it.
-//
-// So latch the height from the IDLE page and keep it while that character's other
-// bases swap; only a different character re-arms the latch. Re-arming on the idle
-// itself (rather than on any page) means the very first drawn page of a message
-// that opens on a preanim still decides for itself, exactly as before.
-//
-// No store probe, no allocation: two string compares per draw.
+// spriteNativeH is the idle page height, which AO2's per-sprite filter rule uses (m_frame_size.height()).
 func (a *animState) spriteNativeH(layer *courtroom.SpriteLayer, page *TexturePage) int32 {
 	if a.scaleName != layer.Name {
 		a.scaleName, a.scaleIdleH = layer.Name, 0
@@ -167,8 +93,7 @@ func (a *animState) spriteNativeH(layer *courtroom.SpriteLayer, page *TexturePag
 	return page.H
 }
 
-// resolve returns the cached page, re-querying the store only when its
-// generation moved (upload/eviction/purge) or the base changed.
+// resolve returns the cached page, querying the store only when its generation or the base changed.
 func (a *animState) resolve(store *TextureStore) (*TexturePage, bool) {
 	if a.base == "" {
 		return nil, false
@@ -184,12 +109,8 @@ func (a *animState) resolve(store *TextureStore) (*TexturePage, bool) {
 		return nil, false
 	}
 	if a.page != page {
-		// The page POINTER changed while the base did not: the resident page was
-		// replaced (shrink on a redundant re-establish, or a partial→full swap).
-		// Restart playback so a.frame can't run past the new page's frame count.
-		// This must fire even when a.page is nil: a previous miss left the cursor
-		// pointing at a longer, evicted page, and a cold base's page arriving now
-		// is still a fresh playback start.
+		// The page was replaced under the same base, so restart or a.frame can run past the new frame count.
+		// This must fire even when a.page is nil: a miss can leave the cursor on a longer, evicted page.
 		a.restart()
 		a.page = page
 	}
@@ -197,31 +118,17 @@ func (a *animState) resolve(store *TextureStore) (*TexturePage, bool) {
 	return page, true
 }
 
-// advance steps frame timing. One-shot animations stop on the last frame
-// and report completion exactly once.
+// advance steps frame timing; a one-shot stops on its last frame and reports completion exactly once.
 func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) (justFinished bool) {
 	return a.advanceMax(page, dt, playOnce, 0)
 }
 
-// advanceMax is advance with AO2's per-frame duration clamp
-// (AnimationLayer::setMaximumDurationPerFrame, animationlayer.cpp:281-286): each
-// frame's authored delay is capped at maxDelay before it is spent, so a
-// max_duration = 60 effect plays every frame for at most 60 ms — it does NOT cut
-// the clip to 60 ms total, which is what the shipped effects.ini comment reads
-// like. maxDelay <= 0 = no clamp, which is every caller but the overlay and is
-// why advance() is byte-identical to what it was.
+// advanceMax caps each frame's delay, not the clip (setMaximumDurationPerFrame, animationlayer.cpp:281-286).
 func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce bool, maxDelay time.Duration) (justFinished bool) {
 	if page == nil || len(page.Frames) <= 1 {
-		// A progressive PARTIAL (one-frame delivery the full set is about to
-		// replace) is NOT a genuine single-frame animation: don't latch
-		// `finished` for a playOnce layer on it, or a preanimation would
-		// "complete" after one frame and fire OnPreanimDone prematurely.
-		if playOnce && !a.finished && (page == nil || !page.Partial) {
-			// Static "animation": a single frame finishes immediately.
-			// INVARIANT: finished is set ONLY under playOnce (here and at the
-			// last-frame case below). The Update speaker block's "told-to-loop
-			// restart" guard depends on this — a finished layer is always a
-			// one-shot that already completed, never a live idle/talk loop.
+		// A partial or reduced page is not a real single-frame animation: finishing here would fire OnPreanimDone early.
+		if playOnce && !a.finished && (page == nil || (!page.Partial && !page.Stilled)) {
+			// INVARIANT: finished is set only under playOnce; the speaker block's restart guard in Update relies on it.
 			a.finished = true
 			return true
 		}
@@ -231,9 +138,7 @@ func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce boo
 		return false
 	}
 	if a.frame >= len(page.Frames) {
-		// Defensive clamp: a re-decode can replace the page with a shorter one
-		// between resolves (resolve.restart handles the normal case); never index
-		// a frame that no longer exists.
+		// A re-decode can swap in a shorter page between resolves; never index a missing frame.
 		a.frame = 0
 		a.elapsed = 0
 	}
@@ -249,16 +154,11 @@ func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce boo
 		a.elapsed -= delay
 		if a.frame == len(page.Frames)-1 {
 			if page.Partial {
-				// Streaming prefix: hold the current last frame until the next
-				// chunk appends (playback resumes when len grows). Never finish
-				// or wrap a still-growing page.
+				// A still-growing page holds its last frame until the next chunk arrives; never finish or wrap it.
 				return false
 			}
 			if playOnce {
-				// INVARIANT: finished is set ONLY under playOnce (here and the
-				// single-frame case above). The Update speaker block's told-to-loop
-				// restart guard relies on this — never latch finished for a layer
-				// that could later be a looping idle/talk sprite.
+				// INVARIANT: finished is set only under playOnce; Update's speaker restart guard relies on it.
 				a.finished = true
 				return true
 			}
@@ -269,74 +169,19 @@ func (a *animState) advanceMax(page *TexturePage, dt time.Duration, playOnce boo
 	}
 }
 
-// advanceSpeaker steps the SPEAKER layer's frame timing for this Update and
-// reports whether the courtroom's OnPreanimDone should fire (a one-shot preanim
-// just completed). It wraps the raw advance() with two coordinated behaviours:
-//
-//	(1) Told-to-loop restart guard (the preanim-loop BUG fix). A finished one-shot
-//	    (a preanim, finished latched on its last frame) that is now told to LOOP
-//	    (playOnce=false) restarts as a clean loop instead of freezing on that held
-//	    frame. This only ever triggers on a base COLLISION: the courtroom cleared
-//	    PlayOnce but left Active on the SAME string (PreanimBase == TalkBase/
-//	    IdleBase, reachable per courtroom/frametriggers.go:167-172), so syncAnim
-//	    never reset() and finished still held — the resident preanim page would
-//	    otherwise loop (advance :155 wraps) or stay frozen. On a NON-collided base
-//	    the courtroom changes Active, syncAnim resets finished BEFORE this runs, so
-//	    the guard is a no-op. INVARIANT it relies on: finished is set ONLY under
-//	    playOnce (advance :133-135 and :150-153; see the cross-reference comment at
-//	    each setter) — a genuine idle/talk layer never reaches finished, so it is
-//	    never restarted here and keeps looping normally.
-//
-//	(2) preanimLoop (opt-in "loop preanimations", default OFF, non-canonical). When
-//	    ON and a preanim is playing, phase 1 advances as a one-shot (playOnce=true)
-//	    so it completes ONCE — firing OnPreanimDone exactly once (loopReported
-//	    latches it) so the message lifecycle is byte-identical to loop-off — then
-//	    phase 2 advances as a genuine LOOP (playOnce=false) so the SAME clip keeps
-//	    wrapping (finished stays cleared, so NextAnimDue keeps scheduling the wraps
-//	    and OnPreanimDone can never re-fire) for as long as the courtroom keeps the
-//	    preanim active. With preanimLoop OFF this whole branch is skipped and the
-//	    call is byte-identical to the original advance(page, dt, PlayOnce).
+// advanceSpeaker steps the speaker layer and reports whether OnPreanimDone should fire.
 func (v *Viewport) advanceSpeaker(page *TexturePage, dt time.Duration, playOnce bool) (firePreanimDone bool) {
 	a := &v.speakerAnim
 	if !playOnce && a.finished {
-		// (1) collision handoff: a finished one-shot is now a loop — restart clean.
+		// A finished one-shot has become a loop, so restart it clean.
 		a.finished = false
 		a.frame = 0
 		a.elapsed = 0
 	}
-	if playOnce && v.preanimLoop {
-		if a.loopReported {
-			// (2) phase 2: the first completion already fired OnPreanimDone; keep the
-			// same clip wrapping as a plain loop (finished stays cleared, so
-			// NextAnimDue keeps scheduling the wraps and completion never re-fires).
-			a.advance(page, dt, false)
-			return false
-		}
-		// (2) phase 1: run as a one-shot until it completes, then report ONCE. On the
-		// completing frame, immediately clear the finished latch (and wrap to frame 0)
-		// so the layer is already in loop form for the next Update — leaving finished
-		// latched even one frame would make NextAnimDue stop scheduling and stall the
-		// loop. The frame jump to 0 IS the loop wrapping, which is exactly right.
-		if a.advance(page, dt, true) {
-			a.loopReported = true
-			a.finished = false
-			a.frame = 0
-			a.elapsed = 0
-			return true
-		}
-		return false
-	}
-	// Default (loop OFF): plain one-shot / loop advance, unchanged.
 	return a.advance(page, dt, playOnce) && playOnce
 }
 
-// reportSpeakerFrame fires OnFrameShown with the speaker layer's currently-drawn
-// frame in the SENDER's raw frame space (#17). The playback cursor (a.frame) is a
-// KEPT-frame ordinal after decimation; FrameKeepIndex maps it back to the source
-// index the sender authored networked frame effects against. Fires only when that
-// source index changes since the last report for this base (a.shownSrc), so a
-// static sprite or a paused frame costs nothing, and a nil callback short-circuits
-// before any work. Called once per Update from the speaker-advance site.
+// reportSpeakerFrame fires OnFrameShown with the source frame index when it changes.
 func (v *Viewport) reportSpeakerFrame(page *TexturePage) {
 	if v.OnFrameShown == nil || page == nil || len(page.Frames) == 0 {
 		return
@@ -353,8 +198,7 @@ func (v *Viewport) reportSpeakerFrame(page *TexturePage) {
 	v.OnFrameShown(src)
 }
 
-// pageDuration is a one-shot animation's total playback time (the sum of every
-// frame's delay). Zero for a static / single-frame page.
+// pageDuration is the sum of a page's frame delays, zero for a single-frame page.
 func pageDuration(page *TexturePage) time.Duration {
 	var total time.Duration
 	for _, d := range page.Delays {
@@ -363,9 +207,7 @@ func pageDuration(page *TexturePage) time.Duration {
 	return total
 }
 
-// SpeakerAnimInfo is a diagnostic snapshot of the speaker sprite's decoded
-// animation: kept/source frame counts and delay statistics. The debug panel
-// surfaces it to answer "is this sprite decimated / are its delays even".
+// SpeakerAnimInfo is the speaker sprite's frame counts and delay statistics, for the debug panel.
 type SpeakerAnimInfo struct {
 	Base     string
 	Kept     int
@@ -375,8 +217,7 @@ type SpeakerAnimInfo struct {
 	AvgDelay time.Duration
 }
 
-// SpeakerAnimInfo reports the active speaker sprite's decoded animation stats.
-// ok=false when there's no resident speaker page (nothing to report).
+// SpeakerAnimInfo reports the speaker sprite's decoded animation stats; ok=false when no page is resident.
 func (v *Viewport) SpeakerAnimInfo() (SpeakerAnimInfo, bool) {
 	a := &v.speakerAnim
 	if a.page == nil || len(a.page.Frames) == 0 || len(a.page.Delays) == 0 {
@@ -402,11 +243,7 @@ func (v *Viewport) SpeakerAnimInfo() (SpeakerAnimInfo, bool) {
 	return info, true
 }
 
-// SpriteFX is the optional colour wash applied to character layers (all OFF /
-// neutral by default). It's a plain value struct with no pointers, so the App
-// can rebuild and hand it to SetSpriteFX every frame with zero allocation. The
-// look is render-side only (a SetColorMod/SetBlendMode bracket around the
-// existing blit): nothing leaves the client and nobody else sees it.
+// SpriteFX is viewer-local wash and motion; it has no pointers, so setting it each frame doesn't allocate.
 type SpriteFX struct {
 	Rainbow    bool // cycling-hue wash
 	Solid      bool // fixed-colour wash (used only when !Rainbow)
@@ -419,9 +256,7 @@ type SpriteFX struct {
 	Entrance   bool // #9: slide the speaker in when a new character takes the stage
 	DoF        bool // #11: soft-focus + dim the background behind the sharp speaker
 	Spotlight  bool // #121: dim the non-speaker layers (pair partner + desk) so the talker pops
-	// #122 idle breathing (AsyncAO-only local life): a gentle continuous bob + breathing-scale
-	// on every sprite so static art feels alive. IdleBreath is the master; Bob / Scale toggle
-	// the two components (both default on). Suppressed by ReduceMotion like wobble/spin.
+	// Local idle breathing: IdleBreath is the master switch; ReduceMotion suppresses it.
 	IdleBreath  bool
 	BreathBob   bool // the vertical-bob component
 	BreathScale bool // the breathing scale-pulse component
@@ -436,37 +271,22 @@ type SpriteFX struct {
 
 	SolidR, SolidG, SolidB uint8 // fixed tint colour (Solid)
 
-	// UserScaling is the viewer's own texture-filter choice (issue #21 label 15).
-	// It rides HERE rather than on its own setter deliberately: SpriteFX already
-	// reaches all seven draw paths — live, split pane, replay, scene maker, comic
-	// and GIF export — and a separate setter would be seven new call sites to keep
-	// in sync, which is exactly how the pinned pane ended up exempt from the
-	// hide/move overrides. Zero value is courtroom.ScalingAuto, the shipped default.
+	// UserScaling is the viewer's texture filter; it lives here because SpriteFX already reaches all seven draw paths.
 	UserScaling courtroom.ScalingMode
 }
 
-// tinted reports whether any wash is active (so drawSprite skips all colour-mod
-// work — and stays byte-identical to the original blit — when nothing's on).
+// tinted reports whether any wash is active, so drawSprite can skip colour-mod work.
 func (f SpriteFX) tinted() bool { return f.Rainbow || f.Solid }
 
-// SpriteLoadMode selects what a character layer draws while its NEW sprite is
-// still streaming + decoding (an uncached emote/character). Cold-load only —
-// once the sprite is in T1 every frame is byte-identical, whatever the mode.
-// Values MUST match config.SpriteLoad* (the UI mirrors the pref straight in).
+// Sprite load modes pick what a character layer draws while its new sprite loads; values must match config.SpriteLoad*.
 const (
-	// SpriteLoadBlank draws nothing until the sprite lands — the original
-	// behaviour, and the ~¼-second cold-sprite "flash" from the playtests.
+	// SpriteLoadBlank draws nothing until the sprite lands.
 	SpriteLoadBlank = 0
-	// SpriteLoadHoldPrev keeps the layer's LAST drawn sprite on screen until the
-	// new one lands (webAO-style), so the stage never blanks between speakers.
+	// SpriteLoadHoldPrev keeps the layer's last drawn sprite on screen until the new one lands.
 	SpriteLoadHoldPrev = 1
-	// A third "wait" mode (client-AO: hold the whole message off-stage until its
-	// sprite resolves) is NOT a renderer concern — it lives in the message
-	// lifecycle and fights packed-room catch-up. Tracked in ROADMAP.
 )
 
-// Viewport renders a courtroom.Scene into a destination rect. Steady-state
-// Render performs zero heap allocations: all rects and states are reused.
+// Viewport renders a courtroom.Scene into a destination rect without heap allocations in steady state.
 type Viewport struct {
 	store *TextureStore
 
@@ -477,122 +297,60 @@ type Viewport struct {
 	bgAnim        animState
 	deskAnim      animState
 	speedlineAnim animState
-	// overlayAnim plays the AO2 screen-effect overlay (effects.ini). overlayGen
-	// mirrors Scene.Overlay.Gen so the SAME effect fired twice in a row restarts:
-	// animState.reset only fires on a base change, and the second trigger of an
-	// identical base would otherwise keep the first one's frame cursor (or stay
-	// frozen on its held last frame).
+	// slideAnim and slidePairAnim draw the last speaker and pair during a panorama slide, held on a frame.
+	slideAnim     animState
+	slidePairAnim animState
+	// panorama and origin are this frame's panorama placement, set by placeStage.
+	panorama bool
+	origin   int
+	// overlayGen mirrors Scene.Overlay.Gen so the same effect fired twice restarts; reset only fires on a base change.
 	overlayAnim animState
 	overlayGen  uint32
 
-	// prevActiveIdle/Talk/Preanim are the speaker's three sprite bases from the
-	// previous frame, so ReduceAnimatedExcept fires only when the active animated
-	// set changes (once per message), not every frame.
-	prevActiveIdle, prevActiveTalk, prevActivePreanim string
+	// shownBases is last frame's on-screen bases, so ReduceAnimatedExcept runs only when they change.
+	shownBases [shownLayers]string
 
-	// OnPreanimDone forwards one-shot completion to the courtroom state
-	// machine.
+	// OnPreanimDone forwards one-shot completion to the courtroom.
 	OnPreanimDone func()
 
-	// OnPreanimStart forwards a decoded, multi-frame preanim's REAL total
-	// duration to the courtroom the first frame it plays, so the courtroom can
-	// extend its fallback timeout to cover a preanim longer than the default
-	// (else it's cut short — the "long preanims skip to the end" report). Fires
-	// once per bound preanim (startReported); nil = not wired (no extension).
+	// OnPreanimStart reports a multi-frame preanim's duration once, so the fallback timeout doesn't cut it short.
 	OnPreanimStart func(time.Duration)
 
-	// OnFrameShown forwards the SPEAKER layer's newly-displayed frame index —
-	// mapped back through the decimation to the sender's raw frame space
-	// (assets.FrameKeepIndex) — so the courtroom can fire networked frame-synced
-	// SFX / realization / screenshake (#17: AO2-Client FRAME_* fields) as the
-	// sprite reaches an authored trigger frame. Fires only when the drawn kept
-	// frame actually changes (not every render), so a nil callback and a static
-	// sprite both cost nothing. Wired to Courtroom.NotifyFrameShown by the App.
+	// OnFrameShown reports the speaker's source frame index, for networked effects (AO2-Client FRAME_* fields).
 	OnFrameShown func(src int)
 
-	// fx is the colour wash (App mirrors the user prefs here once per frame via
-	// SetSpriteFX). rainbowPhase is the accumulated, cycle-bounded hue clock and
-	// curCycle is the period derived from fx.Speed this frame (kept > 0 so the
-	// modulo/divide can never panic). All three live on the Viewport so the
-	// steady-state loop stays alloc-free.
+	// curCycle is derived from fx.Speed each frame and kept above 0 so the rainbowPhase modulo can't panic.
 	fx           SpriteFX
 	rainbowPhase time.Duration
 	curCycle     time.Duration
-	// fxClock free-runs (accumulates dt; int64 ns won't overflow in any
-	// session), so the motion effects (wobble, spin) each take it modulo their
-	// own period and stay continuous without a shared wrap glitch.
+	// fxClock free-runs; each motion effect takes it modulo its own period, so there is no shared wrap glitch.
 	fxClock time.Duration
 
-	// spriteLoadMode chooses what a character layer draws while its NEW sprite is
-	// still streaming + decoding — the cold-load flash mitigation. The zero value is
-	// SpriteLoadBlank, but the App ships hold-previous (webAO-style) and mirrors the
-	// user pref here once per frame
-	// (SetSpriteLoadMode), exactly like SetSpriteFX. It only ever affects the miss
-	// path in drawSprite, so a cached scene is byte-identical whatever it's set to.
+	// spriteLoadMode chooses what a layer draws while its new sprite loads; drawSprite's miss path only.
 	spriteLoadMode int
 
-	// clipSprites (ON by default via the pref) masks the character sprites to the
-	// stage rect so a big pair / reposition OFFSET can't spill a sprite over the
-	// chatbox or the log. Only the sprite draws are clipped (the bg/desk already
-	// fill the stage), and only when no clip is already active, so screenshake and
-	// the reflection's own clip are untouched. The App mirrors the pref here.
+	// clipSprites masks character sprites to the stage so a big offset can't spill over the chatbox or log.
 	clipSprites bool
 
-	// holdMaxAge caps how long SpriteLoadHoldPrev may keep showing the previous
-	// sprite (0 = forever, the default): past it the layer goes blank rather than
-	// showing an ever-staler stand-in. Each char layer's animState.coldFor ticks
-	// in Update while its base is unresolved. tintHeld (power-user diagnostics)
-	// washes stand-in sprites amber so the mitigation is VISIBLE while tuning.
+	// holdMaxAge caps hold-previous (0 = forever), and tintHeld washes stand-in sprites amber for diagnostics.
 	holdMaxAge time.Duration
 	tintHeld   bool
 
-	// thumbSprites (opt-in pref, default OFF) lets the cold-load miss path show
-	// the RIGHT character's persistent low-quality thumbnail (uploaded under a
-	// thumb:// T1 key by the ui) while the full sprite streams. Independent of
-	// spriteLoadMode and checked FIRST — the correct character at low quality
-	// beats the previous character at full quality.
-	thumbSprites bool
-
-	// missingnoEnabled (pref-backed, default ON) draws the AO2 "placeholder"
-	// (missingno) for a CONCLUSIVELY-MISSING char sprite — one whose whole
-	// fallback chain 404'd (store.IsMissing). Probed FIRST in the miss branch and
-	// gated on this bool: a confirmed-missing base was never uploaded so it has no
-	// held://P/thumb/lastGood of its own, and hold-previous would otherwise keep a
-	// DIFFERENT character on stage forever. Still-LOADING sprites (not in the
-	// missing set) keep the full unchanged hold-previous/thumb chain — the two
-	// states are disjoint. The App mirrors the pref here once per frame
-	// (SetMissingno), like SetSpriteLoadMode.
+	// missingnoEnabled draws AO2's placeholder for a base that 404'd; hold-previous would keep another character.
 	missingnoEnabled bool
 
-	// preanimLoop (opt-in pref, default OFF) keeps a one-shot preanimation
-	// WRAPPING for as long as the courtroom keeps it the active speaker layer,
-	// instead of holding its last frame once. This is DELIBERATELY NON-CANONICAL:
-	// AO2-Client plays preanims strictly play-once (animationlayer.cpp forces
-	// setPlayOnce(true) for PreEmote), which is why it defaults OFF. OnPreanimDone
-	// still fires EXACTLY ONCE at the first natural completion (loopReported
-	// latches it), so the message lifecycle — text start, wait gates, phase
-	// transitions — is byte-identical to loop-off. The App mirrors the pref here
-	// once per frame (SetPreanimLoop), like the other viewport knobs.
-	preanimLoop bool
-
-	// crossfade (0 = off, the default hard swap) blends a sprite swap: the new
-	// sprite alpha-ramps in over this duration while lastGood draws underneath.
-	// The App mirrors the pref here (and zeroes it under Reduce motion).
+	// crossfade is the speaker-swap blend duration (0 = hard swap).
 	crossfade time.Duration
 
-	// punchLeft counts down a #12 shout screen-punch; prevShoutOn edge-detects the
-	// shout's appearance in Update so the pop fires once per shout. Viewer-local.
+	// punchLeft counts down a shout's screen punch; prevShoutOn fires it once per shout.
 	punchLeft   time.Duration
 	prevShoutOn bool
 
-	// #9 entrance: entranceLeft counts down a speaker slide-in; prevSpeaker edge-detects a
-	// NEW character taking the stage (name change) so the slide fires once per entrance.
+	// entranceLeft counts down a speaker slide-in; prevSpeaker fires it once per new character.
 	entranceLeft time.Duration
 	prevSpeaker  string
 
-	// scratch rects reused every frame (no allocs in the loop): taking the
-	// address of a stack value for a cgo call would force a heap escape
-	// per draw, so every Copy destination lives on the Viewport.
+	// Scratch rects live here because passing a stack value's address to cgo forces a heap escape per draw.
 	dstRect   sdl.Rect
 	fillRect  sdl.Rect
 	fxRect    sdl.Rect // #8 outline/shadow offset-blit destination (kept off dstRect)
@@ -603,14 +361,10 @@ type Viewport struct {
 	stageClip sdl.Rect // #80: clip the full-viewport fills (bg / speedlines / desk / flash) to the UN-shaken stage so a shake/punch can't spill them over the UI
 	ovRect    sdl.Rect // screen-effect overlay blit destination (kept off fillRect: both can draw in one frame)
 	ovClip    sdl.Rect // screen-effect containment clip (the in-viewport rungs are children of the stage)
-	// splashClip is the shout bubble's containment clip. Its own field, not
-	// ovClip's: an overlay and a shout can be up in the SAME frame (an effect
-	// plays over an objection), and SDL keeps the pointer live for the length of
-	// the call, so one scratch shared between two clip brackets would be a rect
-	// rewritten under a live clip. See drawSplash (splashfit.go).
+	// splashClip is separate from ovClip: both can run in a frame, and SDL keeps the pointer live during the call.
 	splashClip sdl.Rect
 
-	// #10 post-processing overlays: cached, size-stable textures blended over the stage.
+	// Post-processing overlays: cached, size-stable textures blended over the stage.
 	postFX               PostFX
 	vignetteTex          *sdl.Texture
 	scanlineTex          *sdl.Texture
@@ -618,18 +372,13 @@ type Viewport struct {
 	grainTex             [grainFrames]*sdl.Texture
 	grainIdx             int
 	postRect             sdl.Rect // post-FX blit destination scratch
-	// #77 CRT preset: a cached aperture-grille (RGB phosphor stripe) mask blended
-	// MOD over the stage, rebuilt only on a resize like the scanline texture.
+	// crtMaskTex is an RGB stripe mask blended MOD over the stage, rebuilt only on resize.
 	crtMaskTex         *sdl.Texture
 	crtMaskW, crtMaskH int32
 
-	// #124 particle weather: a bounded pool + one cached dot texture (snow/rain/sakura/embers).
 	particles particleField
 
-	// Sprite Style box live preview (RenderStylePreview): its own animState (so the
-	// preview loops independently of the stage), a scratch layer + clip rects (a stack
-	// value's address escaping into a cgo call would allocate per frame), and the
-	// fxClock mark that turns the free-running clock into this path's dt.
+	// Style preview state: its own animState loops apart from the stage; a stack address passed to cgo escapes.
 	prevAnim      animState
 	prevLayer     courtroom.SpriteLayer
 	prevClockMark time.Duration
@@ -637,16 +386,10 @@ type Viewport struct {
 	prevClipSave  sdl.Rect
 }
 
-// previewMaxStep caps the style preview's animation step: the box may not have drawn
-// for a while (closed, another screen), and fast-forwarding that gap through advance()
-// would spin its frame loop for nothing — a fresh open just resumes the loop instead.
+// previewMaxStep caps the preview's step, so a long gap between draws doesn't spin the frame loop.
 const previewMaxStep = 250 * time.Millisecond
 
-// RenderStylePreview draws one character sprite styled by st into vp through the SAME
-// drawSprite path the live stage uses — paint/restyle variants, outline, glitch,
-// motion and all — so the Sprite Style box's preview can never drift from what a
-// message actually renders. Render thread only; clipped to vp regardless of the
-// clip-sprites pref (a wide sprite or a glitch jolt must not spill over the box).
+// RenderStylePreview uses the live drawSprite path, so it can't drift from a real message; render thread only.
 func (v *Viewport) RenderStylePreview(ren *sdl.Renderer, base string, st courtroom.SpriteStyle, vp sdl.Rect) {
 	dt := v.fxClock - v.prevClockMark
 	v.prevClockMark = v.fxClock
@@ -661,7 +404,7 @@ func (v *Viewport) RenderStylePreview(ren *sdl.Renderer, base string, st courtro
 	v.prevVPClip = vp
 	_ = ren.SetClipRect(&v.prevVPClip)
 	v.prevLayer = courtroom.SpriteLayer{Visible: true, Active: base, Style: st}
-	v.drawSprite(ren, &v.prevLayer, &v.prevAnim, vp, 0, 100 /* dimPct 100 = no spotlight dim */)
+	v.drawSprite(ren, &v.prevLayer, &v.prevAnim, vp, 0, percentMax /* dimPct 100 = no spotlight dim */)
 	if v.prevClipSave.W > 0 || v.prevClipSave.H > 0 {
 		_ = ren.SetClipRect(&v.prevClipSave)
 	} else {
@@ -669,53 +412,41 @@ func (v *Viewport) RenderStylePreview(ren *sdl.Renderer, base string, st courtro
 	}
 }
 
-// Sprite outline / drop-shadow tuning (#8). The outline is drawn as 8 offset silhouette
-// blits (cardinals + diagonals) around the sprite; the shadow is one offset down-right.
+// Outline and shadow tuning: the outline is 8 offset silhouette blits, the shadow one offset down-right.
 var (
 	outlineDirs = [8][2]int32{{-1, 0}, {1, 0}, {0, -1}, {0, 1}, {-1, -1}, {-1, 1}, {1, -1}, {1, 1}}
 	shadowDir   = [1][2]int32{{1, 1}} // down-right
 )
 
 const (
-	outlineAlpha    = 235 // near-solid white outline
-	shadowAlpha     = 110 // soft dark shadow
-	outlineDivisor  = 170 // outline width = vp.H / divisor (scales with the stage), floored
-	outlineWidthMin = 2
-	shadowMultiple  = 3 // shadow offset = outline width * this
+	outlineAlpha     = 235 // near-solid white outline
+	shadowAlpha      = 110 // soft dark shadow
+	outlineDivisor   = 170 // outline width = vp.H / divisor (scales with the stage), floored
+	outlineWidthMin  = 2
+	shadowMultiple   = 3 // shadow offset = outline width * this
+	outlineCardinals = 4 // outlineDirs[:4] are the cardinals, the rest diagonals
+	// screenShakeYFreqMul shakes y at an off ratio of x, so the shake is not a line.
+	screenShakeYFreqMul = 1.3
 )
 
-// NewViewport builds a viewport over the texture store.
 func NewViewport(store *TextureStore) *Viewport {
 	return &Viewport{store: store}
 }
 
-// SetSpriteFX mirrors the user's sprite colour-FX preferences onto the
-// viewport. The App rebuilds the value struct and calls this once per frame
-// before Update; it only feeds a SetColorMod/SetBlendMode bracket around the
-// existing blit, so updating it costs nothing and never allocates.
+// SetSpriteFX sets the sprite colour and motion effects; the App calls it once per frame before Update.
 func (v *Viewport) SetSpriteFX(fx SpriteFX) { v.fx = fx }
 
-// AnimClock returns the free-running motion clock advanced by Update (the same clock the
-// sprite Wobble/Spin read). The chatbox uses it to drive #M5 animated text, so text and
-// sprite motion stay in step in every mode (live / replay / maker) — each path calls
-// Update, so the clock tracks whatever scene is on stage.
+// AnimClock returns the motion clock Update advances, so text and sprite motion stay in step.
 func (v *Viewport) AnimClock() time.Duration { return v.fxClock }
 
-// Update advances animation clocks against the active scene.
 func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
-	// Derive this frame's hue period from the speed slider and advance the
-	// rainbow clock unconditionally (cheap; the modulo keeps the phase bounded
-	// so it never overflows however long the client runs). cycleForSpeed is
-	// floored above zero, so the modulo below can never panic. The phase is
-	// only *read* when a wash is enabled.
+	// Advance the rainbow clock unconditionally; the modulo bounds it, and cycleForSpeed's floor can't panic.
 	v.curCycle = cycleForSpeed(v.fx.Speed)
 	v.rainbowPhase = (v.rainbowPhase + dt) % v.curCycle
 	v.fxClock += dt        // free-running clock for the motion effects (wobble/spin)
 	v.particles.update(dt) // #124 advance the weather pool (no-op when off)
 
-	// #12 shout punch: fire the pop once on the frame a shout appears (ShoutBase goes
-	// non-empty), then count it down. Tracked unconditionally (cheap, no allocation); the
-	// scale is only *applied* in Render when fx.ShoutPunch is on, so it's free when off.
+	// Fire the punch once when a shout appears; Render applies it only when fx.ShoutPunch is on.
 	shoutOn := scene.ShoutBase != ""
 	if shoutOn && !v.prevShoutOn {
 		v.punchLeft = shoutPunchDuration
@@ -725,9 +456,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 		v.punchLeft = 0
 	}
 
-	// #9 entrance: a NEW character on stage (the speaker's name changed) arms a slide-in.
-	// Tracked unconditionally; only *applied* in Render when fx.Entrance is on, so it's free
-	// when off. Same-speaker consecutive messages (or an empty speaker) never re-trigger.
+	// A new speaker name arms the slide-in; Render applies it only when fx.Entrance is on.
 	if sp := scene.Speaker.Name; sp != "" && sp != v.prevSpeaker {
 		if v.prevSpeaker != "" { // don't slide the very first speaker of a fresh session
 			v.entranceLeft = entranceDuration
@@ -740,13 +469,13 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 
 	shoutBase := effectiveShoutBase(scene, v.store)
 	v.syncAnimSticky(&v.bgAnim, scene.BackgroundBase)
-	// Desk AFTER the background: syncAnimDesk's coherence release reads the bg
-	// layer's freshly-synced base, so both scenery layers swap in the SAME frame.
+	// Desk after background: syncAnimDesk reads the bg's fresh base, so both swap in the same frame.
 	v.syncAnimDesk(scene.DeskBase, scene.BackgroundBase)
 	v.syncAnim(&v.shoutAnim, shoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
-	// Group pairing: one animation state per group member.
+	v.syncAnim(&v.slideAnim, scene.Slide.Previous.Active)
+	v.syncAnim(&v.slidePairAnim, scene.Slide.PreviousPair.Active)
 	if len(v.groupAnims) != len(scene.Group) {
 		v.groupAnims = make([]animState, len(scene.Group))
 	}
@@ -755,8 +484,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	}
 	v.syncAnim(&v.speedlineAnim, effectiveSpeedlineBase(scene, v.store))
 	v.reduceInactiveAnimations(scene)
-	// Hold-previous max-age clock: how long each char layer has been cold
-	// (resolve is generation-cached — steady state is pointer math).
+	// Hold-previous max-age clock.
 	v.tickCold(&v.speakerAnim, dt)
 	v.tickCold(&v.pairAnim, dt)
 	for i := range scene.Group {
@@ -777,11 +505,11 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 			v.shoutAnim.advance(page, dt, true)
 		}
 	}
-	if scene.Speaker.Visible {
+	// A slide pauses every character, as do_transition pauses their playback (courtroom.cpp:3082).
+	paused := scene.Slide.Active
+	if scene.Speaker.Visible && !paused {
 		if page, ok := v.speakerAnim.resolve(v.store); ok {
-			// First frame of a decoded, multi-frame preanim: report its real total
-			// duration so the courtroom's fallback timeout can't cut a long one
-			// short. Single-frame "preanims" finish instantly below — no report.
+			// Report a multi-frame preanim's duration once, so the fallback timeout can't cut it short.
 			if scene.Speaker.PlayOnce && !v.speakerAnim.startReported && v.OnPreanimStart != nil && !page.Partial && len(page.Frames) > 1 {
 				v.speakerAnim.startReported = true
 				v.OnPreanimStart(pageDuration(page))
@@ -791,28 +519,21 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 					v.OnPreanimDone()
 				}
 			}
-			// #17 networked frame effects: report the drawn frame's SOURCE index
-			// (mapped back through decimation) whenever it moves, so the courtroom
-			// can fire an authored trigger. After advance so the report reflects
-			// this step's landing frame; guarded on a wired callback so a plain
-			// render allocates nothing.
+			// Report after advance so it reflects this step's landing frame.
 			v.reportSpeakerFrame(page)
 		}
 	}
-	if scene.PairActive {
+	if scene.PairActive && !paused {
 		if page, ok := v.pairAnim.resolve(v.store); ok {
 			v.pairAnim.advance(page, dt, false)
 		}
 	}
 	for i := range scene.Group {
-		if page, ok := v.groupAnims[i].resolve(v.store); ok {
+		if page, ok := v.groupAnims[i].resolve(v.store); ok && !paused {
 			v.groupAnims[i].advance(page, dt, false)
 		}
 	}
-	// Screen-effect overlay (effects.ini). loop=true wraps forever and makes cull
-	// inert; loop=false is a one-shot that holds its last frame unless cull
-	// (animationlayer.cpp:342-348, 660-666) — clampFrame already holds, and the
-	// draw skips a finished culled clip.
+	// loop=true makes cull inert; loop=false holds its last frame unless culled (animationlayer.cpp:342-348, 660-666).
 	v.syncOverlay(&scene.Overlay)
 	if scene.Overlay.Active() {
 		if page, ok := v.overlayAnim.resolve(v.store); ok {
@@ -821,10 +542,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	}
 }
 
-// syncOverlay rebinds the overlay layer. Unlike every other layer it also
-// watches a GENERATION: the courtroom bumps Scene.Overlay.Gen on every trigger,
-// so the same effect name twice in a row restarts instead of continuing (or
-// staying frozen on) the previous play.
+// syncOverlay rebinds the overlay and also watches Gen, so the same effect twice in a row restarts.
 func (v *Viewport) syncOverlay(o *courtroom.SceneOverlay) {
 	if v.overlayAnim.base == o.Base && v.overlayGen == o.Gen {
 		return
@@ -833,11 +551,7 @@ func (v *Viewport) syncOverlay(o *courtroom.SceneOverlay) {
 	v.overlayAnim.reset(o.Base)
 }
 
-// overlayAnimating reports a LIVE overlay: on stage, resident, multi-frame, and
-// either looping or not yet finished. A draw-site census on state — never on a
-// knob — and deliberately false for a resolved SINGLE-frame overlay, which is a
-// still picture with no next deadline and must not hold the frame pacer up for
-// as long as it is displayed.
+// overlayAnimating reports a live multi-frame overlay; a single frame must not hold the frame pacer up.
 func (v *Viewport) overlayAnimating(scene *courtroom.Scene) bool {
 	if !scene.Overlay.Active() {
 		return false
@@ -849,20 +563,13 @@ func (v *Viewport) overlayAnimating(scene *courtroom.Scene) bool {
 	return scene.Overlay.Loop || !v.overlayAnim.finished
 }
 
-// NextAnimDue reports the stage's next scheduled animation deadline: 0 while a
-// continuous ramp runs (speaker-swap crossfade, shout punch, entrance slide),
-// else the time until the earliest frame flip of any LIVE multi-frame layer
-// (bg / desk / shout / speaker / pair). ok=false means the stage is visually
-// static — nothing on it is scheduled to change. The frame pacer uses this to
-// redraw exactly when the content needs it (a 100 ms-per-frame idle loop gets
-// ~10 fps redraws; a static stage gets none), fixing both playtest reports:
-// choppy idle animations AND wasted full-rate redraws. Reads only the states
-// Update just advanced (cached page pointers — no store queries, no allocs);
-// render thread only, call after Update with the same scene.
+// NextAnimDue returns the next animation deadline: 0 during a ramp, ok=false when nothing is scheduled.
 func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
-	// Continuous ramps: sub-frame-smooth motion → full rate while they run.
-	// Each is gated on its enabling knob, so an armed-but-invisible countdown
-	// (tracked unconditionally in Update) never holds the rate up.
+	// A slide moves the stage every frame.
+	if scene.Slide.Active {
+		return 0, true
+	}
+	// Each ramp checks its enabling option, so a countdown tracked in Update but invisible doesn't hold the rate up.
 	if v.fx.ShoutPunch && v.punchLeft > 0 {
 		return 0, true
 	}
@@ -877,10 +584,7 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 		if !visible || a.finished || a.page == nil || len(a.page.Frames) <= 1 {
 			return
 		}
-		// Clamp the cursor like the draw path: a re-decode can replace the page
-		// with a shorter one between resolves, and NextAnimDue must never index a
-		// frame that no longer exists (resolve.restart handles the normal case,
-		// but the pacer reads cached state and must be panic-proof on its own).
+		// The pacer reads cached state, so clamp: a re-decode can swap in a shorter page between resolves.
 		delay := a.page.Delays[clampFrame(a.frame, len(a.page.Frames))]
 		if maxDelay > 0 && delay > maxDelay {
 			delay = maxDelay // the overlay's per-frame clamp shortens its own deadline too
@@ -899,67 +603,32 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 	consider := func(a *animState, visible bool) { considerMax(a, visible, 0) }
 	consider(&v.bgAnim, true)
 	consider(&v.deskAnim, true)
-	// The zoom speedline (#126) is a SCHEDULED multi-frame layer like every other
-	// one here — Update advances it, and it expects a deadline from this list. It
-	// had none, so a zoom's burst only flipped frames when something ELSE forced a
-	// redraw (the caret's 500 ms blink, a mouse move) and read to the playtest as
-	// "the animation is throttled / it only draws when the caret does". That is
-	// exactly the missing-deadline class this list exists to close. Gated on
-	// base != "" — no zoom, no layer — the same arm the shout bubble uses.
+	// The zoom speedline is scheduled too; without a deadline its frames flip only when something else forces a redraw.
 	consider(&v.speedlineAnim, v.speedlineAnim.base != "")
 	consider(&v.shoutAnim, v.shoutAnim.base != "")
 	consider(&v.speakerAnim, scene.Speaker.Visible)
 	consider(&v.pairAnim, scene.PairActive)
-	// The overlay's own next frame, so an idle-capped client wakes exactly when
-	// the effect needs a new frame instead of sleeping through the clip (the
-	// ROADMAP's named pacing trap for this feature).
+	// The overlay's next frame, so an idle-capped client wakes for it instead of sleeping through the clip.
 	considerMax(&v.overlayAnim, scene.Overlay.Active(), scene.Overlay.MaxFrameDelay)
 	if due < 0 {
 		return 0, false
 	}
-	// Schedule floor: decoders honor any positive authored delay verbatim (only
-	// <=0 is replaced), so a wild asset authored at 1-10 ms/frame would schedule
-	// redraws faster than a frame costs — with the ∞ default cap the pacing
-	// sleep then never fires and the loop free-runs (the idle-CPU-burn class).
-	// Flooring the SCHEDULE (not the playback: advance() folds every elapsed
-	// frame per step, so speed is unchanged — the viewer sees every Nth frame,
-	// exactly what a 60 Hz panel shows anyway) bounds any asset to ~60 redraws/s.
-	// Normal ≥60 ms assets pace byte-identically; a mid-cycle wake's remainder
-	// lands at most one floor late, sub-frame and self-correcting.
+	// Decoders keep any positive delay, so a 1-10 ms asset would stop the pacing sleep and free-run the loop.
 	if due < minAnimFrameDelay {
 		due = minAnimFrameDelay
 	}
 	return due, true
 }
 
-// minAnimFrameDelay floors NextAnimDue's scheduled deadline — the fastest
-// cadence an animated ASSET may demand of the render loop (~60 fps, matching
-// cmd/asyncao's frameCap fallback). Transitions (shout punch / entrance /
-// crossfade) keep their unfloored full-rate path above.
+// minAnimFrameDelay floors NextAnimDue's deadlines (~60 fps); transitions keep their unfloored path above.
 const minAnimFrameDelay = 16667 * time.Microsecond
 
-// fadeRunning reports a speaker-swap crossfade that is actually ADVANCING:
-// fadeLeft only ticks down while the incoming sprite is resident (tickCold —
-// a cold load deliberately doesn't consume the blend), so a fade armed toward
-// a permanently-404 sprite is frozen, not running. Gating the full-rate ramp
-// on this (state, not the armed countdown) stops that frozen fade from
-// holding uncapped redraws forever — the blend still plays, at full rate,
-// from the frame the sprite first lands (coldFor resets on residency).
+// fadeRunning reports an advancing crossfade; one armed toward a 404 sprite must not hold uncapped redraws.
 func fadeRunning(a *animState) bool {
 	return a.fadeLeft > 0 && a.coldFor == 0
 }
 
-// AmbientAnimating reports whether the DRAWN stage animates on the free-running
-// FX clock this frame: the viewer's local always-on washes (rainbow / wobble /
-// spin / idle-breathing), a transmitted per-sprite style with motion (hue-cycle
-// / wobble / spin / glitch / motion / path), or live weather particles. These
-// are pure per-frame math with no scheduled deadline — NextAnimDue can't see
-// them — so the courtroom stage draw site feeds this into the NoteAnimating
-// census instead. State-gated by construction: it is consulted only where the
-// stage actually draws, and reports true only while a sprite layer (or weather)
-// is genuinely on screen — replacing wantsFullRate's old pref-knob checks,
-// which held full rate forever on every screen, lobby and Settings included
-// (the "knob not state" anti-pattern its own doc comment condemns).
+// AmbientAnimating reports stage animation on the FX clock, which NextAnimDue can't see: it has no deadline.
 func (v *Viewport) AmbientAnimating(scene *courtroom.Scene) bool {
 	if scene == nil {
 		return false
@@ -973,8 +642,7 @@ func (v *Viewport) AmbientAnimating(scene *courtroom.Scene) bool {
 			return true // breathing applies to every drawn sprite, styled or not
 		}
 		if st := layer.Style; st.Active() {
-			// A transmitted style wins over the local wash (drawSprite's own
-			// precedence); path motion (#34) animates on the clock too.
+			// A transmitted style wins over the local wash, as in drawSprite.
 			return st.HueCycle || st.Wobble || st.Spin || st.Glitch ||
 				st.Motion != 0 || st.PathLen >= 2
 		}
@@ -986,18 +654,14 @@ func (v *Viewport) AmbientAnimating(scene *courtroom.Scene) bool {
 	if scene.PairActive && layerAnimates(&scene.Pair) {
 		return true
 	}
-	// A live screen-effect overlay animates on the stage too. NextAnimDue already
-	// schedules its next frame; reporting it here as well is what keeps the
-	// chrome-anim tier awake through a looping wash under the idle cap.
+	// A live overlay also keeps the chrome-anim tier awake through a looping wash under the idle cap.
 	return v.overlayAnimating(scene)
 }
 
 func (v *Viewport) syncAnim(a *animState, base string) {
 	if a.base != base {
 		a.reset(base)
-		// Speaker-swap crossfade: arm on the swap when the knob is on and there
-		// is a previous sprite to blend from. lastGood is only ever set by
-		// drawSprite, so shout-bubble layers (drawFill) can never arm a fade.
+		// lastGood is only set by drawSprite, so shout-bubble layers (drawFill) can never arm a fade.
 		if v.crossfade > 0 && a.lastGood != "" && a.lastGood != base {
 			a.fadeLeft = v.crossfade
 		} else {
@@ -1006,41 +670,29 @@ func (v *Viewport) syncAnim(a *animState, base string) {
 	}
 }
 
-// reduceInactiveAnimations downgrades non-active resident animations to stills
-// once per active-set change. Only the speaker's idle/talk/preanim stay fully
-// animated; everything else (the pair, previous speakers) collapses to frame 0
-// and re-streams when it becomes active again.
+// reduceInactiveAnimations collapses animations off screen to frame 0; they re-stream when shown again.
 func (v *Viewport) reduceInactiveAnimations(scene *courtroom.Scene) {
-	if scene.Speaker.IdleBase == v.prevActiveIdle &&
-		scene.Speaker.TalkBase == v.prevActiveTalk &&
-		scene.Speaker.PreanimBase == v.prevActivePreanim {
+	// The drawn scenery can differ from the scene's while a new background loads, and both stay whole.
+	shown := [shownLayers]string{scene.Speaker.IdleBase, scene.Speaker.TalkBase, scene.Speaker.PreanimBase,
+		scene.Pair.Active, scene.BackgroundBase, v.bgAnim.base, scene.DeskBase, v.deskAnim.base}
+	if shown == v.shownBases {
 		return
 	}
-	v.prevActiveIdle = scene.Speaker.IdleBase
-	v.prevActiveTalk = scene.Speaker.TalkBase
-	v.prevActivePreanim = scene.Speaker.PreanimBase
-	active := make(map[string]bool, 3)
-	if scene.Speaker.IdleBase != "" {
-		active[scene.Speaker.IdleBase] = true
-	}
-	if scene.Speaker.TalkBase != "" {
-		active[scene.Speaker.TalkBase] = true
-	}
-	if scene.Speaker.PreanimBase != "" {
-		active[scene.Speaker.PreanimBase] = true
+	v.shownBases = shown
+	active := make(map[string]bool, shownLayers)
+	for _, base := range shown {
+		if base != "" {
+			active[base] = true
+		}
 	}
 	v.store.ReduceAnimatedExcept(active)
 }
 
-// syncAnimSticky rebinds a scenery layer only once the incoming base is
-// resident: a position flip to a still-loading background must keep the last
-// good scenery on screen instead of blanking the viewport to the clear color.
-// An empty base still clears immediately, and the courtroom's HIGH-priority
-// prefetch makes the swap a frame after the texture lands. Contains is a plain
-// map probe — no I/O, no allocation.
-//
-// The BACKGROUND layer is its only caller; the desk adds two release conditions
-// on top of this gate and goes through syncAnimDesk (see there for why).
+// shownLayers is how many bases reduceInactiveAnimations keeps whole: speaker idle, talk and preanim, the pair, and the
+// scene's and drawn background and desk.
+const shownLayers = 8
+
+// syncAnimSticky rebinds scenery once the new base is resident, so a position flip doesn't blank it.
 func (v *Viewport) syncAnimSticky(a *animState, base string) {
 	if a.base == base {
 		return
@@ -1050,29 +702,7 @@ func (v *Viewport) syncAnimSticky(a *animState, base string) {
 	}
 }
 
-// syncAnimDesk rebinds the DESK layer. It keeps syncAnimSticky's residency
-// stickiness (a real desk that is still streaming must not blink off — that is
-// the whole point of the sticky gate) and adds the two release conditions the
-// desk needs and the background does not:
-//
-//   - the incoming desk is CONCLUSIVELY MISSING (store.IsMissing, fed by the App's
-//     warning drain). AO2's set_scene hides the desk layer outright when the file
-//     does not exist, with no fallback of any kind
-//     (../AO2-Client/src/courtroom.cpp:4628-4634, :4656-4663). Holding the old desk
-//     for a base that can never arrive is not a cold-load bridge, it is a permanent
-//     wrong picture — the reported "default/witness desk on a deskless background"
-//     (#44).
-//   - the BACKGROUND has already swapped to this scene's bg while the desk has not.
-//     The desk is an OVERLAY on one specific background: AO2 loads the pair in a
-//     single set_scene call, so a held desk is only coherent while the background it
-//     belongs to is also still on screen. Releasing here closes the one-probe-RTT
-//     window before the miss is known, and stops two rooms compositing.
-//
-// Scoped to the desk on purpose: a CHARACTER sprite has no such pairing invariant,
-// and hold-previous there is a deliberate webAO-compatible default
-// (SpriteLoadHoldPrev, with its own thumb/held/missingno ladder and max-age knob).
-// Nothing about sprites changes. Contains/IsMissing are plain map probes — no I/O,
-// no allocation, so the render loop's alloc gate is untouched.
+// syncAnimDesk is syncAnimSticky for the desk, plus the two release conditions the background doesn't need.
 func (v *Viewport) syncAnimDesk(deskBase, bgBase string) {
 	if v.deskAnim.base == deskBase {
 		return
@@ -1083,20 +713,7 @@ func (v *Viewport) syncAnimDesk(deskBase, bgBase string) {
 	}
 }
 
-// RebindScenery force-binds the background/desk layers to a new scene's bases,
-// BYPASSING syncAnimSticky's residency gate. The sticky gate exists to hold the
-// last good scenery through a position flip WITHIN one session (the new base is
-// still streaming) — but that same "keep the old base until the new one is
-// resident" behaviour leaks across a TAB SWITCH: the shared viewport would keep
-// painting the previous server's background under the newly-activated tab until
-// its own bg happened to load (the reported "both tabs show the same background"
-// bug). buildRoom calls this on a room rebuild so the swap shows the CORRECT new
-// scenery at once — a brief blank of the right base (the held:// bridge / the
-// HIGH-priority prefetch fill it a frame later) beats the WRONG base persisting.
-// Character layers already reset unconditionally (syncAnim, not sticky), which is
-// why speakers restored correctly while scenery did not. Cheap, allocation-free
-// (reset only precomputes the thumb/held keys); a no-op when the bases already
-// match, so re-entering the same room never thrashes.
+// RebindScenery binds at once, as the residency check would keep the previous server's bg after a tab switch.
 func (v *Viewport) RebindScenery(bgBase, deskBase string) {
 	if v.bgAnim.base != bgBase {
 		v.bgAnim.reset(bgBase)
@@ -1106,15 +723,10 @@ func (v *Viewport) RebindScenery(bgBase, deskBase string) {
 	}
 }
 
-// Render draws the scene layers in AO order: background → characters (pair
-// z-order) → desk → shout bubble. Chat box and text render UI-side.
-// Screenshake jitters the whole stage rect; the realization flash paints
-// over everything (do_screenshake / do_flash parity, zero allocations).
+// Render draws in AO order: background, characters (pair z-order), desk, shout; the flash paints over all.
 func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
 	stage := vp // the unmodified stage frame, for the #10 post-FX overlays (not the punched art)
-	// #12 shout punch: inflate the stage rect around its centre by a decaying factor, so
-	// every blit below scales up together (a zoom pop that settles). Off → vp untouched →
-	// byte-identical to before. Applied before the shake so the two compose.
+	// Inflate around the centre so every blit scales together; before the shake so the two compose.
 	if v.fx.ShoutPunch && v.punchLeft > 0 {
 		if s := punchScale(v.punchLeft); s > 0 {
 			dw := int32(float64(vp.W) * s)
@@ -1126,91 +738,81 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		}
 	}
 	if scene.ShakeLeft > 0 {
-		// Decaying sinusoid: amplitude follows the remaining time, so the
-		// shake settles instead of cutting off.
+		// Amplitude follows the remaining time, so the shake settles instead of cutting off.
 		strength := float64(scene.ShakeLeft) / float64(courtroom.ScreenshakeDuration)
 		amp := float64(vp.W) / shakeAmplitudeDivisor * strength
 		phase := 2 * math.Pi * float64(scene.ShakeLeft) / float64(shakePeriod)
 		vp.X += int32(amp * math.Sin(phase))
-		vp.Y += int32(amp / 2 * math.Cos(phase*1.3))
+		vp.Y += int32(amp / 2 * math.Cos(phase*screenShakeYFreqMul))
 	}
 
-	// #80: contain the full-viewport fills (background + speedlines) to the
-	// UN-shaken stage so a screenshake or shout punch can't spill them over the UI.
-	// Defer to an already-active clip (the camera-zoom clip in internal/ui/vpzoom.go,
-	// itself the stage) so zooming never stomps it and lets the scene escape.
+	// Contain full-viewport fills to the unshaken stage, deferring to an active camera-zoom clip.
 	contain := !ren.IsClipEnabled()
 	if contain {
 		v.stageClip = stage
 		_ = ren.SetClipRect(&v.stageClip)
 	}
+	newDX, lastDX := v.placeStage(scene, vp)
 	if v.fx.DoF {
-		v.drawBackgroundDoF(ren, scene.BackgroundBase, &v.bgAnim, vp) // #11 soft-focus + dim
+		v.drawBackgroundDoF(ren, scene, &v.bgAnim, vp) // #11 soft-focus + dim
 	} else {
-		v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp, 100) // bg full-bright (spotlight dims pair+desk, not bg)
+		v.drawScenery(ren, scene, scene.BackgroundBase, &v.bgAnim, vp, percentMax) // bg full-bright (spotlight dims pair+desk, not bg)
 	}
-	// #126 zoom speedlines: the speaker's own radial art behind them during a zoom
-	// emote (char folder, or the bundled stock burst when the pack ships none).
-	// Drawn over the background, under the characters.
+	// Speaker's speedlines during a zoom emote: over the background, under the characters.
 	if base := effectiveSpeedlineBase(scene, v.store); base != "" {
-		v.drawFill(ren, base, &v.speedlineAnim, vp, 100)
+		v.drawFill(ren, base, &v.speedlineAnim, vp, percentMax)
 	}
 	if contain {
 		_ = ren.SetClipRect(nil)
 	}
 
-	// Pair hue offset for the "desync" effect: half a period so the two
-	// characters show opposite hues. Zero unless rainbow + desync are both on,
-	// and the speaker always passes 0 — so with the effect off the speaker blit
-	// is byte-identical to before.
+	// Half a period gives the pair opposite hues; the speaker always passes 0.
 	var pairShift time.Duration
 	if v.fx.Rainbow && v.fx.PairDesync {
 		pairShift = v.curCycle / 2
 	}
 
-	// #121 speaker spotlight: the non-speaker layers (the pair partner + the desk overlay)
-	// draw dimmed toward shadow so the talking character pops; the speaker and the shout
-	// bubble stay at full brightness. noDim (100%) leaves a layer byte-identical, so with the
-	// effect off every draw below is unchanged. The background is left alone here (the DoF
-	// effect owns the background dim), so the two compose without double-dimming.
+	// Spotlight dims pair and desk, not the background, which depth of field dims, so they don't double up.
 	const noDim = 100
 	spotPct := noDim
 	if v.fx.Spotlight {
 		spotPct = spotlightBrightness(v.fx.SpotlightLevel)
 	}
-	// #9 entrance: a new speaker slides in from the left, easing to position (the slide rect
-	// is the speaker's only; the pair stays put). Off / settled → spkVP == vp → unchanged.
-	spkVP := vp
+	// A panorama slide moves every character with the stage; the entrance slide moves only the speaker.
+	charVP := vp
+	charVP.X += newDX
+	spkVP := charVP
 	if v.fx.Entrance && v.entranceLeft > 0 {
 		spkVP.X += entranceSlide(v.entranceLeft, vp.W)
 	}
-	// layer = behind: stackUnder(ui_vp_player_char) (courtroom.cpp:3218-3222) —
-	// over the background, under every character sprite. Contained to the stage
-	// (drawOverlayInStage) for the same reason the sprite mask right below exists,
-	// on the very same OFFSET.
+	// layer = behind: stackUnder(ui_vp_player_char) (courtroom.cpp:3218-3222), under every sprite.
 	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerBehind)
-	// Viewport sprite mask (default ON): clip the character sprites to the ORIGINAL
-	// stage rect so a big pair / reposition OFFSET can't spill a sprite over the
-	// chatbox or the log. Only the sprites are clipped (the bg/desk already fill the
-	// stage), and only when nothing else already owns a clip — so we restore to
-	// exactly the prior state and never fight the reflection's own clip (which runs
-	// just after this). Off → no SetClipRect at all → byte-identical to before.
+	// Clip sprites to the original stage, only when no clip is active, so the reflection's own clip isn't overwritten.
 	spriteClip := v.clipSprites && !ren.IsClipEnabled()
 	if spriteClip {
 		v.maskClip = stage
 		_ = ren.SetClipRect(&v.maskClip)
 	}
-	// Group pairing (JSON-only GP roster): draw the other members behind the
-	// speaker/pair, front-most last so the roster's z-order holds.
+	// Group pairing (JSON-only GP roster): draw other members first, front-most last, so the roster's z-order holds.
+	if sl := &scene.Slide; sl.Active {
+		lastVP := vp
+		lastVP.X += lastDX
+		if sl.PreviousPaired && sl.PreviousInFront {
+			v.drawSprite(ren, &sl.PreviousPair, &v.slidePairAnim, lastVP, 0, spotPct)
+		}
+		v.drawSprite(ren, &sl.Previous, &v.slideAnim, lastVP, 0, spotPct)
+		if sl.PreviousPaired && !sl.PreviousInFront {
+			v.drawSprite(ren, &sl.PreviousPair, &v.slidePairAnim, lastVP, 0, spotPct)
+		}
+	}
 	for i := range scene.Group {
-		v.drawSprite(ren, &scene.Group[i], &v.groupAnims[i], vp, 0, spotPct)
+		v.drawSprite(ren, &scene.Group[i], &v.groupAnims[i], charVP, 0, spotPct)
 	}
 	if scene.PairActive && !scene.SpeakerInFront {
-		// Speaker behind: draw speaker first, pair over it.
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
-		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift, spotPct)
+		v.drawSprite(ren, &scene.Pair, &v.pairAnim, charVP, pairShift, spotPct)
 	} else if scene.PairActive {
-		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift, spotPct)
+		v.drawSprite(ren, &scene.Pair, &v.pairAnim, charVP, pairShift, spotPct)
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
 	} else {
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
@@ -1219,55 +821,44 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		_ = ren.SetClipRect(nil)
 	}
 
-	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line,
-	// drawn AFTER the sprites and BEFORE the desk so the desk occludes it naturally. Off →
-	// skipped entirely (byte-identical).
+	// Drawn after the sprites and before the desk, so the desk occludes the reflection.
 	if v.fx.Reflection {
 		v.drawReflections(ren, scene, vp, spkVP)
 	}
-	// layer = character: stackUnder(ui_vp_desk) (courtroom.cpp:3223-3227) — over
-	// the characters, UNDER the desk overlay.
+	// layer = character: stackUnder(ui_vp_desk) (courtroom.cpp:3223-3227), over the characters and under the desk.
 	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerCharacter)
 	if scene.ShowDesk {
-		// #80: the desk is a full-viewport fill — clip it to the un-shaken stage.
-		// Defer to an already-active clip (the camera-zoom clip) so zooming never
-		// stomps it and lets the desk escape the viewport.
+		// Clip the desk to the unshaken stage, deferring to an active camera-zoom clip.
 		contain := !ren.IsClipEnabled()
 		if contain {
 			v.stageClip = stage
 			_ = ren.SetClipRect(&v.stageClip)
 		}
-		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp, spotPct)
+		v.drawScenery(ren, scene, scene.DeskBase, &v.deskAnim, vp, spotPct)
 		if contain {
 			_ = ren.SetClipRect(nil)
 		}
 	}
-	// layer = over: raise() inside the viewport (courtroom.cpp:3228-3232) — above
-	// the desk, below the shout splash.
+	// layer = over: raise() inside the viewport (courtroom.cpp:3228-3232), above the desk and below the shout.
 	v.drawOverlayInStage(ren, scene, vp, stage, courtroom.OverlayLayerOver)
 	if shoutBase := effectiveShoutBase(scene, v.store); shoutBase != "" {
-		// NOT drawFill: AO2's splash layer never stretches — it fits the bubble by
-		// HEIGHT and centres it (splashfit.go cites the exact lines). A 4:3 bubble
-		// on a 16:9 stage was being pulled wide.
+		// Not drawFill: AO2's splash layer fits the bubble by height and centres it, never stretching.
 		v.drawSplash(ren, shoutBase, &v.shoutAnim, vp)
 	}
 
 	if scene.FlashLeft > 0 {
-		// Realization flash: white overlay fading with the countdown.
 		frac := float64(scene.FlashLeft) / float64(courtroom.RealizationFlashDuration)
 		if frac > 1 {
 			frac = 1
 		}
-		// #80: the realization flash is a full-viewport fill — clip it to the
-		// un-shaken stage so it doesn't flicker over the UI during a shake. Defer to
-		// an already-active clip (the camera-zoom clip) so zooming never stomps it.
+		// Clip the flash to the unshaken stage, deferring to an active camera-zoom clip.
 		contain := !ren.IsClipEnabled()
 		if contain {
 			v.stageClip = stage
 			_ = ren.SetClipRect(&v.stageClip)
 		}
 		v.fillRect = vp
-		_ = ren.SetDrawColor(255, 255, 255, uint8(255*frac))
+		_ = ren.SetDrawColor(channelMax, channelMax, channelMax, uint8(channelMax*frac))
 		_ = ren.FillRect(&v.fillRect)
 		if contain {
 			_ = ren.SetClipRect(nil)
@@ -1278,16 +869,13 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	v.applyPostFX(ren, stage)    // #10 retro overlays over the whole stage frame (free when off)
 }
 
-// Bundled zoom speedline fallback keys (issue #126). The UI decodes and pins the
-// embedded stock burst art under these at startup; effectiveSpeedlineBase uses
-// them when a zoom emote's speaker ships no <side>_speedlines of its own.
+// Bundled speedline keys, pinned by the UI at startup, for a speaker with no <side>_speedlines of their own.
 const (
 	SpeedlineDefenseKey     = "theme://speedline/defense"
 	SpeedlineProsecutionKey = "theme://speedline/prosecution"
 )
 
-// SpeedlineFallbackKey maps a ZoomSide value ("defense"/"prosecution") to its
-// bundled fallback key; "" for anything else.
+// SpeedlineFallbackKey maps a ZoomSide ("defense"/"prosecution") to its bundled key, "" for anything else.
 func SpeedlineFallbackKey(side string) string {
 	switch side {
 	case "defense":
@@ -1298,17 +886,7 @@ func SpeedlineFallbackKey(side string) string {
 	return ""
 }
 
-// effectiveSpeedlineBase picks which speedline to draw: the FIRST candidate in
-// the speaker's char-folder chain that is resident, else the bundled stock burst
-// for their side. Mirrors effectiveShoutBase's resident-check fallback.
-// "" = no zoom emote.
-//
-// The chain is ordered most-specific-first by courtroom.SpeedlinesCandidates —
-// the position's own <pos>_speedlines before the AO2 side stem — and every
-// candidate is a full URL, so this is a first-resident-wins walk over at most two
-// entries. That walk is also where the chain's last tier meets the bundled art:
-// a character shipping neither file still draws, because AO's own last resort
-// (a missing-asset alert) is replaced by the stock burst issue #126 added.
+// effectiveSpeedlineBase picks the first resident speedline, else the bundled burst; "" means no zoom emote.
 func effectiveSpeedlineBase(scene *courtroom.Scene, store *TextureStore) string {
 	if scene.SpeedlinesSide == "" {
 		return ""
@@ -1321,12 +899,7 @@ func effectiveSpeedlineBase(scene *courtroom.Scene, store *TextureStore) string 
 	return SpeedlineFallbackKey(scene.SpeedlinesSide)
 }
 
-// effectiveShoutBase picks which shout bubble to draw: the character's own
-// bubble when it's resident, else the default (misc/default) bubble — mirroring
-// AO2-Client, since most characters ship NO custom interjection art, so the
-// char-specific base 404s and only the default ever loads. Both are prefetched
-// in Courtroom.begin. The Contains probe only runs during a shout (ShoutBase
-// set), so it costs nothing the rest of the time.
+// effectiveShoutBase picks the character's resident bubble, else the default, as most ship none (as AO2-Client).
 func effectiveShoutBase(scene *courtroom.Scene, store *TextureStore) string {
 	if scene.ShoutBase == "" {
 		return ""
@@ -1337,11 +910,7 @@ func effectiveShoutBase(scene *courtroom.Scene, store *TextureStore) string {
 	return scene.ShoutBase
 }
 
-// drawFill stretches an asset across the whole viewport (backgrounds, desks,
-// shout bubbles — AO renders all of them viewport-sized).
-// drawFill blits a full-viewport layer (background / desk / shout bubble). dimPct < 100
-// darkens it via a grey ColorMod (the #121 spotlight dims the desk) — set→copy→RESTORE on
-// the shared T1 page so nothing bleeds onto the next user; dimPct == 100 is byte-identical.
+// drawFill stretches a layer across the viewport; dimPct's ColorMod is restored as the T1 page is shared.
 func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect, dimPct int) {
 	if base == "" {
 		return
@@ -1351,30 +920,17 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 		return
 	}
 	v.fillRect = vp
-	if dimPct < 100 {
-		d := scaleChannel(255, dimPct)
+	if dimPct < percentMax {
+		d := scaleChannel(channelMax, dimPct)
 		_ = tex.SetColorMod(d, d, d)
 	}
 	_ = ren.Copy(tex, nil, &v.fillRect)
-	if dimPct < 100 {
-		_ = tex.SetColorMod(255, 255, 255) // restore the shared page
+	if dimPct < percentMax {
+		_ = tex.SetColorMod(channelMax, channelMax, channelMax) // restore the shared page
 	}
 }
 
-// DrawOverlayChat draws the `chat`-layer overlay — AO2 reparents that one out of
-// the viewport onto the Courtroom and stacks it under ui_vp_objection
-// (courtroom.cpp:3234-3237), i.e. OVER the chatbox. internal/ui owns that
-// surface, so it calls this immediately after the chatbox/message draw with the
-// stage rect (the layer is never resized on reparent: it always covers the
-// viewport rect, only its parent changes).
-//
-// The "under the shout bubble" half of the canon ordering is UNREACHABLE for us:
-// AsyncAO blits the shout inside Viewport.Render, and canon fires the effect at
-// start_chat_ticking — i.e. after the shout splash has already finished — so no
-// real message can put a chat-layer overlay and a live shout on screen together.
-// Documented rather than contorted around.
-//
-// Render thread only.
+// DrawOverlayChat draws the chat-layer overlay, which AO2 reparents over the chatbox (courtroom.cpp:3234-3237).
 func (v *Viewport) DrawOverlayChat(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
 	if scene == nil {
 		return
@@ -1382,21 +938,7 @@ func (v *Viewport) DrawOverlayChat(ren *sdl.Renderer, scene *courtroom.Scene, vp
 	v.drawOverlay(ren, scene, vp, courtroom.OverlayLayerChat)
 }
 
-// drawOverlay blits the screen-effect overlay when it belongs to `layer`. It is
-// the RAW blit: containment is the caller's — the three in-viewport rungs go
-// through drawOverlayInStage, the `chat` rung (DrawOverlayChat) is uncontained
-// because canon reparents it out of the viewport.
-//
-// Geometry (AnimationLayer::calculateFrameGeometry, animationlayer.cpp:16,
-// 229-273): stretch=true fills the viewport; otherwise the art is scaled to the
-// viewport HEIGHT with its aspect preserved and CENTRED horizontally.
-// respect_offset then shifts it by the speaker's own self-offset, which is
-// already stored as percent of the viewport (courtroom.cpp:3264-3266).
-//
-// Zero-alloc: pointer math on a Scene.Overlay the courtroom precomputed, the
-// persistent v.ovRect scratch for the cgo destination (taking &localRect would
-// heap-escape on EVERY call), and an early return before anything else when no
-// overlay is on stage — so a normal frame is byte-identical to before.
+// drawOverlay blits the overlay for layer; the caller contains it, except chat, which AO2 reparents.
 func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect, layer uint8) {
 	o := &scene.Overlay
 	if o.Base == "" || o.Layer != layer {
@@ -1404,8 +946,7 @@ func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl
 	}
 	page, ok := v.overlayAnim.resolve(v.store)
 	if !ok || len(page.Frames) == 0 {
-		// Cold (or unresolvable) art draws nothing — pixel-identical to canon's
-		// clear, and the same shape as a cold shout bubble. No blocking, no stall.
+		// Cold art draws nothing, like AO2's clear; no blocking.
 		return
 	}
 	if v.overlayHidden(o) {
@@ -1422,32 +963,7 @@ func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl
 	_ = ren.Copy(tex, nil, &v.ovRect)
 }
 
-// drawOverlayInStage blits one of the three IN-VIEWPORT rungs with the canon
-// containment: do_effect calls setParent(ui_viewport) for behind/character/over
-// (courtroom.cpp:3218-3232) and Qt clips a child widget to its parent's rect, so
-// none of those three can paint a pixel outside the stage. Ours can —
-// overlayDstRect is free to leave the viewport, and does so by DEFAULT:
-//
-//   - the classic stage is 4:3 (config.ViewportArtW/H) while modern effect packs
-//     ship ~16:9 art, so a fit-to-height layer is ~32% wider than the stage and
-//     hangs over the IC log / side panels; and
-//   - respect_offset shifts the whole layer by the speaker's own self-offset
-//     (courtroom.cpp:3264-3266), which can move it off-stage in either axis.
-//
-// Unclipped, that spilled over the chatbox and the log. This is the SAME idiom,
-// and the same restore discipline, as the viewport sprite mask in Render — which
-// exists for exactly this hazard on exactly this offset. Clip to the ORIGINAL
-// stage rect, never the punched/shaken vp (which is itself allowed to leave the
-// stage), and only when nothing else already owns a clip, so the camera-zoom clip
-// (internal/ui/vpzoom.go, itself the stage) is never stomped. v.ovClip is a
-// persistent scratch because &localRect into cgo heap-escapes on every call.
-//
-// The `chat` rung is deliberately NOT routed here: canon reparents it onto the
-// Courtroom widget instead (courtroom.cpp:3234-3237), so the stage is not its
-// clip — DrawOverlayChat blits it uncontained, over the chatbox it now belongs to.
-//
-// Not this rung (or nothing to blit) returns before touching the clip state, so a
-// no-overlay frame still issues no SDL call at all and never dereferences ren.
+// drawOverlayInStage clips to the stage, as Qt clips a child to ui_viewport (courtroom.cpp:3218-3232).
 func (v *Viewport) drawOverlayInStage(ren *sdl.Renderer, scene *courtroom.Scene, vp, stage sdl.Rect, layer uint8) {
 	o := &scene.Overlay
 	if o.Base == "" || o.Layer != layer || v.overlayHidden(o) {
@@ -1464,30 +980,12 @@ func (v *Viewport) drawOverlayInStage(ren *sdl.Renderer, scene *courtroom.Scene,
 	}
 }
 
-// overlayHidden reports whether a resident overlay must NOT blit this frame.
-// setHideWhenStopped(cull) is honoured ONLY for a play-once clip
-// (animationlayer.cpp:660-666); a looping clip never latches finished, so cull is
-// inert there by construction rather than by a second test. Without cull, a
-// finished one-shot HOLDS its last frame — which clampFrame already does.
+// overlayHidden applies setHideWhenStopped(cull), for play-once clips only (animationlayer.cpp:660-666).
 func (v *Viewport) overlayHidden(o *courtroom.SceneOverlay) bool {
 	return o.Cull && v.overlayAnim.finished
 }
 
-// overlayDstRect computes the overlay's destination rect. Pure (no SDL calls, no
-// receiver state) so the geometry is unit-testable headlessly:
-//
-//   - stretch=true fills the viewport (AnimationLayer::setStretchToFit);
-//   - otherwise the art is scaled to the viewport HEIGHT with its aspect kept and
-//     CENTRED horizontally (animationlayer.cpp:16, 246-256);
-//   - respect_offset then shifts by the speaker's own offset, which is already
-//     percent-of-viewport (courtroom.cpp:3264-3266 does the same arithmetic).
-//
-// The layer is NEVER resized on reparent — every rung covers the viewport rect.
-//
-// The result may legitimately EXTEND PAST the viewport (fit-to-height art wider
-// than the stage; any respect_offset shift) — that is canon geometry, and canon
-// then relies on the parent widget to clip it. drawOverlayInStage is that clip
-// for the three in-viewport rungs, so this stays pure and unclamped.
+// overlayDstRect computes the rect, which may pass the viewport as in AO2; drawOverlayInStage clips it.
 func overlayDstRect(o *courtroom.SceneOverlay, vp sdl.Rect, pageW, pageH int32) sdl.Rect {
 	dst := vp
 	if !o.Stretch && pageW > 0 && pageH > 0 {
@@ -1504,20 +1002,7 @@ func overlayDstRect(o *courtroom.SceneOverlay, vp sdl.Rect, pageW, pageH int32) 
 	return dst
 }
 
-// overlayScaleMode settles the overlay's texture filter with the SAME precedence
-// AO2 uses for sprites (internal/courtroom/scaling.go): the user's explicit mode
-// wins, then the effect's own `scaling` key, then the geometry rule (art being
-// ENLARGED is point-sampled so its pixels stay square).
-//
-// The geometry rule is scoped to the NON-STRETCH branch, exactly where canon has
-// it: AnimationLayer::calculateFrameGeometry sets FastTransformation on
-// `m_frame_size.height() < widget_size.height()` INSIDE the else of
-// `if (m_stretch_to_fit)` (animationlayer.cpp:236-262). A stretched layer keeps
-// SmoothTransformation however small its art is — a full-viewport `stretch=true`
-// wash (fire, filmgrain, a 64 px gradient blown up to 1080p) is authored to be
-// smooth, and point-sampling it is the visible defect this scoping avoids. An
-// explicit `scaling` key still overrides, in both branches, as it does in canon
-// (the m_resize_mode block runs after).
+// overlayScaleMode follows AO2's sprite precedence: user mode, effect's scaling key, point-sampled if enlarged.
 func (v *Viewport) overlayScaleMode(o *courtroom.SceneOverlay, nativeH, targetH int32) sdl.ScaleMode {
 	switch courtroom.ResolveScalingMode(v.fx.UserScaling, o.Scaling) {
 	case courtroom.ScalingPixel:
@@ -1531,11 +1016,7 @@ func (v *Viewport) overlayScaleMode(o *courtroom.SceneOverlay, nativeH, targetH 
 	return sdl.ScaleModeLinear
 }
 
-// resolveHeld probes the held-frame bridge for a scenery layer whose CURRENT
-// base is missing (evicted mid-scene by a cap-sized incoming upload — the
-// black-flash class). Store.Get on a pinned key is a plain map probe, and
-// heldKey is precomputed in reset, so this miss path stays allocation-free.
-// The bridge page is a single stolen frame; callers draw frame 0.
+// resolveHeld probes the single parked frame for a scenery layer whose base was evicted; callers draw frame 0.
 func (v *Viewport) resolveHeld(a *animState) (*TexturePage, bool) {
 	if a.heldKey == "" {
 		return nil, false
@@ -1547,7 +1028,7 @@ func (v *Viewport) resolveHeld(a *animState) (*TexturePage, bool) {
 	return page, true
 }
 
-// Reflection tuning (#123): the mirror line and how strong the default reflection is.
+// Mirror line and default strength of the reflection.
 const (
 	reflectFloorPct   = 85  // mirror axis at vp.H * pct/100 down (≈ where feet land)
 	reflectMinAlpha   = 10  // floor so "on" always shows something
@@ -1555,14 +1036,11 @@ const (
 	reflectDefaultPct = 30  // default opacity when unset
 )
 
-// drawReflections mirrors the speaker (+ pair) below the floor line as a flipped, faded glass
-// reflection, confined to the stage. Called from Render between the sprites and the desk.
+// drawReflections mirrors the speaker and pair below the floor line, between the sprite and desk draws.
 func (v *Viewport) drawReflections(ren *sdl.Renderer, scene *courtroom.Scene, vp, spkVP sdl.Rect) {
-	floorY := vp.Y + vp.H*reflectFloorPct/100
+	floorY := vp.Y + vp.H*reflectFloorPct/percentMax
 	alpha := reflectAlpha(v.fx.ReflectStrength)
-	// Confine the reflection to the stage so it can't bleed past the viewport bottom — but
-	// only when a clip isn't already active (the zoom path clips to the stage itself), so we
-	// never stomp the camera-zoom clip.
+	// Confine to the stage, unless a clip is already active (the zoom path), so the camera-zoom clip isn't overwritten.
 	needClip := !ren.IsClipEnabled()
 	if needClip {
 		v.reflClip = vp
@@ -1577,9 +1055,7 @@ func (v *Viewport) drawReflections(ren *sdl.Renderer, scene *courtroom.Scene, vp
 	}
 }
 
-// drawReflection blits one sprite vertically flipped with its mirror axis at floorY, at the
-// given alpha (restored after — shared T1 page). The clip in drawReflections keeps it inside
-// the stage; the desk drawn after occludes its lower part. 0-alloc (reused scratch rect).
+// drawReflection blits one sprite flipped around floorY, restoring alpha afterwards because the T1 page is shared.
 func (v *Viewport) drawReflection(ren *sdl.Renderer, layer *courtroom.SpriteLayer, anim *animState, vp sdl.Rect, floorY int32, alpha uint8) {
 	if !layer.Visible || layer.Active == "" {
 		return
@@ -1589,7 +1065,7 @@ func (v *Viewport) drawReflection(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 		return
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
-	scaledW := vp.H * page.W / page.H
+	scaledW := page.WidthAt(vp.H)
 	v.reflRect.W = scaledW
 	v.reflRect.H = vp.H
 	v.reflRect.X = vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
@@ -1601,29 +1077,20 @@ func (v *Viewport) drawReflection(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 	tex := page.Frames[frame]
 	_ = tex.SetAlphaMod(alpha)
 	_ = ren.CopyEx(tex, nil, &v.reflRect, 0, nil, flip)
-	_ = tex.SetAlphaMod(255) // restore the shared page
+	_ = tex.SetAlphaMod(channelMax) // restore the shared page
 }
 
-// reflectAlpha maps the ReflectStrength slider [0,100] to an 0..255 opacity, clamped to a
-// visible floor and a ceiling so a reflection never reads as a second solid sprite.
+// reflectAlpha maps ReflectStrength [0,100] to an opacity clamped so a reflection never reads as a second solid sprite.
 func reflectAlpha(strength int) uint8 {
 	if strength <= 0 {
 		strength = reflectDefaultPct
 	}
-	a := strength * 255 / 100
-	if a < reflectMinAlpha {
-		a = reflectMinAlpha
-	}
-	if a > reflectMaxAlpha {
-		a = reflectMaxAlpha
-	}
+	a := strength * channelMax / percentMax
+	a = value.Clamp(a, reflectMinAlpha, reflectMaxAlpha)
 	return uint8(a)
 }
 
-// Depth-of-field tuning (#11). A real Gaussian needs per-texture linear filtering that
-// go-sdl2 doesn't expose, so the background is soft-focused by smearing it: the sharp bg
-// plus eight low-alpha offset ghosts (the outlineDirs ring), then a dim overlay to push it
-// behind the sharp speaker. All blits + a scratch rect → 0 alloc.
+// Depth of field: with no blur shader, the bg is smeared by eight low-alpha offset ghosts, then dimmed.
 const (
 	dofBlurDivisor = 90  // ghost offset = vp.H / divisor (floored)
 	dofBlurMin     = 3   //
@@ -1632,93 +1099,59 @@ const (
 	dofDimAlpha    = 95  // darkening over the blurred bg
 )
 
-// drawBackgroundDoF draws the background soft-focused + dimmed (#11). The bg store page's
-// alpha is set per ghost and RESTORED to opaque after (the page is shared T1). 0-alloc.
-func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect) {
-	if base == "" {
+// drawBackgroundDoF draws the bg soft-focused and dimmed, restoring alpha as the T1 page is shared.
+func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, scene *courtroom.Scene, anim *animState, vp sdl.Rect) {
+	if scene.BackgroundBase == "" {
 		return
 	}
-	frame := 0
-	page, ok := anim.resolve(v.store)
-	if ok && len(page.Frames) > 0 {
-		frame = clampFrame(anim.frame, len(page.Frames))
-	} else if page, ok = v.resolveHeld(anim); !ok {
+	page, frame, ok := v.layerPage(anim)
+	if !ok {
 		return // no page, no held bridge frame — see drawFill
 	}
 	tex := page.Frames[frame]
+	dst := sceneryRect(vp, page.W, page.H, scene.SceneryStretch, v.panorama, v.origin)
+	page.applyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, dst.H))
 	r := vp.H / dofBlurDivisor
 	if r < dofBlurMin {
 		r = dofBlurMin
 	}
-	v.fillRect = vp // the sharp base
+	v.fillRect = dst // the sharp base
 	_ = ren.Copy(tex, nil, &v.fillRect)
 	for i := range outlineDirs { // eight offset ghosts → a smear blur
 		a := uint8(dofAlphaCard)
-		if i >= 4 { // outlineDirs[4:] are the diagonals
+		if i >= outlineCardinals {
 			a = dofAlphaDiag
 		}
 		_ = tex.SetAlphaMod(a)
-		v.fillRect = vp
+		v.fillRect = dst
 		v.fillRect.X += outlineDirs[i][0] * r
 		v.fillRect.Y += outlineDirs[i][1] * r
 		_ = ren.Copy(tex, nil, &v.fillRect)
 	}
-	_ = tex.SetAlphaMod(255)
+	_ = tex.SetAlphaMod(channelMax)
 	v.fillRect = vp // dim overlay, pushing the bg behind the sharp speaker
 	_ = ren.SetDrawColor(0, 0, 0, dofDimAlpha)
 	_ = ren.FillRect(&v.fillRect)
 }
 
-// SetSpriteLoadMode picks what a character layer draws while its new sprite is
-// still streaming + decoding (the App ships SpriteLoadHoldPrev; SpriteLoadBlank is
-// the original byte-identical gap). The App mirrors the user pref here once per
-// frame, like SetSpriteFX.
+// SetSpriteLoadMode picks what a character layer draws while its new sprite loads.
 func (v *Viewport) SetSpriteLoadMode(mode int) { v.spriteLoadMode = mode }
 
-// SetClipSprites toggles the viewport sprite mask (ON by default): confine the
-// character sprites to the stage so an offset can't spill them out. The App
-// mirrors the user pref here once per frame.
+// SetClipSprites toggles confining character sprites to the stage.
 func (v *Viewport) SetClipSprites(on bool) { v.clipSprites = on }
 
-// SetHoldMaxAge caps how long hold-previous may bridge a cold sprite (0 = forever).
 func (v *Viewport) SetHoldMaxAge(d time.Duration) { v.holdMaxAge = d }
 
-// SetHoldDebugTint washes stand-in (held) sprites amber — a power-user diagnostic
-// so the cold-load mitigation is visible while tuning it.
+// SetHoldDebugTint washes held stand-in sprites amber, as a diagnostic.
 func (v *Viewport) SetHoldDebugTint(on bool) { v.tintHeld = on }
 
-// SetThumbSprites toggles the low-q thumbnail stand-in on the cold-load miss
-// path (opt-in pref, default OFF). The App mirrors the pref here per frame.
-func (v *Viewport) SetThumbSprites(on bool) { v.thumbSprites = on }
-
-// SetMissingno toggles the AO2 "placeholder" (missingno) for a conclusively-
-// missing char sprite (pref ShowMissingPlaceholder, default ON). The App mirrors
-// the pref here once per frame, like SetSpriteLoadMode. A plain bool assign — no
-// per-frame pref read on the hot path.
+// SetMissingno toggles AO2's placeholder for a sprite confirmed missing.
 func (v *Viewport) SetMissingno(on bool) { v.missingnoEnabled = on }
 
-// SetCrossfade sets the speaker-swap blend duration (0 = off, the default hard
-// swap). The App mirrors the pref here per frame and zeroes it under Reduce
-// motion (a fade is motion).
+// SetCrossfade sets the speaker-swap blend duration (0 = hard swap); the App passes 0 under Reduce motion.
 func (v *Viewport) SetCrossfade(d time.Duration) { v.crossfade = d }
 
-// SetPreanimLoop toggles the opt-in "loop preanimations" behaviour (default OFF,
-// deliberately non-canonical — AO2 plays preanims once). ON keeps a one-shot
-// preanim wrapping while it stays the active layer; OnPreanimDone still fires
-// exactly once so the message lifecycle is unchanged. The App mirrors the pref
-// here once per frame.
-func (v *Viewport) SetPreanimLoop(on bool) { v.preanimLoop = on }
-
-// ThumbKeyPrefix namespaces thumbnail uploads in T1 (like theme:// — a scheme
-// prefix can never collide with an asset URL base). The ui uploads loaded
-// thumbs under ThumbKeyPrefix+base; animState precomputes the same key.
-const ThumbKeyPrefix = "thumb://"
-
-// tickCold advances a char layer's cold-time (base set but not resolved) and
-// resets it on residency — the hold-previous max-age clock. It also ticks a
-// running crossfade, but ONLY while resident: a cold load never consumes the
-// fade, so the blend plays from the frame the new sprite first draws. resolve
-// is generation-cached, so the steady-state cost is pointer math.
+// tickCold tracks a layer's cold time and ticks a crossfade only while resident.
 func (v *Viewport) tickCold(a *animState, dt time.Duration) {
 	if a.base == "" {
 		a.coldFor = 0
@@ -1734,18 +1167,12 @@ func (v *Viewport) tickCold(a *animState, dt time.Duration) {
 	a.coldFor += dt
 }
 
-// drawHeldSprite blits a layer's previously-resolved sprite as a plain stand-in
-// during the cold-load gap (SpriteLoadHoldPrev). Deliberately minimal — no style,
-// variant, wash, spotlight or breathing — it's a transient bridge, sized to the
-// HELD page's own aspect and bottom-centered with the incoming layer's offset +
-// flip so it sits where the new character will. Frame 0 is fine for a sub-second
-// hold. Alloc-free (reuses v.dstRect) and only ever on the miss path, so the
-// cached steady state is untouched.
+// drawHeldSprite blits a stand-in during a cold load, deliberately unstyled, at the incoming offset and flip.
 func (v *Viewport) drawHeldSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, page *TexturePage, vp sdl.Rect) {
 	if page.H == 0 {
 		return
 	}
-	scaledW := vp.H * page.W / page.H
+	scaledW := page.WidthAt(vp.H)
 	v.dstRect.W = scaledW
 	v.dstRect.H = vp.H
 	v.dstRect.X = vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
@@ -1756,115 +1183,43 @@ func (v *Viewport) drawHeldSprite(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 	}
 	tex := page.Frames[0]
 	if v.tintHeld {
-		// Diagnostic amber wash so a stand-in is visibly a stand-in. Restored to
-		// neutral right after — the shared T1 page rule (see the drawSprite
-		// INVARIANT; this is the one other MOD-bracket, same restore discipline).
+		// Restored right after because the T1 page is shared.
 		_ = tex.SetColorMod(heldTintR, heldTintG, heldTintB)
 	}
 	_ = ren.CopyEx(tex, nil, &v.dstRect, 0, nil, flip)
 	if v.tintHeld {
-		_ = tex.SetColorMod(255, 255, 255)
+		_ = tex.SetColorMod(channelMax, channelMax, channelMax)
 	}
 }
 
-// heldTint* is the debug wash for stand-in sprites (a warm amber: R full, G/B
-// cut — obvious on any art without hiding it).
+// heldTint* is the amber debug wash for stand-in sprites.
 const (
 	heldTintR = 255
 	heldTintG = 190
 	heldTintB = 120
 )
 
-// drawSprite draws a character layer: scaled to viewport height preserving
-// aspect, bottom-centered, shifted by percent offsets, optionally mirrored.
-// hueShift offsets this layer's rainbow phase (used to desync the pair).
+// drawSprite draws a layer at viewport height, bottom-centred, offset; hueShift offsets its rainbow phase.
 func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, anim *animState, vp sdl.Rect, hueShift time.Duration, dimPct int) {
 	if !layer.Visible || layer.Active == "" {
 		return
 	}
 	page, ok := anim.resolve(v.store)
-	// A progressive PARTIAL must not displace the hold-previous stand-in during
-	// a swap: drawing it would freeze the old animation to one static frame for
-	// the rest of the decode (~1s). Prefer the previous sprite when we have one —
-	// exactly the webAO hold-previous contract — the partial only provides the
-	// fast first frame for a COLD load (no lastGood to hold). Guards mirror the
-	// miss-path hold-previous branch below.
-	if ok && page.Partial && v.spriteLoadMode == SpriteLoadHoldPrev &&
-		anim.lastGood != "" && anim.lastGood != anim.base &&
-		(v.holdMaxAge <= 0 || anim.coldFor <= v.holdMaxAge) {
-		if held, ok2 := v.store.Get(anim.lastGood); ok2 && len(held.Frames) > 0 {
-			v.drawHeldSprite(ren, layer, held, vp)
-			return
-		}
-	}
 	if !ok || len(page.Frames) == 0 {
-		// missingno FIRST (AO2 fidelity): a CONCLUSIVELY-MISSING base (its whole
-		// fallback chain 404'd — store.IsMissing) draws the shared placeholder
-		// instead of holding a DIFFERENT (stale) character. Deliberately ahead of
-		// the held/thumb/hold-previous chain below: a confirmed-missing base
-		// TYPICALLY was never uploaded, so it has no held://P/thumb page of its own,
-		// and lastGood SURVIVES base swaps — so hold-previous would otherwise pin
-		// the previous character on stage forever (holdprev_test.go:75-77). The one
-		// case where a held frame DOES exist: a base displayed → LRU-evicted (the
-		// held-frame steal parks its last frame) → re-demanded → NOW 404s (asset
-		// pulled mid-session). Probing missingno first means the glitch supersedes
-		// that stale held frame — intentional (AO2 shows its placeholder regardless
-		// of the prior frame). This does not disturb the scenery bridge: a base that
-		// was never marked missing still takes the held branch unchanged
-		// (heldscenery_test.go stays green). The probe is a plain const-key map read
-		// (MissingKey is const, anim.base already in hand) + drawHeldSprite (reuses
-		// v.dstRect) — 0-alloc, mirroring resolveHeld/thumb. Only STILL-LOADING
-		// sprites (not in the missing set) keep the full chain below; still-loading
-		// and confirmed-missing are disjoint. Structurally unreachable on the found
-		// path (resolved sprites exit via the ok-path).
-		//
-		// EXCEPTION: a PLAY-ONCE layer (layer.PlayOnce) is a preanimation, and a
-		// missing preanim must NEVER paint the placeholder. AO2-Client stats the
-		// preanim file locally and skips a missing one outright — it never draws a
-		// placeholder for it (courtroom.cpp play_preanim). The courtroom skips a
-		// known-missing preanim at entry and swaps Active off it synchronously when
-		// the 404 lands (Courtroom.enterAfterShout / NotifyAssetMissing), so the
-		// phase machine is ALWAYS about to leave this base — a placeholder here would
-		// be a single-frame flash on the residual window before the courtroom's next
-		// Update reaches a draw driver that skipped it (audio-paced present, restore,
-		// split/replay/maker room). Fall through to hold-previous instead: the idle/
-		// talk sprite (or the prior frame) is the correct "no preanim" picture, and
-		// missingno on a preanim is never useful. IDLE/TALK layers (PlayOnce false)
-		// keep their WANTED placeholder — the disjoint idle/talk missingno contract
-		// (missingno_test.go, missingno_noblip_test.go) is untouched.
+		// A missing base has no held page, and lastGood survives swaps: hold-previous would pin forever.
+		// Only still-loading sprites take the chain below; loading and confirmed missing are disjoint.
 		if v.missingnoEnabled && !layer.PlayOnce && v.store.IsMissing(anim.base) {
 			if mp, ok2 := v.store.Get(MissingKey); ok2 && len(mp.Frames) > 0 {
 				v.drawHeldSprite(ren, layer, mp, vp)
 				return
 			}
 		}
-		// Held-frame bridge FIRST: if THIS sprite's page was evicted mid-display
-		// (a cap-sized incoming upload forced it out — the last black-flash hole),
-		// the store parked its first frame under held://base. That is the exact
-		// same character at FULL quality, so it beats both the low-res thumbnail
-		// and holding the PREVIOUS (different) character. Zero decode, zero copy;
-		// releases the instant the real page re-uploads (store.releaseHeld).
+		// A parked frame of this same sprite at full quality beats a different character.
 		if held, ok2 := v.resolveHeld(anim); ok2 {
 			v.drawHeldSprite(ren, layer, held, vp)
 			return
 		}
-		// Cold-load gap: the incoming sprite hasn't finished streaming + decoding.
-		// The opt-in THUMBNAIL wins next — the right character at low quality
-		// (uploaded by the ui under the precomputed thumb:// key) beats the
-		// previous character at full quality.
-		if v.thumbSprites && anim.thumbKey != "" {
-			if tp, ok2 := v.store.Get(anim.thumbKey); ok2 && len(tp.Frames) > 0 {
-				v.drawHeldSprite(ren, layer, tp, vp)
-				return
-			}
-		}
-		// Else SpriteLoadHoldPrev keeps the layer's LAST drawn sprite on screen
-		// until the new one lands (webAO-style) instead of flashing empty. We
-		// resolve the HELD base through the store (never a stashed page pointer —
-		// the LRU owns lifetime, so an eviction just falls back to blank +
-		// self-heals). This lives ONLY on the draw path: resolve()/Update never see
-		// the held page, so the preanim lifecycle and packed-room catch-up pacing
-		// are untouched. SpriteLoadBlank → the original byte-identical early return.
+		// Hold by string as the LRU owns lifetime; draw path only, so the preanim lifecycle never sees it.
 		if v.spriteLoadMode == SpriteLoadHoldPrev && anim.lastGood != "" && anim.lastGood != anim.base &&
 			(v.holdMaxAge <= 0 || anim.coldFor <= v.holdMaxAge) { // max-age knob: 0 = bridge forever
 			if held, ok2 := v.store.Get(anim.lastGood); ok2 && len(held.Frames) > 0 {
@@ -1873,24 +1228,15 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		}
 		return
 	}
-	// Remember the sprite we're about to draw so a later cold swap can hold it.
-	// (A plain assign is alloc-free; guard it so steady state doesn't even copy the
-	// string header when nothing changed.) During a crossfade the update WAITS —
-	// lastGood must keep naming the OLD sprite while it draws under the ramp.
+	// During a crossfade lastGood must keep naming the old sprite while it draws under the ramp.
 	if anim.fadeLeft <= 0 && anim.lastGood != anim.base {
 		anim.lastGood = anim.base
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
 
-	// The sprite fills the stage height (bottom-anchored), preserving the art's
-	// aspect. AO2 resizes every character layer to the viewport exactly ONCE
-	// (courtroom.cpp:778) and never scales it for an emote: a zoom emote only hides
-	// the desk + the pair and plays the speedlines (:3456-3477), so the punch-in is
-	// the character's own zoom preanimation ART. The 1.5x magnification v1.98.0
-	// added here stacked on top of that art and read as a double zoom (#126
-	// playtest). The reflection below already mirrors at vp.H for the same reason.
+	// AO2 sizes a layer to the viewport once (courtroom.cpp:778); a zoom emote doesn't rescale it (:3456-3477).
 	h := vp.H
-	w := h * page.W / page.H
+	w := page.WidthAt(h)
 	v.dstRect.W = w
 	v.dstRect.H = h
 	v.dstRect.X = vp.X + (vp.W-w)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
@@ -1901,21 +1247,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		flip = sdl.FLIP_HORIZONTAL
 	}
 	tex := page.Frames[frame]
-	// drawPage tracks which page owns the texture actually being blitted, so the
-	// scale-mode memo below lands on THAT page's frames. A variant / hue-paint page
-	// holds different textures with their own filter state; memoising on the base
-	// would leave every recoloured sprite on the client-wide filter.
+	// drawPage owns the blitted texture, so the scale mode lands on variant pages with their own filter state.
 	drawPage := page
-	// Hue paint (Tint+Grayscale, the v1.53.5 composition) draws from a dedicated
-	// luma-preserving colorize variant instead of multiplying the tint over the
-	// grayscale variant — a multiply can only remove light, so the old composition
-	// darkened every saturated hue (playtest: turning hue paint on still looked
-	// like the plain dark recolour). The tint colormod is SKIPPED for this layer
-	// (huePainted below) — the colour is baked into the variant's pixels.
-	// Conditions mirror what the old path composed: HueCycle keeps the rainbow-
-	// over-grayscale look (rebuilding a paint page per rainbow step would churn
-	// readback+upload every frame), and Variant() == Grayscale means no Invert /
-	// Restyle override is active (those still win, exactly as before).
+	// Hue paint uses a luma-preserving variant, as a multiply only removes light; huePainted skips the tint.
 	huePainted := false
 	if st := layer.Style; st.Tint && st.Grayscale && !st.HueCycle &&
 		st.Variant() == courtroom.VariantGrayscale {
@@ -1925,33 +1259,17 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			huePainted = true
 		}
 	}
-	// A transmitted PER-PIXEL effect (invert / grayscale) swaps in a cached variant
-	// texture built from the base's transformed pixels — SetColorMod can't do either.
-	// The colour-mod bracket below still applies ON TOP (so invert + glow composes).
-	// Built once per (base, effect) and cached on the page; this is a 0-alloc map hit
-	// every frame after the first. (Also the hue-paint fallback: if the paint page
-	// couldn't build, the old grayscale×tint composition still renders.)
+	// Invert and grayscale need a pixel variant, which SetColorMod can't do; the mod still applies on top.
 	if eff := layer.Style.Variant(); eff != courtroom.VariantNone && !huePainted {
 		if vpg, ok := v.store.VariantPage(layer.Active, eff); ok && frame < len(vpg.Frames) {
 			tex, drawPage = vpg.Frames[frame], vpg
 		}
 	}
-	// AO2 filters per SPRITE, not per client (issue #21 label 15), and the two
-	// inputs here are AO2's own: m_frame_size.height() (the frame's native art
-	// height) against widget_size.height() — the viewport the layer fills, which
-	// AnimationLayer::calculateFrameGeometry reads as its own size(), set ONCE at
-	// courtroom.cpp:778 and never rescaled by an emote. It must be vp.H and NOT
-	// v.dstRect.H: dstRect is this sprite's own destination and grows with a
-	// transmitted scale (#34) or zoom, so feeding it in re-decided the filter as a
-	// side-effect of an unrelated effect. nativeH is latched per character — see
-	// spriteNativeH.
+	// AO2 filters per sprite, from frame height against the widget height (calculateFrameGeometry, courtroom.cpp:778).
+	// Must be vp.H, not v.dstRect.H: dstRect grows with a transmitted scale or zoom, changing the filter.
 	drawPage.applyScaleMode(ren, v.spriteScaleMode(layer, anim.spriteNativeH(layer, page), vp.H))
 
-	// Resolve the effective per-layer effects into plain locals (no allocation; a
-	// no-FX layer leaves them all neutral and the blit byte-identical). A
-	// TRANSMITTED style — the speaker's own choice, decoded from their message —
-	// takes precedence over the viewer's local wash for that layer; otherwise the
-	// local wash (rainbow / solid) applies exactly as before.
+	// A transmitted style takes precedence over the viewer's local wash for this layer.
 	var (
 		modR, modG, modB                    uint8 = 255, 255, 255
 		alphaMod                            uint8 = 255
@@ -1965,8 +1283,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		gAR, gAG, gAB, gBR, gBG, gBB        uint8 // fringe ghost colour pair (all-zero = classic red/blue)
 	)
 	if st := layer.Style; st.Active() {
-		// Colour: a transmitted hue-cycle rainbow, else the tint colour, then
-		// optionally dimmed by brightness — all collapse into one ColorMod.
+		// Hue-cycle or tint, optionally dimmed by brightness, all collapse into one ColorMod.
 		if st.HueCycle {
 			phase := v.rainbowPhase + hueShift
 			if v.curCycle > 0 {
@@ -1975,12 +1292,10 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			modR, modG, modB = rainbowMod(phase, v.curCycle, floorForVividness(styleHueVividness))
 			doColorMod = true
 		} else if st.Tint && !huePainted {
-			// Plain multiply tint. Skipped when the hue-paint variant is on stage:
-			// its pixels already carry the colour, and multiplying it in again
-			// would re-darken exactly what the paint variant exists to fix.
+			// Skipped for hue paint: its pixels already carry the colour, and multiplying would darken them again.
 			modR, modG, modB, doColorMod = st.R, st.G, st.B, true
 		}
-		if b := st.BrightnessPct(); b != 100 {
+		if b := st.BrightnessPct(); b != percentMax {
 			if !doColorMod {
 				modR, modG, modB, doColorMod = 255, 255, 255, true
 			}
@@ -2024,35 +1339,25 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		wob, spin = fx.Wobble, fx.Spin
 	}
 
-	// #121 spotlight: dim this non-speaker layer by scaling its colour toward black, ON TOP of
-	// whatever tint / brightness / wash resolved above (a dimmed pair keeps its own style, just
-	// darker). Forces a ColorMod; the speaker passes dimPct 100 → no-op, byte-identical.
-	if dimPct < 100 {
+	// Dim on top of any resolved tint, so a dimmed pair keeps its style; the speaker passes noDim.
+	if dimPct < percentMax {
 		modR, modG, modB = scaleChannel(modR, dimPct), scaleChannel(modG, dimPct), scaleChannel(modB, dimPct)
 		doColorMod = true
 	}
 
-	// Speaker-swap crossfade (power-user, 0 = off): while fadeLeft runs, the
-	// PREVIOUS sprite draws underneath at full strength and this (new) sprite
-	// alpha-ramps in on top — lastGood still names the old sprite here by
-	// design (its update above waits for the fade to end). Resolved by string
-	// through the store like every stand-in; an evicted under-layer just means
-	// the ramp plays over the background.
+	// The old sprite draws underneath as this one ramps in; if evicted, it plays over the background.
 	if anim.fadeLeft > 0 && v.crossfade > 0 && anim.lastGood != "" && anim.lastGood != anim.base {
 		if under, okU := v.store.Get(anim.lastGood); okU && len(under.Frames) > 0 {
 			v.drawHeldSprite(ren, layer, under, vp)
 		}
-		ramp := 255 - int(255*anim.fadeLeft/v.crossfade) // 0 → 255 across the fade
+		ramp := channelMax - int(channelMax*anim.fadeLeft/v.crossfade) // 0 → 255 across the fade
 		if ramp < 0 {
 			ramp = 0
 		}
-		alphaMod = uint8(int(alphaMod) * ramp / 255)
+		alphaMod = uint8(int(alphaMod) * ramp / channelMax)
 	}
 
-	// #122 idle breathing: fold the breathing scale-pulse into scalePct (applied below) and
-	// stash the bob to add after the wobble. Local + AsyncAO-only, pure math off the free-running
-	// clock; v.fx already has it cleared under ReduceMotion. Composes with a transmitted scale +
-	// the wobble; off → breathBobY 0 and scalePct unchanged, so the blit is byte-identical.
+	// Fold the breathing pulse into scalePct and keep the bob to add after the wobble.
 	var breathBobY int32
 	if v.fx.IdleBreath {
 		bobY, addScale := breathTransform(v.fxClock, vp, v.fx.BreathAmp, v.fx.BreathSpeed)
@@ -2064,51 +1369,35 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		}
 	}
 
-	// Static glitch: fold the signal-loss flicker into the alpha BEFORE the mods are
-	// applied (the jolt/fringe below runs after them). Pure hash math per time bucket;
-	// the other modes leave alphaMod untouched.
+	// Fold the flicker into alpha before the mods are applied; the jolt and fringe run after them.
 	if glitch && glitchMode == courtroom.GlitchStatic {
-		alphaMod = uint8(int(alphaMod) * glitchFlickerPct(v.fxClock) / 100)
+		alphaMod = uint8(int(alphaMod) * glitchFlickerPct(v.fxClock) / percentMax)
 	}
 
-	// Apply each modulation, then restore EACH to neutral after the blit so it
-	// never bleeds onto the next user of this SHARED T1 page (next frame, emote
-	// preview, wardrobe grid). ColorMod leaves alpha alone so the transparent
-	// cutout stays cut out; AlphaMod handles opacity; ADD blend makes a glow.
-	//
-	// INVARIANT: drawSprite is the *only* place the renderer MOD-brackets a texture
-	// for drawing — SetColorMod / SetBlendMode / SetAlphaMod (besides the upload
-	// default BLENDMODE_BLEND at textures.go, the variant readback in variant.go,
-	// which flips a frame to BLENDMODE_NONE for an exact copy and restores BLEND,
-	// and drawHeldSprite's debug-tint bracket, which restores neutral the same way).
-	// Any future effect that mods a texture elsewhere MUST restore it too, or art bleeds.
+	// Restore each mod after the blit so it doesn't bleed onto the next user of this shared T1 page.
 	if doColorMod {
 		_ = tex.SetColorMod(modR, modG, modB)
 	}
-	if alphaMod != 255 {
+	if alphaMod != channelMax {
 		_ = tex.SetAlphaMod(alphaMod)
 	}
 	if glow {
 		_ = tex.SetBlendMode(sdl.BLENDMODE_ADD)
 	}
-	// Transmitted scale: resize around the sprite's CENTRE so it grows/shrinks in
-	// place rather than from a corner.
-	if scalePct != 100 {
-		nw := v.dstRect.W * int32(scalePct) / 100
-		nh := v.dstRect.H * int32(scalePct) / 100
+	// Scale around the sprite's centre, not a corner.
+	if scalePct != percentMax {
+		nw := v.dstRect.W * int32(scalePct) / percentMax
+		nh := v.dstRect.H * int32(scalePct) / percentMax
 		v.dstRect.X += (v.dstRect.W - nw) / 2
 		v.dstRect.Y += (v.dstRect.H - nh) / 2
 		v.dstRect.W, v.dstRect.H = nw, nh
 	}
-	// Optional motion FX: a gentle sway and/or slow spin, pure math off the
-	// free-running fxClock (no allocation; off = zero offset / zero angle).
 	if wob {
 		dx, dy := wobbleOffset(v.fxClock, vp)
 		v.dstRect.X += dx
 		v.dstRect.Y += dy
 	}
-	// #34 movement: a custom drawn PATH wins over a predefined motion; both are pure math
-	// off the free-running clock, so when neither is set this whole block is skipped.
+	// A custom path wins over a predefined motion.
 	switch {
 	case pathLen >= 2:
 		mdx, mdy := pathOffset(pathPts[:], pathLen, v.fxClock, vp)
@@ -2122,9 +1411,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if breathBobY != 0 { // #122 idle breathing's vertical bob (folded scale was applied above)
 		v.dstRect.Y += breathBobY
 	}
-	// #13 glitch: an occasional horizontal jolt moves the WHOLE sprite (solid + outline +
-	// the chromatic fringe below) together; glitchSplit is the chromatic offset for the
-	// fringe. The mode picks its own split/jolt tuning (glitchParamsMode).
+	// A jolt moves the whole sprite (solid, outline and fringe) together; glitchSplit is the fringe's chromatic offset.
 	var glitchSplit int32
 	if glitch {
 		var jolt int32
@@ -2135,10 +1422,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if spin {
 		angle += spinDegrees(v.fxClock)
 	}
-	// #8 outline + drop-shadow: draw a tinted silhouette BEHIND the sprite, using the FINAL
-	// dstRect/angle/flip so it tracks scale + wobble + rotation. Gated so a normal sprite is
-	// byte-identical. The silhouette page is a cached white-filled variant; drawSilhouette
-	// set→blit→restores ColorMod AND AlphaMod each call so nothing bleeds onto the next user.
+	// Drawn behind the sprite with the final rect, angle and flip, so it tracks scale, wobble and rotation.
 	if st := layer.Style; st.Outline || st.DropShadow {
 		if sil, ok := v.store.VariantPage(layer.Active, courtroom.VariantSilhouette); ok && frame < len(sil.Frames) {
 			silTex := sil.Frames[frame]
@@ -2150,7 +1434,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 				v.drawSilhouette(ren, silTex, angle, flip, shadowDir[:], ow*shadowMultiple, 0, 0, 0, shadowAlpha)
 			}
 			if st.Outline {
-				or, og, ob := uint8(255), uint8(255), uint8(255) // white by default
+				or, og, ob := uint8(channelMax), uint8(channelMax), uint8(channelMax) // white by default
 				if st.OutlineR != 0 || st.OutlineG != 0 || st.OutlineB != 0 {
 					or, og, ob = st.OutlineR, st.OutlineG, st.OutlineB // #M5+ custom outline colour
 				}
@@ -2158,10 +1442,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			}
 		}
 	}
-	// Torn glitch: during its tear windows the sprite draws as horizontal bands, some
-	// shoved sideways (VHS tracking-error style). Angle-rotated sprites keep the plain
-	// blit — CopyEx rotates each band around its own centre, which shreds the art
-	// rather than tearing it. Everything else (mods, fringe) composes unchanged.
+	// Rotated sprites keep the plain blit: CopyEx rotates each band around its own centre, which shreds the art.
 	if glitch && glitchMode == courtroom.GlitchTorn && angle == 0 &&
 		v.fxClock%glitchTornPeriod < glitchTornWindow {
 		v.drawTornSprite(ren, tex, page, flip, glitchSplit)
@@ -2169,26 +1450,21 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
 	}
 	if doColorMod {
-		_ = tex.SetColorMod(255, 255, 255)
+		_ = tex.SetColorMod(channelMax, channelMax, channelMax)
 	}
-	if alphaMod != 255 {
-		_ = tex.SetAlphaMod(255)
+	if alphaMod != channelMax {
+		_ = tex.SetAlphaMod(channelMax)
 	}
 	if glow {
 		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	}
-	// #13 chromatic fringe: a ghost pair over the solid sprite — classic red/blue, or
-	// the style's own colour pair (the mods above are already restored, so these set +
-	// restore their own). 0-alloc.
+	// The mods above are already restored, so the fringe sets and restores its own.
 	if glitch {
 		v.drawGlitchFringe(ren, tex, angle, flip, glitchSplit, glitchMode, gAR, gAG, gAB, gBR, gBG, gBB)
 	}
 }
 
-// drawGlitchFringe overlays the two offset ghosts of the sprite (chromatic aberration):
-// colour A left, colour B right — all-zero = the classic red/blue pair. Static jitters
-// the ghosts on both axes per time bucket; Echo draws a second, fainter pair further
-// out first. Shared tex: set→blit→RESTORE ColorMod + AlphaMod so nothing bleeds. 0-alloc.
+// drawGlitchFringe overlays two tinted ghosts (all-zero = red/blue), restoring mods on the shared texture.
 func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle float64, flip sdl.RendererFlip, split int32, mode uint8, aR, aG, aB, bR, bG, bB uint8) {
 	if aR == 0 && aG == 0 && aB == 0 && bR == 0 && bG == 0 && bB == 0 {
 		aR, bB = 255, 255 // the classic pair: red left, blue right
@@ -2198,10 +1474,15 @@ func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle f
 	if mode == courtroom.GlitchStatic { // signal loss: the ghosts jitter around the sprite
 		h := glitchHash(uint32(v.fxClock / glitchStaticBucket))
 		amp := split * glitchStaticAmpMul
-		adx -= int32(h&0xF) * amp / 15
-		ady = int32((h>>4)&0xF)*amp/15 - amp/2
-		bdx += int32((h>>8)&0xF) * amp / 15
-		bdy = int32((h>>12)&0xF)*amp/15 - amp/2
+		// Four nibbles of the hash, one per offset, each scaled to 0..amp.
+		const nibbleBits, nibbleMax = 4, 0xF
+		adx -= int32(h&nibbleMax) * amp / nibbleMax
+		h >>= nibbleBits
+		ady = int32(h&nibbleMax)*amp/nibbleMax - amp/2
+		h >>= nibbleBits
+		bdx += int32(h&nibbleMax) * amp / nibbleMax
+		h >>= nibbleBits
+		bdy = int32(h&nibbleMax)*amp/nibbleMax - amp/2
 	}
 	if mode == courtroom.GlitchEcho { // a far, faint echo pair behind the main fringe
 		_ = tex.SetAlphaMod(glitchFringeAlpha / glitchEchoFadeDiv)
@@ -2211,12 +1492,11 @@ func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle f
 	_ = tex.SetAlphaMod(glitchFringeAlpha)
 	v.blitFringeGhost(ren, tex, angle, flip, adx, ady, aR, aG, aB)
 	v.blitFringeGhost(ren, tex, angle, flip, bdx, bdy, bR, bG, bB)
-	_ = tex.SetColorMod(255, 255, 255)
-	_ = tex.SetAlphaMod(255)
+	_ = tex.SetColorMod(channelMax, channelMax, channelMax)
+	_ = tex.SetAlphaMod(channelMax)
 }
 
-// blitFringeGhost draws one tinted ghost copy at an offset from the sprite's rect.
-// Caller owns the alpha bracket + the final restore.
+// blitFringeGhost draws one tinted ghost; the caller owns the alpha bracket and the final restore.
 func (v *Viewport) blitFringeGhost(ren *sdl.Renderer, tex *sdl.Texture, angle float64, flip sdl.RendererFlip, dx, dy int32, r, g, b uint8) {
 	_ = tex.SetColorMod(r, g, b)
 	v.fxRect = v.dstRect
@@ -2225,10 +1505,7 @@ func (v *Viewport) blitFringeGhost(ren *sdl.Renderer, tex *sdl.Texture, angle fl
 	_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
 }
 
-// drawTornSprite draws the sprite as glitchTornBands horizontal bands, ~two thirds of
-// them shoved sideways by a per-(band, bucket) hash — deterministic, re-rolled every
-// glitchTornBucket so the tear crawls while its window lasts. Bands map 1:1 between
-// texture rows and dstRect rows, so flip (horizontal) stays correct per band. 0-alloc.
+// drawTornSprite draws bands, two thirds shoved by a (band, bucket) hash; rows map 1:1, so flip stays correct.
 func (v *Viewport) drawTornSprite(ren *sdl.Renderer, tex *sdl.Texture, page *TexturePage, flip sdl.RendererFlip, split int32) {
 	bucket := glitchHash(uint32(v.fxClock / glitchTornBucket))
 	maxOff := split * glitchTornOffMul
@@ -2247,15 +1524,13 @@ func (v *Viewport) drawTornSprite(ren *sdl.Renderer, tex *sdl.Texture, page *Tex
 	}
 }
 
-// Entrance tuning (#9): a quick slide-in for a newly-arrived speaker.
+// Entrance slide-in tuning.
 const (
 	entranceDuration  = 320 * time.Millisecond // slide settle time
 	entranceSlideFrac = 0.22                   // start offset = vp.W * this (slides from the left)
 )
 
-// entranceSlide returns the speaker's horizontal slide offset (negative → from the left) at
-// the given remaining time: most offset at the start, easing to 0 (frac² snap-in). Pure,
-// 0-alloc.
+// entranceSlide returns the speaker's negative horizontal offset for the remaining time, easing to 0.
 func entranceSlide(left time.Duration, vpW int32) int32 {
 	frac := float64(left) / float64(entranceDuration)
 	if frac > 1 {
@@ -2264,7 +1539,7 @@ func entranceSlide(left time.Duration, vpW int32) int32 {
 	return -int32(float64(vpW) * entranceSlideFrac * frac * frac)
 }
 
-// Glitch tuning (#13): a chromatic split that shimmers + a periodic horizontal jolt.
+// Glitch tuning: a shimmering chromatic split and a periodic horizontal jolt.
 const (
 	glitchSplitDivisor = 220                     // base chromatic offset = vp.H / divisor (floored)
 	glitchSplitMin     = 2                       //
@@ -2275,8 +1550,7 @@ const (
 	glitchJoltMultiple = 3                       // jolt distance = split * this
 )
 
-// glitchParams returns the chromatic split (px) and the horizontal jolt (px) at the given
-// clock for a stage of height vpH. Pure scalar math — 0-alloc, safe on the render path.
+// glitchParams returns the chromatic split and horizontal jolt in pixels for a stage of height vpH.
 func glitchParams(clock time.Duration, vpH int32) (split, jolt int32) {
 	split = vpH / glitchSplitDivisor
 	if split < glitchSplitMin {
@@ -2292,8 +1566,7 @@ func glitchParams(clock time.Duration, vpH int32) (split, jolt int32) {
 	return split, jolt
 }
 
-// Per-mode glitch tuning (the v1.54.0 glitch options). All pure math off the
-// free-running clock, like the classic parameters above.
+// Per-mode glitch tuning.
 const (
 	glitchHeavySplitMul   = 2                      // Heavy: fringe distance × this
 	glitchHeavyJoltPeriod = 700 * time.Millisecond // Heavy: jolts come almost twice as often
@@ -2315,10 +1588,7 @@ const (
 	glitchTornBandSalt    = 0x9E3779B9             // decorrelates per-band hashes within a bucket
 )
 
-// glitchParamsMode is glitchParams specialised by the transmitted glitch look:
-// Heavy widens the fringe and jolts harder/oftener on its own cadence, Echo only
-// widens (its motion is the extra ghost pair), Torn/Static keep the classic split
-// (their character lives in the band tearing / jitter+flicker). Pure, 0-alloc.
+// glitchParamsMode: Heavy widens and jolts harder, Echo only widens, Torn and Static keep the classic split.
 func glitchParamsMode(mode uint8, clock time.Duration, vpH int32) (split, jolt int32) {
 	split, jolt = glitchParams(clock, vpH)
 	switch mode {
@@ -2337,31 +1607,35 @@ func glitchParamsMode(mode uint8, clock time.Duration, vpH int32) (split, jolt i
 	return split, jolt
 }
 
-// glitchFlickerPct is Static's signal-loss alpha percentage for the current time
-// bucket: usually glitchStaticFloorPct..99, with an occasional hard dropout. Pure.
+// glitchFlickerPct is Static's alpha percentage for this time bucket, with an occasional hard dropout.
 func glitchFlickerPct(clock time.Duration) int {
 	h := glitchHash(uint32(clock / glitchStaticBucket))
 	if h%glitchStaticDropMod == 0 {
 		return glitchStaticDropPct
 	}
-	return glitchStaticFloorPct + int(h>>8)%(100-glitchStaticFloorPct)
+	const flickerBitsShift = 8 // the low byte already chose the dropout
+	return glitchStaticFloorPct + int(h>>flickerBitsShift)%(percentMax-glitchStaticFloorPct)
 }
 
-// glitchHash is a tiny integer scrambler (xorshift-multiply) behind the glitch modes'
-// pseudo-random offsets — deterministic per (band, time bucket), stateless, 0-alloc.
+// glitchHash is a stateless integer scrambler (xorshift-multiply) for the glitch modes' offsets.
 func glitchHash(n uint32) uint32 {
-	n ^= n >> 16
-	n *= 0x7feb352d
-	n ^= n >> 15
-	n *= 0x846ca68b
-	n ^= n >> 16
+	// lowbias32 (Chris Wellons' hash-prospector): its published shifts and multipliers.
+	const (
+		shiftA = 16
+		mulA   = 0x7feb352d
+		shiftB = 15
+		mulB   = 0x846ca68b
+		shiftC = 16
+	)
+	n ^= n >> shiftA
+	n *= mulA
+	n ^= n >> shiftB
+	n *= mulB
+	n ^= n >> shiftC
 	return n
 }
 
-// drawSilhouette blits the (shared, cached) silhouette texture at each dir offset (scaled by
-// width), tinted (r,g,b,a) — the #8 outline/shadow. ColorMod + AlphaMod are set once and
-// restored to neutral after the group, so the shared page never carries a leftover mod into
-// the next frame or another consumer. 0-alloc: a Viewport scratch rect + scalar math.
+// drawSilhouette blits the silhouette at each dir offset, restoring mods as the page is shared.
 func (v *Viewport) drawSilhouette(ren *sdl.Renderer, tex *sdl.Texture, angle float64, flip sdl.RendererFlip, dirs [][2]int32, width int32, r, g, b, a uint8) {
 	_ = tex.SetColorMod(r, g, b)
 	_ = tex.SetAlphaMod(a)
@@ -2371,8 +1645,8 @@ func (v *Viewport) drawSilhouette(ren *sdl.Renderer, tex *sdl.Texture, angle flo
 		v.fxRect.Y += d[1] * width
 		_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
 	}
-	_ = tex.SetColorMod(255, 255, 255)
-	_ = tex.SetAlphaMod(255)
+	_ = tex.SetColorMod(channelMax, channelMax, channelMax)
+	_ = tex.SetAlphaMod(channelMax)
 }
 
 func clampFrame(frame, count int) int {
@@ -2385,87 +1659,64 @@ func clampFrame(frame, count int) int {
 	return frame
 }
 
-// spotlightMinBrightness floors how dark the #121 spotlight can push a non-speaker layer, so
-// it reads as "in shadow" rather than a black silhouette even at the max slider.
+// spotlightMinBrightness keeps a dimmed layer "in shadow" rather than a black silhouette at the max slider.
 const spotlightMinBrightness = 15
 
-// spotlightBrightness maps the SpotlightLevel slider [0,100] (dim intensity, higher = darker)
-// to the brightness percent a non-speaker layer is drawn at, floored so it never blacks out.
+// spotlightBrightness maps SpotlightLevel [0,100], higher being darker, to a brightness percent floored above black.
 func spotlightBrightness(level int) int {
-	b := 100 - level
+	b := percentMax - level
 	if b < spotlightMinBrightness {
 		return spotlightMinBrightness
 	}
-	if b > 100 {
-		return 100
+	if b > percentMax {
+		return percentMax
 	}
 	return b
 }
 
-// cycleForSpeed maps the Speed slider [1,100] to a hue-rotation period, higher
-// speed → shorter period. The result is hard-floored at minRainbowCycle so the
-// caller's phase%cycle and rainbowMod's divide can never hit zero, whatever a
-// hand-edited or out-of-range pref says.
+// cycleForSpeed maps Speed [1,100] to a hue period, floored so a hand-edited pref can't divide by zero.
 func cycleForSpeed(speed int) time.Duration {
-	if speed < 1 {
-		speed = 1
-	}
-	if speed > 100 {
-		speed = 100
-	}
+	speed = value.Clamp(speed, 1, percentMax)
 	span := maxRainbowCycle - minRainbowCycle
-	cyc := maxRainbowCycle - time.Duration(int64(span)*int64(speed-1)/99)
+	cyc := maxRainbowCycle - time.Duration(int64(span)*int64(speed-1)/(percentMax-1))
 	if cyc < minRainbowCycle {
 		cyc = minRainbowCycle
 	}
 	return cyc
 }
 
-// styleHueVividness is the saturation for a TRANSMITTED hue-cycle rainbow (the
-// wire style carries no vividness field) — vivid but not blinding.
+// styleHueVividness is the saturation for a transmitted hue cycle; the wire style has no vividness field.
 const styleHueVividness = 70
 
-// scaleChannel multiplies a colour channel by pct/100 (clamped to 255): pct < 100
-// dims the sprite, pct > 100 washes it brighter toward white. Used by the
-// transmitted brightness control.
+// scaleChannel multiplies a channel by pct/100, clamped to 255.
 func scaleChannel(c uint8, pct int) uint8 {
-	v := int(c) * pct / 100
-	if v > 255 {
+	v := int(c) * pct / percentMax
+	if v > channelMax {
 		v = 255
 	}
 	return uint8(v)
 }
 
-// floorForVividness maps the Vividness slider [0,100] to the colour-mod channel
-// floor, higher vividness → lower floor → more saturated/neon.
+// floorForVividness maps Vividness [0,100] to the colour-mod floor: higher vividness, lower floor.
 func floorForVividness(v int) int {
-	if v < 0 {
-		v = 0
-	}
-	if v > 100 {
-		v = 100
-	}
-	return spriteFloorMax * (100 - v) / 100
+	v = value.Clamp(v, 0, percentMax)
+	return spriteFloorMax * (percentMax - v) / percentMax
 }
 
-// Motion-FX tuning (Wobble / Spin). Slow + small so they read as playful, not
-// nauseating.
+// Wobble and Spin tuning: slow and small so they read as playful, not nauseating.
 const (
 	wobblePeriod     = 1700 * time.Millisecond // one full sway cycle
 	wobbleAmpDivisor = 40                      // sway amplitude = vp.W / divisor
 	spinPeriod       = 4 * time.Second         // one full rotation
 )
 
-// Shout-punch tuning (#12): a snappy zoom pop on objections. Short so it reads as impact, not
-// a zoom; the peak scale is small so the inflated art barely overspills the stage.
+// Shout-punch tuning: short so it reads as impact, with a small peak so the art barely overspills the stage.
 const (
 	shoutPunchDuration = 240 * time.Millisecond // how long the pop takes to settle
 	shoutPunchPeak     = 0.06                   // peak extra scale (+6%) at the instant of the shout
 )
 
-// punchScale is the extra-scale fraction for the shout punch at the given remaining time:
-// an instant attack to the peak that eases out as the clock runs down (frac², so it decays
-// fast then smooths to zero). Pure — no allocation, safe on the render path.
+// punchScale is the extra-scale fraction at the given remaining time: instant attack, frac² decay.
 func punchScale(left time.Duration) float64 {
 	if left <= 0 {
 		return 0
@@ -2477,7 +1728,6 @@ func punchScale(left time.Duration) float64 {
 	return shoutPunchPeak * frac * frac
 }
 
-// oscFrac returns clock's phase within period as a fraction in [0,1).
 func oscFrac(clock, period time.Duration) float64 {
 	if period <= 0 {
 		return 0
@@ -2485,8 +1735,7 @@ func oscFrac(clock, period time.Duration) float64 {
 	return float64(clock%period) / float64(period)
 }
 
-// wobbleOffset is a gentle Lissajous sway (x and y on different periods) scaled
-// to the viewport, for the Wobble effect. Pure math — no allocation.
+// wobbleOffset is a Lissajous sway scaled to the viewport.
 func wobbleOffset(clock time.Duration, vp sdl.Rect) (dx, dy int32) {
 	amp := float64(vp.W) / wobbleAmpDivisor
 	dx = int32(amp * math.Sin(2*math.Pi*oscFrac(clock, wobblePeriod)))
@@ -2494,21 +1743,20 @@ func wobbleOffset(clock time.Duration, vp sdl.Rect) (dx, dy int32) {
 	return dx, dy
 }
 
-// spinDegrees is the continuous rotation angle (0..360) for the Spin effect.
 func spinDegrees(clock time.Duration) float64 {
-	return oscFrac(clock, spinPeriod) * 360
+	return oscFrac(clock, spinPeriod) * degreesPerTurn
 }
 
-// Sprite-motion tuning (#34). Amplitude is a fraction of the viewport width (clamped so a
-// roaming sprite can't leave the stage); the period is one slow loop.
+// Sprite-motion tuning: amplitude is a fraction of viewport width, clamped so a sprite can't leave the stage.
 const (
-	motionAmpDivisor = 7.0                     // motion amplitude = vp.W / divisor
-	motionPeriod     = 3500 * time.Millisecond // one full loop
+	motionAmpDivisor    = 7.0                     // motion amplitude = vp.W / divisor
+	motionPeriod        = 3500 * time.Millisecond // one full loop
+	motionShakeSpeedup  = 6                       // the shake path loops this many times faster
+	motionShakeYFreqMul = 1.7                     // y jitters at an off ratio of x
+	spiralRadiusMin     = 0.4                     // the spiral orbit's radius pulses from here to 1
 )
 
-// motionOffset returns the per-frame (dx,dy) for a transmitted Motion path (#34): a clamped
-// parametric loop off the free-running clock. Pure math, no allocation; MotionNone never
-// reaches here (the caller skips motion==0), so the no-motion case stays byte-identical.
+// motionOffset returns the offset for a transmitted Motion path; the caller skips MotionNone.
 func motionOffset(motion uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32) {
 	amp := float64(vp.W) / motionAmpDivisor
 	t := 2 * math.Pi * oscFrac(clock, motionPeriod)
@@ -2524,11 +1772,11 @@ func motionOffset(motion uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32)
 		dx = int32(amp * math.Sin(t)) // a slow figure-8 roam
 		dy = int32(amp * 0.5 * math.Sin(2*t))
 	case courtroom.MotionShake:
-		ft := 2 * math.Pi * oscFrac(clock, motionPeriod/6) // fast jitter, small amplitude
+		ft := 2 * math.Pi * oscFrac(clock, motionPeriod/motionShakeSpeedup) // fast jitter, small amplitude
 		dx = int32(amp * 0.25 * math.Sin(ft))
-		dy = int32(amp * 0.25 * math.Sin(ft*1.7)) // off-ratio so it's not a clean diagonal
+		dy = int32(amp * 0.25 * math.Sin(ft*motionShakeYFreqMul)) // not a clean diagonal
 	case courtroom.MotionSpiral:
-		rad := 0.4 + 0.6*math.Abs(math.Sin(t/2)) // orbit whose radius pulses in and out
+		rad := spiralRadiusMin + (1-spiralRadiusMin)*math.Abs(math.Sin(t/2)) // orbit whose radius pulses in and out
 		dx = int32(amp * rad * math.Cos(t))
 		dy = int32(amp * 0.55 * rad * math.Sin(t))
 	case courtroom.MotionPendulum:
@@ -2538,10 +1786,7 @@ func motionOffset(motion uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32)
 	return dx, dy
 }
 
-// pathOffset returns the per-frame (dx,dy) along a user-drawn custom path (#34): the sprite
-// traverses the waypoints over one motionPeriod, lerping between them and looping back to the
-// first. Each waypoint is a packed 4-bit X/Y on a 16×16 grid centred at 8,8. Pure math, no
-// allocation (path is a slice of a stack array the caller owns).
+// pathOffset returns the offset along a custom path; each waypoint is a packed 4-bit X/Y centred at 8,8.
 func pathOffset(path []byte, pathLen uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32) {
 	n := int(pathLen)
 	if n < 2 || n > len(path) {
@@ -2560,13 +1805,17 @@ func pathOffset(path []byte, pathLen uint8, clock time.Duration, vp sdl.Rect) (d
 	return int32(x0 + (x1-x0)*frac), int32(y0 + (y1-y0)*frac)
 }
 
-// pathPointPx maps a packed 4-bit X/Y waypoint (each 0..15, centred at 8) to a pixel offset
-// scaled to amp.
+// pathPointPx maps a packed 4-bit X/Y waypoint to a pixel offset scaled to amp.
 func pathPointPx(p byte, amp float64) (x, y float64) {
-	return float64(int(p>>4)-8) / 8.0 * amp, float64(int(p&0x0F)-8) / 8.0 * amp
+	const (
+		nibbleBits = 4
+		nibbleMask = 0x0F
+		centre     = 8 // a waypoint nibble's zero offset
+	)
+	return float64(int(p>>nibbleBits)-centre) / centre * amp, float64(int(p&nibbleMask)-centre) / centre * amp
 }
 
-// Idle-breathing tuning (#122). Slow + small so a static sprite reads as gently alive.
+// Idle-breathing tuning: slow and small.
 const (
 	breathPeriodMin = 1500 * time.Millisecond // fastest breath (speed = 100)
 	breathPeriodMax = 5000 * time.Millisecond // slowest breath (speed = 1)
@@ -2574,37 +1823,23 @@ const (
 	breathScaleMax  = 5                       // scale-pulse adds up to +5% at amp=100
 )
 
-// breathPeriod maps the BreathSpeed slider [1,100] to a breathing period (higher = faster).
+// breathPeriod maps BreathSpeed [1,100] to a period; higher is faster.
 func breathPeriod(speed int) time.Duration {
-	if speed < 1 {
-		speed = 1
-	}
-	if speed > 100 {
-		speed = 100
-	}
+	speed = value.Clamp(speed, 1, percentMax)
 	span := breathPeriodMax - breathPeriodMin
-	return breathPeriodMax - time.Duration(int64(span)*int64(speed-1)/99)
+	return breathPeriodMax - time.Duration(int64(span)*int64(speed-1)/(percentMax-1))
 }
 
-// breathTransform is the #122 idle-breathing offsets at the given clock: a vertical bob and a
-// scale-pulse (an "inhale" that only expands, 0..max, via (1+sin)/2), both scaled by the
-// amplitude slider. Pure math off the free-running fxClock — no allocation. The caller gates
-// each component (Bob / Scale) and folds scaleAddPct into the sprite's scale.
+// breathTransform returns the idle-breathing bob and a scale pulse that only expands; the caller checks Bob and Scale.
 func breathTransform(clock time.Duration, vp sdl.Rect, ampPct, speedPct int) (bobY int32, scaleAddPct int) {
-	if ampPct < 1 {
-		ampPct = 1
-	} else if ampPct > 100 {
-		ampPct = 100
-	}
+	ampPct = value.Clamp(ampPct, 1, percentMax)
 	s := math.Sin(2 * math.Pi * oscFrac(clock, breathPeriod(speedPct)))
 	bobY = int32(float64(vp.H) * float64(ampPct) / 100 / breathBobDiv * s)
 	scaleAddPct = int(float64(breathScaleMax) * float64(ampPct) / 100 * (1 + s) / 2)
 	return bobY, scaleAddPct
 }
 
-// charHueOffset hashes a sprite's base name to a stable hue offset in [0,cycle)
-// so PerCharHue gives each character a different rainbow colour at once. Inline
-// FNV-1a — no allocation, safe on the render path.
+// charHueOffset hashes a base name (FNV-1a) to a stable hue offset in [0,cycle) for PerCharHue.
 func charHueOffset(base string, cycle time.Duration) time.Duration {
 	if cycle <= 0 {
 		return 0
@@ -2621,11 +1856,7 @@ func charHueOffset(base string, cycle time.Duration) time.Duration {
 	return time.Duration(uint64(h) % uint64(cycle))
 }
 
-// rainbowMod maps the hue clock to an SDL colour-mod (r,g,b) for the rainbow
-// sprite wash. Pure integer math — no allocation, no float, no math import —
-// so it is safe on the zero-alloc render path. It walks the six edges of the
-// RGB cube (the classic hue wheel) and then lifts each channel off zero by
-// floor so the tint never crushes the art to a silhouette.
+// rainbowMod maps the hue clock to a colour mod in integer math, lifted by floor so art isn't silhouetted.
 func rainbowMod(phase, cycle time.Duration, floor int) (r, g, b uint8) {
 	const segments = 6  // six edges of the RGB cube
 	const segSpan = 256 // hue ticks per edge
@@ -2635,30 +1866,36 @@ func rainbowMod(phase, cycle time.Duration, floor int) (r, g, b uint8) {
 	if phase < 0 {
 		phase = 0
 	}
-	// Position on the 0..(segments*segSpan) hue ring.
 	hue := int64(phase) * (segments * segSpan) / int64(cycle)
 	seg := hue / segSpan % segments
 	t := hue % segSpan // 0..255 within the current edge
 	var rr, gg, bb int64
+	// The six edges of the hue ring, red round to magenta.
+	const (
+		segRed = iota
+		segYellow
+		segGreen
+		segCyan
+		segBlue
+	)
 	switch seg {
-	case 0:
-		rr, gg, bb = 255, t, 0
-	case 1:
-		rr, gg, bb = 255-t, 255, 0
-	case 2:
-		rr, gg, bb = 0, 255, t
-	case 3:
-		rr, gg, bb = 0, 255-t, 255
-	case 4:
-		rr, gg, bb = t, 0, 255
-	default: // 5
-		rr, gg, bb = 255, 0, 255-t
+	case segRed:
+		rr, gg, bb = channelMax, t, 0
+	case segYellow:
+		rr, gg, bb = channelMax-t, channelMax, 0
+	case segGreen:
+		rr, gg, bb = 0, channelMax, t
+	case segCyan:
+		rr, gg, bb = 0, channelMax-t, channelMax
+	case segBlue:
+		rr, gg, bb = t, 0, channelMax
+	default: // magenta
+		rr, gg, bb = channelMax, 0, channelMax-t
 	}
 	return liftChannel(rr, floor), liftChannel(gg, floor), liftChannel(bb, floor)
 }
 
-// liftChannel maps a 0..255 hue channel into [floor,255] so the colour-mod
-// tints the sprite rather than silhouetting it (see spriteFloorMax).
+// liftChannel maps a hue channel into [floor,255].
 func liftChannel(c int64, floor int) uint8 {
-	return uint8(int64(floor) + c*(255-int64(floor))/255)
+	return uint8(int64(floor) + c*(channelMax-int64(floor))/channelMax)
 }

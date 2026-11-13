@@ -27,22 +27,10 @@ func loadPrefs(t *testing.T, path string) *AssetPreferences {
 	return p
 }
 
-// Preferences are SAVED by marshalling AssetPreferences (SaveNow) and LOADED by
-// unmarshalling into prefsJSON and then copying field by field in a hand-written
-// overlay. Two structs, two lists, no compiler tying them together — so a new
-// preference that joins only the first one saves perfectly and silently reverts
-// to its default on every launch.
-//
-// That is not hypothetical: assetCharCase shipped that way and stayed broken
-// until this gate was written. The trap is called out in CLAUDE.md and was still
-// unenforced by anything.
-//
-// This closes the class. Every json tag on AssetPreferences must have a twin on
-// prefsJSON, unless it is on the deliberate list below with a reason.
-
-// saveOnlyPrefTags are the AssetPreferences json tags that intentionally have no
-// prefsJSON twin. Each needs a reason, and the gate below fails if an entry here
-// stops being save-only — so an accidental fix cannot leave a stale excuse behind.
+// saveOnlyPrefTags are the AssetPreferences json tags that the golden fixture
+// deliberately does not cover (or that have no on-disk round-trip). Each needs a
+// reason, and TestGoldenFixtureCoversEveryField fails if an entry here stops being
+// save-only — so an accidental fix cannot leave a stale excuse behind.
 var saveOnlyPrefTags = map[string]string{}
 
 // prefJSONTags collects the json tag name of every exported field of t,
@@ -75,50 +63,20 @@ func prefJSONTags(t reflect.Type) map[string]bool {
 	return out
 }
 
-func TestEverySavedPreferenceIsAlsoLoaded(t *testing.T) {
-	saved := prefJSONTags(reflect.TypeOf(AssetPreferences{}))
-	loaded := prefJSONTags(reflect.TypeOf(prefsJSON{}))
-
-	for tag := range saved {
-		if loaded[tag] {
-			continue
-		}
-		if why, ok := saveOnlyPrefTags[tag]; ok {
-			t.Logf("save-only by design: %q — %s", tag, why)
-			continue
-		}
-		t.Errorf("preference %q is written by SaveNow but has no prefsJSON field, so it saves and never loads back. "+
-			"Add the field to prefsJSON with the SAME json tag AND a line to the load overlay, "+
-			"or list it in saveOnlyPrefTags with a reason.", tag)
-	}
-
-	// The allow-list must not rot: an entry that has since gained a DTO field is a
-	// stale excuse, and one that is no longer saved at all is dead weight.
-	for tag := range saveOnlyPrefTags {
-		if !saved[tag] {
-			t.Errorf("saveOnlyPrefTags[%q] names a tag AssetPreferences no longer has", tag)
-		}
-		if loaded[tag] {
-			t.Errorf("saveOnlyPrefTags[%q] is loaded now — drop the exemption", tag)
-		}
-	}
-}
-
-// TestAssetCharCasingRoundTrips is the instance the gate above was written for:
-// the power-user character-folder casing saved but reverted to lowercase on every
-// launch, which silently 404s every character on a capitalised-folder server for
-// anyone who set it and then restarted.
+// TestAssetCharCasingRoundTrips proves the character-folder casing setting saves and
+// loads back (a field that saves but reverts to lowercase on launch would silently 404
+// every character on a capitalised-folder server for anyone who set it and restarted).
 func TestAssetCharCasingRoundTrips(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if got := p.AssetCharCasing(); got != 0 {
+	if got := p.Load().AssetCharCase; got != 0 {
 		t.Fatalf("default casing = %d, want 0 (lowercase — the safe default)", got)
 	}
 	p.SetAssetCharCasing(2) // title case
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).AssetCharCasing(); got != 2 {
+	if got := loadPrefs(t, path).Load().AssetCharCase; got != 2 {
 		t.Errorf("casing after reload = %d, want 2 — it saved but did not load back", got)
 	}
 }
@@ -131,20 +89,20 @@ func TestAssetCharCasingRoundTrips(t *testing.T) {
 func TestSubthemeRoundTripsAndIsSanitizedOnBothSides(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if got := p.Subtheme(); got != "" {
+	if got := p.Load().SubthemeName; got != "" {
 		t.Fatalf("default subtheme = %q, want empty (AO2's own default)", got)
 	}
 	p.SetSubtheme("night")
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).Subtheme(); got != "night" {
+	if got := loadPrefs(t, path).Load().SubthemeName; got != "night" {
 		t.Errorf("subtheme after reload = %q, want %q — it saved but did not load back", got, "night")
 	}
 
 	// The setter refuses anything that is not one folder name...
 	p.SetSubtheme("../../secret")
-	if got := p.Subtheme(); got != "night" {
+	if got := p.Load().SubthemeName; got != "night" {
 		t.Errorf("a path-escaping subtheme was accepted (now %q)", got)
 	}
 	// ...and so does the loader, for a file edited by hand outside the client.
@@ -152,46 +110,47 @@ func TestSubthemeRoundTripsAndIsSanitizedOnBothSides(t *testing.T) {
 	if err := os.WriteFile(hand, []byte(`{"subtheme":"../../secret"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, hand).Subtheme(); got != "" {
+	if got := loadPrefs(t, hand).Load().SubthemeName; got != "" {
 		t.Errorf("hand-edited subtheme loaded as %q, want it refused", got)
 	}
 }
 
 // TestProxyPrefsRoundTrip: the whole point of the proxy setting is that it
-// survives a restart. A user who switches to "never use a proxy" because the
+// survives a restart. A user who turns on the manual proxy because the
 // detected one cannot carry AO traffic must not find themselves back on it the
 // next time they launch.
 func TestProxyPrefsRoundTrip(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if p.ProxyMode() != ProxyModeSystem {
-		t.Fatalf("default proxy mode = %d, want ProxyModeSystem — ignoring the machine's setting is the bug", p.ProxyMode())
+	if p.Load().ProxyModeVal != ProxyModeSystem {
+		t.Fatalf("default proxy mode = %d, want ProxyModeSystem — ignoring the machine's setting is the bug", p.Load().ProxyModeVal)
 	}
-	if p.ProxyURLValue() != "" {
-		t.Fatalf("default proxy URL = %q, want empty", p.ProxyURLValue())
+	if p.Load().ProxyURL != "" {
+		t.Fatalf("default proxy URL = %q, want empty", p.Load().ProxyURL)
 	}
-	p.SetProxyMode(ProxyModeManual)
-	p.SetProxyURL("  socks5://box.example:1080  ") // trimmed on the way in
+	p.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeManual })
+	p.SetProxyURL("  http://box.example:8080  ") // trimmed on the way in
+	p.Update(func(sn *Settings) { sn.ProxyBypass = "  lan.test;10.*  " })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
 	back := loadPrefs(t, path)
-	if back.ProxyMode() != ProxyModeManual {
-		t.Errorf("mode after reload = %d, want ProxyModeManual", back.ProxyMode())
+	if back.Load().ProxyModeVal != ProxyModeManual {
+		t.Errorf("mode after reload = %d, want ProxyModeManual", back.Load().ProxyModeVal)
 	}
-	if got := back.ProxyURLValue(); got != "socks5://box.example:1080" {
+	if got := back.Load().ProxyURL; got != "http://box.example:8080" {
 		t.Errorf("url after reload = %q, want it trimmed and preserved", got)
 	}
+	if got := back.Load().ProxyBypass; got != "lan.test;10.*" {
+		t.Errorf("bypass after reload = %q, want it trimmed and preserved", got)
+	}
 
-	// The escape hatch specifically: mode 1 is not the zero value, but mode 0 is,
-	// and a user switching BACK to 0 must persist that rather than be
-	// indistinguishable from a file written before the setting existed.
-	back.SetProxyMode(ProxyModeDirect)
+	back.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeDirect })
 	if err := back.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).ProxyMode(); got != ProxyModeDirect {
-		t.Errorf("mode after reload = %d, want ProxyModeDirect — the escape hatch must survive a restart", got)
+	if got := loadPrefs(t, path).Load().ProxyModeVal; got != ProxyModeDirect {
+		t.Errorf("mode after reload = %d, want ProxyModeDirect", got)
 	}
 }
 
@@ -206,7 +165,7 @@ func TestPreviewWindowRectRoundTrips(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
 
-	if _, _, _, _, ok := p.PreviewWindowRect(); ok {
+	if _, _, _, _, ok := p.Load().PreviewWindowRect(); ok {
 		t.Fatal("a fresh install must report no saved preview window rect")
 	}
 
@@ -216,7 +175,7 @@ func TestPreviewWindowRectRoundTrips(t *testing.T) {
 	}
 
 	back := loadPrefs(t, path)
-	x, y, w, h, ok := back.PreviewWindowRect()
+	x, y, w, h, ok := back.Load().PreviewWindowRect()
 	if !ok {
 		t.Fatal("the saved rect did not load back (ok=false)")
 	}
@@ -232,7 +191,7 @@ func TestPreviewWindowRectRoundTrips(t *testing.T) {
 	if err := back.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	x, y, w, h, ok = loadPrefs(t, path).PreviewWindowRect()
+	x, y, w, h, ok = loadPrefs(t, path).Load().PreviewWindowRect()
 	if !ok {
 		t.Fatal("an explicit (0,0,0,0) save must still load back as valid")
 	}
@@ -247,8 +206,8 @@ func TestPreviewWindowRectRoundTrips(t *testing.T) {
 func TestPanelFontsRoundTrip(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if len(p.PanelFonts()) != 0 {
-		t.Fatalf("a fresh install has overrides: %v", p.PanelFonts())
+	if len(p.Load().PanelFonts()) != 0 {
+		t.Fatalf("a fresh install has overrides: %v", p.Load().PanelFonts())
 	}
 	p.SetPanelFont("ic_chatlog", PanelFont{Family: "  Comic Sans MS  ", SizePx: 18})
 	p.SetPanelFont("music_list", PanelFont{SizePx: 22}) // size only
@@ -256,14 +215,14 @@ func TestPanelFontsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := loadPrefs(t, path)
-	if got := back.PanelFontFor("ic_chatlog"); got.Family != "Comic Sans MS" || got.SizePx != 18 {
+	if got := back.Load().PanelFontFor("ic_chatlog"); got.Family != "Comic Sans MS" || got.SizePx != 18 {
 		t.Errorf("ic_chatlog = %+v, want the trimmed family and 18 px", got)
 	}
-	if got := back.PanelFontFor("music_list"); got.Family != "" || got.SizePx != 22 {
+	if got := back.Load().PanelFontFor("music_list"); got.Family != "" || got.SizePx != 22 {
 		t.Errorf("music_list = %+v, want a size-only override", got)
 	}
 	// Keyed case-insensitively, since the identifier is also a theme INI key.
-	if got := back.PanelFontFor("IC_CHATLOG"); got.SizePx != 18 {
+	if got := back.Load().PanelFontFor("IC_CHATLOG"); got.SizePx != 18 {
 		t.Errorf("lookup is case-sensitive: %+v", got)
 	}
 }
@@ -276,19 +235,19 @@ func TestPanelFontsClearRemovesTheKey(t *testing.T) {
 	p := loadPrefs(t, path)
 	p.SetPanelFont("ic_chatlog", PanelFont{Family: "Arial", SizePx: 14})
 	p.SetPanelFont("ic_chatlog", PanelFont{}) // the user emptied both boxes
-	if got := p.PanelFonts(); len(got) != 0 {
+	if got := p.Load().PanelFonts(); len(got) != 0 {
 		t.Errorf("an emptied override was stored as a zero value: %v", got)
 	}
 	p.SetPanelFont("music_list", PanelFont{SizePx: 20})
 	p.SetPanelFont("area_list", PanelFont{SizePx: 20})
 	p.ClearPanelFonts()
-	if got := p.PanelFonts(); len(got) != 0 {
+	if got := p.Load().PanelFonts(); len(got) != 0 {
 		t.Errorf("ClearPanelFonts left %v — it is the way out of a font you cannot read", got)
 	}
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).PanelFonts(); len(got) != 0 {
+	if got := loadPrefs(t, path).Load().PanelFonts(); len(got) != 0 {
 		t.Errorf("cleared overrides came back after a reload: %v", got)
 	}
 }
@@ -336,31 +295,29 @@ func TestPanelFontsAreBounded(t *testing.T) {
 func TestPanelFontsHandsOutACopy(t *testing.T) {
 	p := loadPrefs(t, tempPrefsPath(t))
 	p.SetPanelFont("ic_chatlog", PanelFont{SizePx: 14})
-	got := p.PanelFonts()
+	got := p.Load().PanelFonts()
 	got["ic_chatlog"] = PanelFont{SizePx: 99}
 	got["injected"] = PanelFont{SizePx: 99}
-	if p.PanelFontFor("ic_chatlog").SizePx != 14 {
+	if p.Load().PanelFontFor("ic_chatlog").SizePx != 14 {
 		t.Error("mutating the returned map reached the live preferences")
 	}
-	if _, ok := p.PanelFonts()["injected"]; ok {
+	if _, ok := p.Load().PanelFonts()["injected"]; ok {
 		t.Error("a key added to the returned map reached the live preferences")
 	}
 }
 
-// TestProxyModeClampsGarbage: an out-of-range mode indexes past the label table,
-// and the safe landing is System — the shipped default — rather than Direct,
-// which would silently turn the feature off for someone whose file got mangled.
+// TestProxyModeClampsGarbage: an out-of-range mode lands on System, the shipped default.
 func TestProxyModeClampsGarbage(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
 	for _, bad := range []int{-1, ProxyModeCount, ProxyModeCount + 50} {
-		p.SetProxyMode(bad)
-		if got := p.ProxyMode(); got != ProxyModeSystem {
+		p.Update(func(sn *Settings) { sn.ProxyModeVal = bad })
+		if got := p.Load().ProxyModeVal; got != ProxyModeSystem {
 			t.Errorf("SetProxyMode(%d) landed on %d, want ProxyModeSystem", bad, got)
 		}
 	}
 	// ...and on the way in too, because a hand-edited file is the other door.
-	p.SetProxyMode(ProxyModeManual)
+	p.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeManual })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +332,7 @@ func TestProxyModeClampsGarbage(t *testing.T) {
 	if err := os.WriteFile(path, []byte(mangled), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).ProxyMode(); got != ProxyModeSystem {
+	if got := loadPrefs(t, path).Load().ProxyModeVal; got != ProxyModeSystem {
 		t.Errorf("a hand-edited mode of 99 loaded as %d, want the System fallback", got)
 	}
 }
@@ -388,7 +345,7 @@ func TestAssetCharCasingClampsGarbage(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
 	p.SetAssetCharCasing(AssetCharCaseMax + 7)
-	if got := p.AssetCharCasing(); got != 0 {
+	if got := p.Load().AssetCharCase; got != 0 {
 		t.Errorf("setter accepted an out-of-range mode: got %d, want the lowercase fallback", got)
 	}
 	// ...and the same on the way in, because the setter is not the only door.
@@ -396,7 +353,7 @@ func TestAssetCharCasingClampsGarbage(t *testing.T) {
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).AssetCharCasing(); got != AssetCharCaseMax {
+	if got := loadPrefs(t, path).Load().AssetCharCase; got != AssetCharCaseMax {
 		t.Errorf("the highest VALID mode must survive a reload: got %d, want %d", got, AssetCharCaseMax)
 	}
 }
@@ -407,16 +364,16 @@ func TestAssetCharCasingClampsGarbage(t *testing.T) {
 func TestShoutBypassQueueRoundTrips(t *testing.T) {
 	path := tempPrefsPath(t)
 	p := loadPrefs(t, path)
-	if !p.ShoutBypassQueueOn() {
+	if !p.Load().ShoutBypassQueue {
 		t.Fatal("default shout-bypass must be ON (AO2 parity)")
 	}
 	// An explicit OFF must survive a restart despite the ON default — the *bool
 	// DTO distinguishes "absent → default" from a deliberately-written OFF.
-	p.SetShoutBypassQueue(false)
+	p.Update(func(sn *Settings) { sn.ShoutBypassQueue = false })
 	if err := p.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadPrefs(t, path).ShoutBypassQueueOn(); got {
+	if got := loadPrefs(t, path).Load().ShoutBypassQueue; got {
 		t.Error("shout-bypass after reload = true — an explicit OFF did not load back")
 	}
 }

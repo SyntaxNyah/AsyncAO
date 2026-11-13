@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The overlay-fence primitive (overlayfence.go) exists because the kit is
@@ -347,10 +347,12 @@ func TestCompactToolboxNoFenceUnderCourtroomModal(t *testing.T) {
 			// set the flags directly through the same fields the predicate reads.
 			switch i {
 			case 0:
-				a.showIni = true
+				a.ward.show = true
 			case 1:
-				a.bgPick.show = true
+				a.showJukebox = true
 			case 2:
+				a.bgPick.show = true
+			case 3:
 				a.showSfxBrowser = true
 			default:
 				t.Fatalf("courtroomModals grew to %d entries — extend this switch", len(courtroomModals))

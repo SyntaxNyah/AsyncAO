@@ -1,14 +1,4 @@
-// Package update implements AsyncAO's one-shot self-update check. It asks the
-// GitHub Releases API for the latest published release, compares its semver tag
-// to the running build, and — when newer — returns the release together with
-// its patch notes (the release body) and the downloadable asset URL.
-//
-// The package is pure Go (no SDL/CGO) and does EXACTLY ONE network GET per
-// Check — there is no polling or ticker here. The caller fires Check once, on
-// its own goroutine, AFTER the window is up, so the update check adds zero cost
-// to the boot critical path (the self-replace and the "What's New" UI live with
-// the caller; this package only decides "is there a newer build, and what does
-// it say"). See docs/FEATURES.md and the M13 plan.
+// Package update does the one-shot self-update check: exactly one GET per Check, with no polling.
 package update
 
 import (
@@ -17,52 +7,33 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// devVersion is the version an unstamped build reports. Release builds stamp a
-// real semver via the linker (see build.ps1); a dev build never self-updates.
+// devVersion is what an unstamped build reports; such a build never self-updates.
 const devVersion = "dev"
 
-// Version is the running build's version. Stamped at link time with
-//
-//	-ldflags "-X github.com/SyntaxNyah/AsyncAO/internal/update.Version=v1.2.3"
-//
-// Unstamped builds report "dev" and Check treats them as never having an
-// update available (a developer running their own build isn't nagged).
+// Version is the running build's version, stamped by the linker with -X (see scripts/build.ps1).
 var Version = devVersion
 
-// IsDev reports whether the running build is an unstamped (non-release) build.
-// Callers use it to skip release-only UI cues (e.g. the changelog's "installed"
-// marker) without duplicating the devVersion literal.
+// IsDev reports whether the running build is unstamped.
 func IsDev() bool { return Version == "" || Version == devVersion }
 
 const (
-	// DefaultReleasesURL is the GitHub Releases API for this repo's latest
-	// published (non-draft, non-prerelease) release — the STABLE channel.
+	// DefaultReleasesURL is the latest non-draft, non-prerelease release: the stable channel.
 	DefaultReleasesURL = "https://api.github.com/repos/SyntaxNyah/AsyncAO/releases/latest"
-	// DefaultReleaseListURL is the full releases list, newest first,
-	// PRERELEASES INCLUDED — the experimental channel's feed. Builds cut from
-	// the test branch (MayAO-Test) publish as prerelease tags, so following
-	// this list IS following that branch. per_page bounds the page (rule
-	// §17.4); ten releases is far more history than the pick needs (it only
-	// wants the newest published entry).
+	// DefaultReleaseListURL lists newest first with prereleases; per_page bounds the page (hard rule 4).
 	DefaultReleaseListURL = "https://api.github.com/repos/SyntaxNyah/AsyncAO/releases?per_page=10"
-	// checkTimeout bounds the one-shot probe so a hung endpoint can't stall the
-	// caller's goroutine forever.
+	// checkTimeout stops a hung endpoint stalling the caller's goroutine forever.
 	checkTimeout = 10 * time.Second
-	// maxBodyBytes caps the response read (rule §17.4: nothing unbounded). A
-	// release-list page — even with long notes and many assets — fits well
-	// under this; a hostile/huge body is truncated, not slurped.
+	// maxBodyBytes caps the response read (hard rule 4); a hostile body is truncated.
 	maxBodyBytes = 2 << 20
 )
 
-// Release is the user-facing result of a successful check: the newer version,
-// its patch notes (shown on the "What's New" screen), the release page (for a
-// "view online" fallback), and the direct asset download URL for the
-// self-replace step ("" when the release shipped no matching asset).
+// Release is a newer version with its patch notes, release page, and direct asset URL ("" when no asset matched).
 type Release struct {
 	Version    string // tag with any leading v stripped (e.g. "1.2.3")
 	Tag        string // raw tag_name as published
@@ -71,23 +42,16 @@ type Release struct {
 	AssetURL   string // browser_download_url of the matched asset
 	AssetName  string // file name of the matched asset — the key into the SHA256SUMS list
 	SumsURL    string // browser_download_url of the SHA256SUMS asset ("" on releases cut before checksums shipped)
-	Prerelease bool   // published as a prerelease (a test-branch build) — the UI says "test build"
+	Prerelease bool   // published as a prerelease (a test-branch build) — the UI says "pre-release"
 }
 
 const (
-	// sumsAssetName is the release asset the workflow publishes with one
-	// "<sha256>  <filename>" line per binary (see .github/workflows/release.yml).
-	// Its presence turns on authenticity-adjacent verification of the download;
-	// its absence (every release cut before this shipped) leaves the update flow
-	// exactly as it was — an unverified but integrity-capped download.
+	// sumsAssetName has one "<sha256>  <filename>" line per binary; if absent, downloads go unverified.
 	sumsAssetName = "SHA256SUMS.txt"
-	// maxSumsBytes caps the SHA256SUMS download (rule §17.4). A sums manifest is
-	// a handful of 64-hex-plus-filename lines — kilobytes at most — so this is
-	// generous while still finite against a hostile/mislinked asset.
+	// maxSumsBytes caps the SHA256SUMS download (hard rule 4).
 	maxSumsBytes = 64 << 10
 )
 
-// ghRelease mirrors the subset of the GitHub Releases JSON we read.
 type ghRelease struct {
 	TagName    string `json:"tag_name"`
 	Body       string `json:"body"`
@@ -100,89 +64,79 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
-// Check performs ONE GET against releasesURL (DefaultReleasesURL when "") and
-// returns the latest release when its tag is a higher semver than current. It
-// returns (nil, nil) when the build is already current/newer or when current is
-// an unstamped dev build, and an error only on a transport/decode failure.
-//
-// assetMatch selects which release asset is the download: the first asset whose
-// (lowercased) name contains it wins — pass e.g. "windows" or ".zip". An empty
-// assetMatch takes the first asset; if nothing matches, AssetURL stays "".
-func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Release, error) {
-	if current == "" || current == devVersion {
-		return nil, nil // unstamped/dev build never self-updates
-	}
-	if releasesURL == "" {
-		releasesURL = DefaultReleasesURL
-	}
-	body, err := fetchJSON(ctx, releasesURL)
-	if err != nil {
-		return nil, err
-	}
-	var gh ghRelease
-	if err := json.Unmarshal(body, &gh); err != nil {
-		return nil, fmt.Errorf("update: decoding release: %w", err)
-	}
-	if gh.TagName == "" || compareSemver(gh.TagName, current) <= 0 {
-		return nil, nil // no published tag, or not newer than us
-	}
-	return newRelease(&gh, assetMatch), nil
+// Doer sends a request; the caller's comes from the socket factory, so updates follow the proxy setting.
+type Doer interface {
+	Do(*http.Request) (*http.Response, error)
 }
 
-// CheckExperimental is the experimental-channel probe (Settings → Power
-// user): ONE GET against the full releases list (prereleases included —
-// listURL defaults to DefaultReleaseListURL) and the NEWEST published build
-// wins whenever its tag differs from the running one. Unlike the stable
-// channel it deliberately allows sideways and DOWNGRADE offers: hopping onto
-// the test branch (whose prerelease tags rank below the stable they preview)
-// and hopping back off it are both "updates" here, so semver-forward gating
-// would strand people. The never-regress publishing rule still protects the
-// STABLE feed; this is the opt-in exception, and the same strict per-platform
-// assetMatch keeps the self-replace from ever renaming the WRONG asset (a .zip
-// or .tar.gz) over the running binary. One residual macOS-only skew it does NOT
-// cover — the bare-binary swap leaving a stale sibling lib/ behind across a
-// dependency SONAME bump — is caught at swap time by StageReplace's
-// preflightDarwinSwap (apply.go), which refuses before touching the install and
-// points the user at the bundle tarball. See docs/CODE-SIGNING.md.
-func CheckExperimental(ctx context.Context, listURL, current, assetMatch string) (*Release, error) {
+// Check does one GET of the channel's feed (with prerelease, the release list; otherwise the latest stable release)
+// and returns the release to move to; (nil, nil) when there is none or current is a dev build.
+func Check(ctx context.Context, client Doer, url, current, assetMatch string, prerelease bool) (*Release, error) {
 	if current == "" || current == devVersion {
-		return nil, nil // unstamped/dev build never self-updates
+		return nil, nil
 	}
-	if listURL == "" {
-		listURL = DefaultReleaseListURL
-	}
-	body, err := fetchJSON(ctx, listURL)
+	list, err := fetchReleases(ctx, client, url, prerelease)
 	if err != nil {
 		return nil, err
 	}
-	var list []ghRelease
-	if err := json.Unmarshal(body, &list); err != nil {
-		return nil, fmt.Errorf("update: decoding release list: %w", err)
-	}
-	// GitHub returns the list newest-first: the first published (non-draft),
-	// tagged entry is the channel's current build.
-	for i := range list {
-		gh := &list[i]
-		if gh.Draft || gh.TagName == "" {
-			continue
-		}
-		if trimVPrefix(gh.TagName) == trimVPrefix(current) {
-			return nil, nil // the newest published build IS the one running
-		}
+	if gh := pick(list, current); gh != nil {
 		return newRelease(gh, assetMatch), nil
 	}
 	return nil, nil
 }
 
-// fetchJSON performs the one bounded, UA-tagged GET both release channels share.
-func fetchJSON(ctx context.Context, url string) ([]byte, error) {
-	return fetchBounded(ctx, url, maxBodyBytes)
+// fetchReleases returns the feed newest first; the stable feed is the one latest release.
+func fetchReleases(ctx context.Context, client Doer, url string, prerelease bool) ([]ghRelease, error) {
+	if url == "" {
+		url = DefaultReleasesURL
+		if prerelease {
+			url = DefaultReleaseListURL
+		}
+	}
+	body, err := fetchBounded(ctx, client, url, maxBodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	if prerelease {
+		var list []ghRelease
+		if err := json.Unmarshal(body, &list); err != nil {
+			return nil, fmt.Errorf("update: decoding release list: %w", err)
+		}
+		return list, nil
+	}
+	var gh ghRelease
+	if err := json.Unmarshal(body, &gh); err != nil {
+		return nil, fmt.Errorf("update: decoding release: %w", err)
+	}
+	return []ghRelease{gh}, nil
 }
 
-// fetchBounded is the one bounded, UA-tagged, timeout-capped GET the whole
-// package shares (the release-list JSON and the SHA256SUMS manifest), with a
-// per-call read cap so a tiny manifest doesn't inherit the JSON budget.
-func fetchBounded(ctx context.Context, url string, maxBytes int64) ([]byte, error) {
+// pick moves a pre-release build to the highest stable release at or above its version when one is published,
+// else to the newest release; a stable build only moves up. Pre-release tags rank below the stable they preview,
+// so the way back to stable may be a lower version.
+func pick(list []ghRelease, current string) *ghRelease {
+	list = slices.DeleteFunc(list, func(gh ghRelease) bool { return gh.Draft || gh.TagName == "" })
+	if len(list) == 0 {
+		return nil
+	}
+	if IsPrerelease(current) {
+		stableAbove := slices.DeleteFunc(slices.Clone(list), func(gh ghRelease) bool {
+			return gh.Prerelease || IsPrerelease(gh.TagName) || compareSemver(gh.TagName, current) <= 0
+		})
+		if len(stableAbove) > 0 {
+			best := slices.MaxFunc(stableAbove, func(a, b ghRelease) int { return compareSemver(a.TagName, b.TagName) })
+			return &best
+		}
+	}
+	target := &list[0]
+	if cmp := compareSemver(target.TagName, current); cmp == 0 || (cmp < 0 && !IsPrerelease(current)) {
+		return nil
+	}
+	return target
+}
+
+// fetchBounded is the package's bounded, timeout-capped GET, with a per-call read cap.
+func fetchBounded(ctx context.Context, client Doer, url string, maxBytes int64) ([]byte, error) {
 	cctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
@@ -191,7 +145,7 @@ func fetchBounded(ctx context.Context, url string, maxBytes int64) ([]byte, erro
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "AsyncAO-updater") // GitHub rejects an empty UA
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -202,13 +156,8 @@ func fetchBounded(ctx context.Context, url string, maxBytes int64) ([]byte, erro
 	return io.ReadAll(io.LimitReader(resp.Body, maxBytes))
 }
 
-// newRelease converts a decoded GitHub release into the user-facing Release,
-// resolving the platform asset by assetMatch (first name containing it wins;
-// "" takes the first asset; no match leaves AssetURL empty) AND the SHA256SUMS
-// asset for later verification. It scans every asset in ONE pass and does NOT
-// early-break on the platform match, because the sums asset can appear either
-// before or after the binary in the (server-ordered) list — an early break
-// would drop it and silently disable verification.
+// newRelease must not stop at the platform match (first name containing assetMatch; "" takes the first): the
+// sums asset can come after the binary, and stopping would silently disable verification.
 func newRelease(gh *ghRelease, assetMatch string) *Release {
 	rel := &Release{
 		Version:    trimVPrefix(gh.TagName),
@@ -231,16 +180,10 @@ func newRelease(gh *ghRelease, assetMatch string) *Release {
 	return rel
 }
 
-// FetchSums downloads and parses the SHA256SUMS manifest at sumsURL, returning
-// the hex digest published for assetName (matched exactly on the file name). It
-// shares fetchJSON's bounded/UA-tagged/timeout discipline (a small maxSumsBytes
-// cap — the manifest is tiny). A missing entry is an error: when a release
-// publishes sums at all, EVERY shipped binary is listed, so a matched asset with
-// no line means the manifest is wrong and the update must abort, not proceed
-// unverified. Callers pass "" sumsURL for releases that shipped no manifest and
-// skip verification entirely — they must not call this.
-func FetchSums(ctx context.Context, sumsURL, assetName string) (string, error) {
-	body, err := fetchBounded(ctx, sumsURL, maxSumsBytes)
+// FetchSums errors on a missing entry, as every shipped binary is listed and the update must not go unverified.
+// Don't call it with an empty sumsURL.
+func FetchSums(ctx context.Context, client Doer, sumsURL, assetName string) (string, error) {
+	body, err := fetchBounded(ctx, client, sumsURL, maxSumsBytes)
 	if err != nil {
 		return "", err
 	}
@@ -251,11 +194,7 @@ func FetchSums(ctx context.Context, sumsURL, assetName string) (string, error) {
 	return hex, nil
 }
 
-// parseSums scans a SHA256SUMS manifest ("<hex>  <name>" per line, the
-// sha256sum coreutils format; a leading "*" on the name marks binary mode) and
-// returns the hex digest whose file name matches assetName. The name is
-// compared on its base only, so a "dist/foo.exe" path in the manifest still
-// matches "foo.exe".
+// parseSums reads sha256sum lines (a leading "*" marks binary mode), comparing base names.
 func parseSums(manifest, assetName string) (string, bool) {
 	for _, line := range strings.Split(manifest, "\n") {
 		fields := strings.Fields(line)
@@ -270,9 +209,7 @@ func parseSums(manifest, assetName string) (string, bool) {
 	return "", false
 }
 
-// pathBase returns the final path element of a slash- or backslash-separated
-// name (the sums manifest may carry a directory prefix). Kept local so the
-// update package stays free of filepath's OS-specific separator behaviour.
+// pathBase handles both separators, as filepath is OS-specific and a manifest may carry a directory prefix.
 func pathBase(name string) string {
 	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
 		return name[i+1:]
@@ -280,30 +217,7 @@ func pathBase(name string) string {
 	return name
 }
 
-// SelfUpdateAssetMatch returns the release-asset name substring that UNIQUELY
-// identifies this platform's self-update payload, for Check's assetMatch.
-//
-// Windows and macOS now match their BUNDLE (Windows: exe + DLLs zip; macOS:
-// binary + lib/ tarball), not the bare binary: the runtime engine libraries
-// sit beside the binary and a bare swap can't refresh them — a new build that
-// ships a new engine (or a new SONAME) would otherwise leave an updated binary
-// unable to load the stale libs (the v1.95.1 SDL Mixer X breakage). The
-// self-updater downloads the bundle and extracts it over the install (see
-// StageBundle). Linux is self-contained and keeps its single-file AppImage:
-//
-//	windows -> asyncao-windows-x86_64-bundle.zip  (exe + runtime DLLs)
-//	linux   -> AsyncAO-linux-x86_64.AppImage      (self-contained single file)
-//	darwin  -> asyncao-macos-bundle-arm64.tar.gz  (binary + bundled lib/)
-//
-// Every non-default variant is named so it does NOT contain its platform's
-// token: the Discord-free builds carry …-nodiscord…, the Windows nodiscord
-// bundle is …-nodiscord-bundle.zip, and the macOS Homebrew edition is
-// …-macos-homebrew-arm64.tar.gz — the "-nodiscord-"/"-homebrew-" break the
-// token run, so the self-updater always lands on the default bundle and never
-// renames a Homebrew tarball or a nodiscord variant over the running install.
-// An unknown GOOS falls back to the bare OS name (old behaviour: best-effort
-// first match). Match is case-insensitive (Check lowercases both sides), so the
-// .AppImage capitalisation is fine.
+// SelfUpdateAssetMatch returns the case-insensitive asset name part for this platform; unknown GOOS gets its name.
 func SelfUpdateAssetMatch(goos string) string {
 	switch goos {
 	case "windows":
@@ -317,7 +231,6 @@ func SelfUpdateAssetMatch(goos string) string {
 	}
 }
 
-// trimVPrefix drops a single leading v/V from a tag.
 func trimVPrefix(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) > 0 && (s[0] == 'v' || s[0] == 'V') {
@@ -326,9 +239,7 @@ func trimVPrefix(s string) string {
 	return s
 }
 
-// parseSemver splits a tag into its numeric major.minor.patch and an optional
-// prerelease suffix. Missing parts are 0; build metadata (+meta) is ignored;
-// non-numeric parts parse as 0, so a malformed tag can never read as "newer".
+// parseSemver: missing or non-numeric parts are 0, so a malformed tag can't read as newer; +meta is ignored.
 func parseSemver(s string) (nums [3]int, pre string) {
 	s = trimVPrefix(s)
 	if i := strings.IndexByte(s, '+'); i >= 0 { // build metadata: ignore
@@ -351,9 +262,7 @@ func parseSemver(s string) (nums [3]int, pre string) {
 	return nums, pre
 }
 
-// compareSemver returns -1, 0, +1 for a<b, a==b, a>b over major.minor.patch,
-// with a prerelease ranking BELOW the same core release (semver §11) — both
-// prerelease, compare the suffixes lexically (good enough for our tags).
+// compareSemver returns -1, 0 or +1, a prerelease ranking below its core release (semver §11).
 func compareSemver(a, b string) int {
 	an, ap := parseSemver(a)
 	bn, bp := parseSemver(b)
@@ -375,4 +284,10 @@ func compareSemver(a, b string) int {
 	default:
 		return strings.Compare(ap, bp)
 	}
+}
+
+// IsPrerelease reports whether a version string carries a pre-release suffix such as "-rc.1".
+func IsPrerelease(version string) bool {
+	_, pre := parseSemver(version)
+	return pre != ""
 }

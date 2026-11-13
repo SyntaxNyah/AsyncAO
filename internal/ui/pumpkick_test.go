@@ -10,7 +10,9 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -46,18 +48,29 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
+	conn, err := protocol.Dial(context.Background(), netproxy.Direct(), "ws"+strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer conn.Close()
 
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true) // on, to prove a kick STILL doesn't rearm (asserted below)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
+	// on, to prove a kick STILL doesn't rearm (asserted below)
 	// Neutralize the async theme reload Disconnect()→ensureThemeForSession would
 	// otherwise kick off: with the applied name already matching the pref, it's a
 	// no-op (themeAppliedName lives on App, so resetSessionState won't clear it).
-	name, _ := a.d.Prefs.Theme()
+	name, _ := a.d.Prefs.Load().Theme()
 	a.themeAppliedName = name
 	// Simulate a live connection to a named server, as connectWith would leave it,
 	// so Disconnect captures the reconnect target.

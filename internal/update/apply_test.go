@@ -186,7 +186,7 @@ func TestDownload(t *testing.T) {
 	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "app.exe.new")
-	n, err := Download(context.Background(), srv.URL, dest)
+	n, err := Download(context.Background(), http.DefaultClient, srv.URL, dest)
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestDownloadStagedExecutable(t *testing.T) {
 	}))
 	defer srv.Close()
 	dest := filepath.Join(t.TempDir(), "app.new")
-	if _, err := Download(context.Background(), srv.URL, dest); err != nil {
+	if _, err := Download(context.Background(), http.DefaultClient, srv.URL, dest); err != nil {
 		t.Fatalf("Download: %v", err)
 	}
 	info, err := os.Stat(dest)
@@ -229,7 +229,7 @@ func TestDownloadServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 	dest := filepath.Join(t.TempDir(), "app.exe.new")
-	if _, err := Download(context.Background(), srv.URL, dest); err == nil {
+	if _, err := Download(context.Background(), http.DefaultClient, srv.URL, dest); err == nil {
 		t.Fatal("a 404 must error")
 	}
 	if _, err := os.Stat(dest); !os.IsNotExist(err) {
@@ -294,7 +294,7 @@ func TestVerifiedDownloadFlow(t *testing.T) {
 	download := func(t *testing.T) string {
 		t.Helper()
 		staged := filepath.Join(t.TempDir(), "app.exe.new")
-		if _, err := Download(context.Background(), assetSrv.URL, staged); err != nil {
+		if _, err := Download(context.Background(), http.DefaultClient, assetSrv.URL, staged); err != nil {
 			t.Fatalf("Download: %v", err)
 		}
 		return staged
@@ -302,7 +302,7 @@ func TestVerifiedDownloadFlow(t *testing.T) {
 
 	t.Run("matching sums verifies", func(t *testing.T) {
 		staged := download(t)
-		wantHex, err := FetchSums(context.Background(), matchSrv.URL, assetName)
+		wantHex, err := FetchSums(context.Background(), http.DefaultClient, matchSrv.URL, assetName)
 		if err != nil {
 			t.Fatalf("FetchSums: %v", err)
 		}
@@ -313,7 +313,7 @@ func TestVerifiedDownloadFlow(t *testing.T) {
 
 	t.Run("mismatching sums fails before the swap", func(t *testing.T) {
 		staged := download(t)
-		wantHex, err := FetchSums(context.Background(), badSrv.URL, assetName)
+		wantHex, err := FetchSums(context.Background(), http.DefaultClient, badSrv.URL, assetName)
 		if err != nil {
 			t.Fatalf("FetchSums: %v", err)
 		}
@@ -578,5 +578,39 @@ func TestStageBundleMacLib(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "INSTALL.txt")); !os.IsNotExist(err) {
 		t.Error("documentation (INSTALL.txt) must not be installed")
+	}
+}
+
+// TestExtractTarGzGuardsByPathSegments: a tar name is attacker-controlled, and
+// Windows treats '\' as a separator, so a backslash ".." segment must be refused
+// like a slash one. A name that merely starts with two dots is a legal file.
+func TestExtractTarGzGuardsByPathSegments(t *testing.T) {
+	const (
+		legal      = "..notes.txt"
+		legalBody  = "notes"
+		escape     = `lib\..\..\escape.dylib`
+		trailingUp = "lib/.."
+	)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	okPath := filepath.Join(dir, "ok.tar.gz")
+	writeTarGz(t, okPath, map[string]string{legal: legalBody})
+	if err := ExtractTarGz(okPath, out); err != nil {
+		t.Fatalf("legal name %q refused: %v", legal, err)
+	}
+	if got := readFile(t, filepath.Join(out, legal)); got != legalBody {
+		t.Errorf("%s = %q, want %q", legal, got, legalBody)
+	}
+
+	for _, bad := range []string{escape, trailingUp} {
+		badPath := filepath.Join(dir, "bad.tar.gz")
+		writeTarGz(t, badPath, map[string]string{bad: "x"})
+		if err := ExtractTarGz(badPath, out); err == nil {
+			t.Errorf("unsafe name %q was extracted", bad)
+		}
 	}
 }

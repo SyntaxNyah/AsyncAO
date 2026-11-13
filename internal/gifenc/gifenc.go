@@ -1,10 +1,4 @@
-// Package gifenc is the pure-Go GIF side of the scene exporter: quantize RGBA
-// frames to a palette and encode them into an animated GIF. It has no SDL/CGO
-// dependency, so the whole encode path is unit-testable headlessly (the capture
-// side that feeds it lives in the UI/render layer). GIF is the 256-colour export
-// format — gradients band; animated WebP (internal/webpenc) is the higher-quality
-// path. The size win that makes a long courtroom GIF practical is the inter-frame
-// diff below: a mostly-static scene compresses to near-nothing per frame.
+// Package gifenc encodes animated GIFs for the scene exporter; inter-frame diffing makes long GIFs practical.
 package gifenc
 
 import (
@@ -17,18 +11,11 @@ import (
 	"image/gif"
 )
 
-// transparentIndex is the palette slot reserved for inter-frame transparency. In
-// a diffed frame, every pixel unchanged from the previous frame is set to this
-// index; the GIF encoder treats the first alpha-0 palette entry as the frame's
-// transparent colour, and with "do not dispose" the prior pixel shows through —
-// so an almost-static frame ships only its handful of changed pixels. Reserving
-// the TOP slot costs one real colour out of 256 (negligible), and the alpha gap
-// keeps color.Palette.Index from ever choosing it for an opaque pixel.
+// transparentIndex marks pixels unchanged from the previous frame: the encoder treats the first alpha-0 entry
+// as transparent, and the alpha gap keeps color.Palette.Index from choosing it for an opaque pixel.
 const transparentIndex = 0xff
 
-// quantPalette is 255 Plan9 colours + a transparent slot at transparentIndex.
-// Plan9 is a reasonable general spread; GIF's 256-colour ceiling makes a per-
-// frame median-cut diminishing returns — WebP is the real quality answer.
+// quantPalette is 255 Plan9 colours plus the transparent entry; median-cut isn't worth it for GIF.
 var quantPalette = buildQuantPalette()
 
 func buildQuantPalette() color.Palette {
@@ -38,33 +25,17 @@ func buildQuantPalette() color.Palette {
 	return p
 }
 
-// Quantize converts an RGBA frame to a paletted frame WITHOUT dithering
-// (draw.Src = nearest palette colour). No dither is deliberate: GIF's LZW
-// compresses runs of identical indices, and a courtroom scene is mostly flat
-// regions that stay byte-identical between frames — exactly what EncodeGIF's
-// inter-frame diff then collapses to nothing. Floyd–Steinberg scatters per-pixel
-// error, destroying both the intra-frame runs and the frame-to-frame equality;
-// that (plus storing every frame whole) is what made the v1 export enormous.
-// The caller can free the source RGBA immediately after — only the small paletted
-// frame (1 byte/px) is retained while frames accumulate for EncodeGIF.
+// Quantize uses no dither on purpose: Floyd-Steinberg destroys the flat runs LZW needs and the frame-to-frame
+// equality EncodeGIF diffs. The source can be freed right after.
 func Quantize(src *image.RGBA) *image.Paletted {
 	dst := image.NewPaletted(src.Bounds(), quantPalette)
 	draw.Draw(dst, dst.Bounds(), src, src.Bounds().Min, draw.Src)
 	return dst
 }
 
-// EncodeGIF encodes paletted frames into an animated GIF that loops forever.
-// Every frame after the first is inter-frame diffed: reduced to the sub-rectangle
-// that changed, with unchanged pixels set transparent and disposal left as "do
-// not dispose" so the previous pixels show through. A frame identical to its
-// predecessor emits nothing — its delay folds into the previously emitted frame,
-// preserving total duration with fewer frames. delayCs is the per-emitted-frame
-// delay in centiseconds (derive it from the capture cadence — 12 fps → 8 cs).
-// loop forever when loop is true, else play the animation once.
-//
-// Diffing only runs when the frames' palette reserves a transparent slot (an
-// alpha-0 entry, as Quantize's does). A palette without one falls back to whole
-// frames, so EncodeGIF stays correct for any caller.
+// EncodeGIF shrinks later frames to their changed rectangle with unchanged pixels transparent and "do not
+// dispose"; an identical frame folds its delay into the previous one. delayCs is per emitted frame.
+// A palette with no alpha-0 entry falls back to whole frames.
 func EncodeGIF(frames []*image.Paletted, delayCs int, loop bool) ([]byte, error) {
 	if len(frames) == 0 {
 		return nil, errors.New("gifenc: no frames to encode")
@@ -79,7 +50,7 @@ func EncodeGIF(frames []*image.Paletted, delayCs int, loop bool) ([]byte, error)
 		loopCount = -1 // -1 = play once, no loop
 	}
 	g := &gif.GIF{LoopCount: loopCount}
-	// The first frame is whole — the keyframe every later frame diffs against.
+	// The first frame is whole; later frames diff against it.
 	g.Image = append(g.Image, frames[0])
 	g.Delay = append(g.Delay, delayCs)
 	g.Disposal = append(g.Disposal, gif.DisposalNone)
@@ -93,9 +64,7 @@ func EncodeGIF(frames []*image.Paletted, delayCs int, loop bool) ([]byte, error)
 			last = len(g.Image) - 1
 			continue
 		}
-		// The on-screen state before frame i is always frames[i-1]: a folded
-		// (skipped) frame was identical to its predecessor, so disposal-none
-		// leaves exactly that. Diffing against the immediate predecessor is correct.
+		// The state before frame i is always frames[i-1], as a folded frame was identical to its predecessor.
 		sub, changed := diffFrame(frames[i-1], frames[i], ti)
 		if !changed {
 			g.Delay[last] += delayCs // identical frame: extend the previous one's time
@@ -114,8 +83,7 @@ func EncodeGIF(frames []*image.Paletted, delayCs int, loop bool) ([]byte, error)
 	return buf.Bytes(), nil
 }
 
-// transparentIdx returns the first alpha-0 palette index (the slot the GIF
-// encoder uses as the transparent colour), or ok=false if the palette has none.
+// transparentIdx returns the first alpha-0 palette index, which the GIF encoder uses as transparent.
 func transparentIdx(p color.Palette) (int, bool) {
 	for i, c := range p {
 		if _, _, _, a := c.RGBA(); a == 0 {
@@ -125,10 +93,8 @@ func transparentIdx(p color.Palette) (int, bool) {
 	return 0, false
 }
 
-// diffFrame reduces cur to the sub-rectangle that differs from prev, with
-// unchanged pixels set to the transparent index ti; changed reports whether
-// anything differed at all (false → fold this frame into the previous delay).
-// prev and cur must share bounds and palette (they do — same capture pipeline).
+// diffFrame reduces cur to the rectangle differing from prev; changed false means fold into the previous delay.
+// prev and cur must share bounds and palette.
 func diffFrame(prev, cur *image.Paletted, ti int) (sub *image.Paletted, changed bool) {
 	b := cur.Bounds()
 	minX, minY := b.Max.X, b.Max.Y

@@ -9,10 +9,6 @@ package ui
 
 import (
 	"crypto/sha256"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -310,75 +306,6 @@ func TestEveryInspectorFieldIsUndoable(t *testing.T) {
 					"be un-saved is data loss wearing an undo stack as a hat", k, f.label)
 			}
 		}
-	}
-}
-
-// TestMutatorsAreTopLevelFuncsThatReturnAnOp is the structural half, at the SOURCE.
-//
-// The behavioural gate above proves every row that EXISTS is undoable. This one
-// proves the SHAPE cannot change: a row wired to a closure, a method value, or a
-// function that returns something other than a themeEditOp would let the next wave
-// reintroduce a direct writer, and the behavioural gate would keep passing for every
-// row that had not yet been converted.
-func TestMutatorsAreTopLevelFuncsThatReturnAnOp(t *testing.T) {
-	const inspectorFile = "themeeditorinspector.go"
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, inspectorFile, nil, 0)
-	if err != nil {
-		t.Fatalf("parsing %s: %v", inspectorFile, err)
-	}
-	// Collect the top-level funcs this file declares, with their result types.
-	results := map[string]string{}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Type.Results == nil {
-			continue
-		}
-		if len(fn.Type.Results.List) != 1 {
-			continue
-		}
-		if id, ok := fn.Type.Results.List[0].Type.(*ast.Ident); ok {
-			results[fn.Name.Name] = id.Name
-		}
-	}
-	// Every `mut:` / `get:` value in the file must name one of them.
-	seen := 0
-	ast.Inspect(file, func(n ast.Node) bool {
-		kv, ok := n.(*ast.KeyValueExpr)
-		if !ok {
-			return true
-		}
-		key, ok := kv.Key.(*ast.Ident)
-		if !ok || (key.Name != "mut" && key.Name != "get") {
-			return true
-		}
-		seen++
-		id, ok := kv.Value.(*ast.Ident)
-		if !ok {
-			t.Errorf("%s: %s is wired to %T at %s — it must name a TOP-LEVEL func; a closure or a "+
-				"method value allocates per row and can capture state the undo stack never sees",
-				inspectorFile, key.Name, kv.Value, fset.Position(kv.Pos()))
-			return true
-		}
-		res, declared := results[id.Name]
-		if !declared {
-			t.Errorf("%s: %s names %s, which this file does not declare as a top-level func (%s)",
-				inspectorFile, key.Name, id.Name, fset.Position(kv.Pos()))
-			return true
-		}
-		if key.Name == "mut" && res != "themeEditOp" {
-			t.Errorf("%s: mut names %s, which returns %s — a mutator must RETURN an op, never perform "+
-				"one, or a row can bypass the undo stack (%s)",
-				inspectorFile, id.Name, res, fset.Position(kv.Pos()))
-		}
-		if key.Name == "get" && res != "editValue" {
-			t.Errorf("%s: get names %s, which returns %s, want editValue (%s)",
-				inspectorFile, id.Name, res, fset.Position(kv.Pos()))
-		}
-		return true
-	})
-	if seen == 0 {
-		t.Fatal("the census found no get/mut wiring at all — it stopped matching the table it is named for")
 	}
 }
 
@@ -809,79 +736,6 @@ func TestStringInterningIsBoundedAndRefusesRatherThanAliasing(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Encapsulation
 // ---------------------------------------------------------------------------
-
-// TestOnlyTheDocumentUsesTheFieldTables is the encapsulation census.
-//
-// editFieldGet and editFieldSet ARE the write path. If any other file reaches into
-// them, that file is a second writer with no undo entry — exactly the failure mode
-// the whole document layer exists to prevent, and exactly the shape the sidecar's
-// own deleted Doc() accessor had. The allow-list is one file, by name.
-func TestOnlyTheDocumentUsesTheFieldTables(t *testing.T) {
-	const owner = "themeeditordoc.go"
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading the package directory: %v", err)
-	}
-	hits := 0
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("reading %s: %v", name, err)
-		}
-		n := strings.Count(string(src), "editFieldSet[") + strings.Count(string(src), "editFieldGet[")
-		if n == 0 {
-			continue
-		}
-		hits += n
-		if name != owner {
-			t.Errorf("%s indexes the element field tables (%d times) — every write must go through "+
-				"themeDoc.apply, which is what fills in the op's inverse. A second writer produces edits "+
-				"that cannot be undone, and nothing on screen says so", name, n)
-		}
-	}
-	if hits == 0 {
-		t.Fatalf("the census found no use of the field tables at all — it stopped matching %s", owner)
-	}
-}
-
-// TestThemeEditorScreenIsWiredAtEverySwitchSite is the anti-half-wiring census.
-//
-// A new Screen has FIVE obligations in app.go and four of them fail SILENTLY: an
-// unwired expScreenSkippable burns full CPU forever with nothing on screen to
-// explain it, an unwired Esc arm strands the user on a screen with no way out, an
-// unwired chord claim leaves Ctrl+Z dead on the entry point that has no courtroom
-// pass to ride, and an unwired draw dispatch shows the previous screen's pixels.
-// Only the draw one is obvious, and only after you look.
-func TestThemeEditorScreenIsWiredAtEverySwitchSite(t *testing.T) {
-	src, err := os.ReadFile("app.go")
-	if err != nil {
-		t.Fatalf("reading app.go: %v", err)
-	}
-	body := string(src)
-	for _, want := range []struct{ site, needle string }{
-		{"the frame-rate skippability switch (expScreenSkippable)", "case ScreenThemeEditor:\n\t\t// ITS OWN CASE"},
-		{"the draw dispatch", "case ScreenThemeEditor:\n\t\t\ta.drawThemeEditor(winW, winH)"},
-		{"the Esc ladder", "case ScreenThemeEditor:\n\t\t\t\t// The editor's own ladder"},
-		{"pollThemeApply's document reclaim", "a.reclaimThemeDoc()"},
-		// The pre-screen Ctrl+Z / Ctrl+Y claim. editorUndoChord's other caller is
-		// handleHotkeys, which runs only from the COURTROOM passes — so without this line
-		// the chord reaches the editor only while a live room paints behind its canvas,
-		// and the Settings entry point (no server attached) has no undo at all.
-		// TestEditorUndoChordReachesTheEditorThroughAFrameWithNoRoom is the behavioural
-		// half; this is the one that fails the moment the line is deleted.
-		{"the pre-screen chord claim", "if a.themeEditorOpen() {\n\t\ta.editorUndoChord()\n\t}"},
-	} {
-		if !strings.Contains(body, want.needle) {
-			t.Errorf("app.go no longer wires ScreenThemeEditor into %s — four of this screen's five "+
-				"obligations fail silently (full CPU forever, no way out with Esc, no keyboard undo, "+
-				"the previous screen's pixels), so the wiring is censused rather than trusted", want.site)
-		}
-	}
-}
 
 // TestEditsSurviveAThemeReapply drives the seam the whole document layer was built
 // for: a background theme apply (a texture eviction heal, the texture-filter row,

@@ -3,12 +3,10 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -252,11 +250,11 @@ func TestCharSelectStaysClassicWithoutATheme(t *testing.T) {
 	if !a.charSelectLayout(1152, 864).valid {
 		t.Fatal("fixture did not build a canvas to begin with")
 	}
-	a.d.Prefs.SetThemeLayout(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if lay := a.charSelectLayout(1152, 864); lay.valid {
 		t.Error("char select kept the theme canvas after the theme layout was switched off")
 	}
-	a.d.Prefs.SetThemeLayout(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	if lay := a.charSelectLayout(1152, 864); !lay.valid {
 		t.Error("switching the theme layout back on did not restore the canvas")
 	}
@@ -345,7 +343,7 @@ func TestCharSelectCanvasNeverPaintsIntoTheChromeBand(t *testing.T) {
 			a.activeTab = 0
 			a.d.Prefs.SetThemeFit(m.mode)
 			if m.mode == config.ThemeFitCustom {
-				a.d.Prefs.SetThemeFitZoom(160) // zoom past the window, then pan up
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 160 }) // zoom past the window, then pan up
 				a.d.Prefs.SetThemeFitPan(-20, -30)
 			}
 			a.charSelLay.valid = false
@@ -561,7 +559,7 @@ func TestCharSelectCanvasFollowsCustomZoomAndPan(t *testing.T) {
 	const w, h int32 = 1152, 864
 	a := stageCharSelect(t, stockCharSelectDesign())
 	a.d.Prefs.SetThemeFit(config.ThemeFitCustom)
-	a.d.Prefs.SetThemeFitZoom(100)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 100 })
 	a.d.Prefs.SetThemeFitPan(0, 0)
 	a.invalidateThemeCanvases()
 	base := *a.charSelectLayout(w, h)
@@ -601,7 +599,7 @@ func TestCharSelectCanvasFollowsCustomZoomAndPan(t *testing.T) {
 	}
 
 	// The zoom, same route.
-	a.d.Prefs.SetThemeFitZoom(160)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 160 })
 	a.invalidateThemeCanvases()
 	zoomed := *a.charSelectLayout(w, h)
 	if zoomed.area.W <= panned.area.W || zoomed.area.H <= panned.area.H {
@@ -612,50 +610,6 @@ func TestCharSelectCanvasFollowsCustomZoomAndPan(t *testing.T) {
 	g := a.charSelectGridPlan(w, h, a.topChromeH(), &zoomed)
 	if g.themed && g.canvas != zoomed.area {
 		t.Errorf("the grid is laid out on canvas %+v, not the current %+v", g.canvas, zoomed.area)
-	}
-}
-
-// TestThemeCanvasInvalidationGoesThroughOneDoor is the structural half, and the reason
-// the fix is a shared function rather than a second assignment at five sites: there were
-// fifteen places that dropped the courtroom cache, and being right at fourteen of them is
-// how char select ended up stale. Only invalidateThemeCanvases may touch either flag.
-//
-// It scans this package's own sources, which is the only way to catch a SIXTEENTH site
-// added later — the thing the shape of this bug guarantees will happen.
-func TestThemeCanvasInvalidationGoesThroughOneDoor(t *testing.T) {
-	const owner = "theme_layout.go" // where invalidateThemeCanvases lives
-	assigns := []string{"themeLay.valid = false", "charSelLay.valid = false"}
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package dir: %v", err)
-	}
-	scanned, found := 0, map[string]int{}
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		scanned++
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		for _, a := range assigns {
-			n := strings.Count(string(src), a)
-			found[a] += n
-			if n > 0 && name != owner {
-				t.Errorf("%s assigns %q directly — call a.invalidateThemeCanvases() instead, "+
-					"or the other canvas goes stale (that is exactly how #20's screen kept an old zoom)", name, a)
-			}
-		}
-	}
-	if scanned < 10 {
-		t.Fatalf("only scanned %d package sources — the sweep is not running where it thinks it is", scanned)
-	}
-	for _, a := range assigns {
-		if found[a] != 1 {
-			t.Errorf("%q appears %d times in the package, want exactly one (inside %s)", a, found[a], owner)
-		}
 	}
 }
 

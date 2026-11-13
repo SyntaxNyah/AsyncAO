@@ -230,23 +230,12 @@ func TestEveryBrowsePurposeHasItsOwnFileFilter(t *testing.T) {
 		t.Error("the theme-bundle browser does not list a plain .zip — a BROWSE is the user " +
 			"pointing at one file, and the importer sniffs the archive's own magic bytes anyway")
 	}
-	if browseKeepRule(purposeBaseFolder)("clip.aorec") {
-		t.Error("the base-folder browser lists recordings")
-	}
-	if !browseKeepRule(purposeBaseFolder)("BASE.ZIP") {
-		t.Error("the base-folder browser hides .zip packs — a pack is a legitimate answer to " +
-			"\"where are your AO files\", and hiding every file makes a full folder look empty")
-	}
-	for _, p := range []browsePurpose{purposeVideo, purposeCheck, purposePackage} {
+	for _, p := range []browsePurpose{purposeCheck, purposePackage} {
 		if browseKeepRule(p)("umineko" + themePackExt) {
 			t.Errorf("purpose %d lists theme bundles — the recording flows must not change", p)
 		}
 		if !browseKeepRule(p)("clip.aorec") {
 			t.Errorf("purpose %d stopped listing recordings", p)
-		}
-		if browsePicksDir(p) {
-			t.Errorf("purpose %d picks a directory — the recording flows answer with a FILE, "+
-				"and a browser that returns its own cwd to them picks nothing at all", p)
 		}
 	}
 }

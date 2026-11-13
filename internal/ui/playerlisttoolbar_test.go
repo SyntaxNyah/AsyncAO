@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The Players tab's toolbar is drawn into three panels of three different widths —

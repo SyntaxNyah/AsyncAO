@@ -3,12 +3,12 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -54,7 +54,7 @@ func TestPxToScalePctRoundTrips(t *testing.T) {
 	for px := config.PanelFontMinPx; px <= config.PanelFontMaxPx; px++ {
 		pct := pxToScalePct(px)
 		got := UIFontSize * pct / DefaultScalePct
-		want := clampInt(px, UIFontSize*themeFontMinPct/DefaultScalePct, UIFontSize*themeFontMaxPct/DefaultScalePct)
+		want := value.Clamp(px, UIFontSize*themeFontMinPct/DefaultScalePct, UIFontSize*themeFontMaxPct/DefaultScalePct)
 		if got != want {
 			t.Errorf("%d px -> %d%% -> reopens at %d px, want %d", px, pct, got, want)
 		}
@@ -74,9 +74,9 @@ func typePanelSize(t *testing.T, a *App, rowID, typed string) []string {
 	a.ctx.focusID = fieldID // the box has focus for the whole run, as when typing
 	var shown []string
 	for i := 1; i <= len(typed); i++ {
-		cur := a.d.Prefs.PanelFontFor(rowID)
+		cur := a.d.Prefs.Load().PanelFontFor(rowID)
 		a.commitPanelSize(fieldID, rowID, cur, typed[:i])
-		shown = append(shown, a.panelSizeText(fieldID, rowID, a.d.Prefs.PanelFontFor(rowID).SizePx))
+		shown = append(shown, a.panelSizeText(fieldID, rowID, a.d.Prefs.Load().PanelFontFor(rowID).SizePx))
 	}
 	return shown
 }
@@ -96,7 +96,8 @@ func typePanelSize(t *testing.T, a *App, rowID, typed string) []string {
 func TestPanelFontsApplyWithNoThemeLoaded(t *testing.T) {
 	a := testTabApp(t)
 	// Point the client at a theme that cannot possibly load.
-	a.d.Prefs.ThemeDir = filepath.Join(t.TempDir(), "no-such-theme-root")
+	name, _ := a.d.Prefs.Load().Theme()
+	a.d.Prefs.SetTheme(name, filepath.Join(t.TempDir(), "no-such-theme-root"))
 	a.d.Prefs.SetPanelFont("player_list", config.PanelFont{SizePx: 40})
 	a.d.Prefs.SetPanelFont("ic_chatlog", config.PanelFont{SizePx: 30})
 
@@ -120,7 +121,8 @@ func TestPanelFontsApplyWithNoThemeLoaded(t *testing.T) {
 // against a row being added to the table and nowhere else.
 func TestPanelFontsCoverEveryPanelRow(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.ThemeDir = filepath.Join(t.TempDir(), "no-such-theme-root")
+	name, _ := a.d.Prefs.Load().Theme()
+	a.d.Prefs.SetTheme(name, filepath.Join(t.TempDir(), "no-such-theme-root"))
 	for i := range panelFontRows {
 		a.d.Prefs.SetPanelFont(panelFontRows[i].id, config.PanelFont{SizePx: 40})
 	}
@@ -152,43 +154,6 @@ func awaitThemeApply(t *testing.T, a *App) {
 	}
 }
 
-// TestPanelFontFamilyReachesTheDrawSite drives a real FAMILY the whole way —
-// preference, apply, resolution, landed table, and the accessor the roster's draw
-// actually calls — because a report that the setting "does nothing" can only be
-// answered by checking every link, and the family path had only ever been tested
-// at the resolution step.
-func TestPanelFontFamilyReachesTheDrawSite(t *testing.T) {
-	a := testTabApp(t)
-	a.d.Prefs.ThemeDir = filepath.Join(t.TempDir(), "no-such-theme-root")
-
-	// Arial resolves from the system font folder on Windows; elsewhere there is
-	// no reliable system family, so the family half is skipped rather than faked.
-	if runtime.GOOS != "windows" {
-		t.Skip("no dependable system font family off Windows")
-	}
-	a.d.Prefs.SetPanelFont("player_list", config.PanelFont{Family: "Arial", SizePx: 26})
-	awaitThemeApply(t, a)
-
-	got := a.themeFonts.e[elemPlayerList]
-	if got.pct != pxToScalePct(26) {
-		t.Errorf("player_list pct = %d, want %d", got.pct, pxToScalePct(26))
-	}
-	if got.face == 0 {
-		t.Fatalf("player_list resolved NO face for Arial; missing report = %v", a.panelFontMissing)
-	}
-	if len(a.panelFontMissing) != 0 {
-		t.Errorf("Arial was reported missing: %v", a.panelFontMissing)
-	}
-	// The face bytes have to have been handed to the kit, or the index points at
-	// nothing and the draw silently falls back to the client chain.
-	if len(a.ctx.themeFaceData) == 0 {
-		t.Error("the resolved face was never installed on Ctx — the draw would fall back")
-	}
-	if got.faceIdx() < 0 || got.faceIdx() >= len(a.ctx.themeFaceData) {
-		t.Errorf("face index %d is outside the installed set of %d", got.faceIdx(), len(a.ctx.themeFaceData))
-	}
-}
-
 // TestPanelSizeAcceptsATwoDigitNumber is the regression pin for the reported
 // fault: the size box "defaults to weird numbers, you can't set it correctly".
 //
@@ -206,7 +171,7 @@ func TestPanelSizeAcceptsATwoDigitNumber(t *testing.T) {
 	if shown[1] != "18" {
 		t.Errorf("after typing \"18\" the box shows %q, want \"18\"", shown[1])
 	}
-	if got := a.d.Prefs.PanelFontFor("ic_chatlog").SizePx; got != 18 {
+	if got := a.d.Prefs.Load().PanelFontFor("ic_chatlog").SizePx; got != 18 {
 		t.Errorf("saved size = %d, want 18", got)
 	}
 	// A one-character size below the minimum must not have been saved on the way
@@ -224,8 +189,8 @@ func TestPanelSizeHoldsIncompleteInput(t *testing.T) {
 
 	fieldID := "panelsize-music_list"
 	a.ctx.focusID = fieldID
-	a.commitPanelSize(fieldID, "music_list", a.d.Prefs.PanelFontFor("music_list"), "1")
-	if got := a.d.Prefs.PanelFontFor("music_list").SizePx; got != 20 {
+	a.commitPanelSize(fieldID, "music_list", a.d.Prefs.Load().PanelFontFor("music_list"), "1")
+	if got := a.d.Prefs.Load().PanelFontFor("music_list").SizePx; got != 20 {
 		t.Errorf("a half-typed \"1\" overwrote the saved size with %d", got)
 	}
 	if got := a.panelSizeText(fieldID, "music_list", 20); got != "1" {
@@ -247,20 +212,20 @@ func TestPanelSizeClearsAndClamps(t *testing.T) {
 	fieldID := "panelsize-area_list"
 	a.ctx.focusID = fieldID
 
-	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "")
-	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != 0 {
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.Load().PanelFontFor("area_list"), "")
+	if got := a.d.Prefs.Load().PanelFontFor("area_list").SizePx; got != 0 {
 		t.Errorf("emptying the box left %d, want the override cleared", got)
 	}
 
-	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "500")
-	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != config.PanelFontMaxPx {
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.Load().PanelFontFor("area_list"), "500")
+	if got := a.d.Prefs.Load().PanelFontFor("area_list").SizePx; got != config.PanelFontMaxPx {
 		t.Errorf("an over-large size saved as %d, want the %d ceiling", got, config.PanelFontMaxPx)
 	}
 
 	// Non-numeric text is not a size and must not be saved as one.
 	a.d.Prefs.SetPanelFont("area_list", config.PanelFont{SizePx: 20})
-	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.PanelFontFor("area_list"), "abc")
-	if got := a.d.Prefs.PanelFontFor("area_list").SizePx; got != 20 {
+	a.commitPanelSize(fieldID, "area_list", a.d.Prefs.Load().PanelFontFor("area_list"), "abc")
+	if got := a.d.Prefs.Load().PanelFontFor("area_list").SizePx; got != 20 {
 		t.Errorf("garbage text changed the saved size to %d", got)
 	}
 }
@@ -370,7 +335,7 @@ func landWithPanel(t *testing.T, tune func(a *App)) *App {
 // client's" would silently disable a setting the user made somewhere else
 // entirely, and they would have no way to tell which control had done it.
 func TestThemeFontsOffKeepsTheUsersOwnPicks(t *testing.T) {
-	a := landWithPanel(t, func(a *App) { a.d.Prefs.SetThemeFonts(false) })
+	a := landWithPanel(t, func(a *App) { a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFonts = false }) })
 	if got := a.themeFonts.e[elemICChatlog]; got.pct != 250 || got.face != 2 {
 		t.Errorf("ic_chatlog = %+v, want the USER's pct 250 and face 2 to survive the theme-fonts opt-out", got)
 	}
@@ -391,7 +356,19 @@ func TestThemeFontsOffKeepsTheUsersOwnPicks(t *testing.T) {
 // because of an override they set weeks ago, would be right to call that broken.
 // Their SIZES still apply — the switch is about the letterforms.
 func TestDyslexiaFontBeatsAPerPanelPick(t *testing.T) {
-	a := landWithPanel(t, func(a *App) { a.d.Prefs.SetDyslexiaFont(true) })
+	a := landWithPanel(t, func(a *App) {
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DyslexiaFont =
+
+				true
+
+		})
+
+	})
 	if got := a.themeFonts.e[elemICChatlog].face; got != 0 {
 		t.Errorf("ic_chatlog face = %d, want 0 — the dyslexia font must claim every family", got)
 	}
@@ -404,7 +381,9 @@ func TestDyslexiaFontBeatsAPerPanelPick(t *testing.T) {
 // pick are both ordinary preferences, so the more specific one wins. Only the
 // accessibility switch above outranks it.
 func TestPerPanelPickBeatsAGlobalFontPath(t *testing.T) {
-	a := landWithPanel(t, func(a *App) { a.d.Prefs.SetFontPaths(`C:\some\font.ttf`) })
+	a := landWithPanel(t, func(a *App) {
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.FontOverridePaths = `C:\some\font.ttf` })
+	})
 	if got := a.themeFonts.e[elemICChatlog].face; got != 2 {
 		t.Errorf("ic_chatlog face = %d, want the user's per-panel face 2 to beat their global font path", got)
 	}

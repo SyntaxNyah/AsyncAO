@@ -28,6 +28,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -64,7 +65,7 @@ func TestContentSeedGifManifestResolves(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin:  srv.URL + "/",
 		StartBg: "courtroom",
@@ -125,7 +126,7 @@ func TestContentFullChainProbeFindsPNG(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin:  srv.URL + "/",
 		StartBg: "courtroom",
@@ -204,7 +205,7 @@ func TestContentMixedFormatNoManifestBothFound(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin:  srv.URL + "/",
 		StartBg: "courtroom",
@@ -281,8 +282,19 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
-	a.d.Prefs.SetFormatAutoDetect(true) // the seed gate respects the same pref the session path does
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoDetectFormats =
+
+			true
+
+	})
+
+	// the seed gate respects the same pref the session path does
 	origin := srv.URL + "/"
 	host := hostOfURL(origin)
 

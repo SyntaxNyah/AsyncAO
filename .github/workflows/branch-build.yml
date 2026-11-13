@@ -1,0 +1,67 @@
+# Test builds for a branch with no open PR. An open PR's run in ci.yml covers its
+# commits instead, so each push builds once. Kept apart from ci.yml so a push can
+# never report `ci-ok`: GitHub would see two results for that status on one commit.
+name: Branch build
+
+on:
+  push:
+    branches-ignore: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "LICENSE*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    name: Check for an open PR
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      has-pr: ${{ steps.pr.outputs.has-pr }}
+    steps:
+      - id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          count="$(gh pr list --head "$BRANCH" --state open --json number --jq length)"
+          echo "has-pr=$([ "$count" != 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  # The builds wait for lint, so a lint failure starts none of them.
+  lint:
+    needs: scope
+    if: needs.scope.outputs.has-pr == 'false'
+    uses: ./.github/workflows/lint.yml
+
+  build:
+    needs: [scope, lint]
+    if: needs.scope.outputs.has-pr == 'false'
+    uses: ./.github/workflows/build.yml
+    with:
+      smoke-test: false
+
+  # Only after a first attempt: a partial re-run would make the jobs it skipped look unused.
+  clean-caches:
+    name: Remove unused caches
+    needs: build
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: bash scripts/clean-caches.sh "$REF" "$GITHUB_RUN_ID"

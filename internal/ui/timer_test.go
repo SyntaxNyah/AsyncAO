@@ -32,7 +32,7 @@ func TestTimerLifecycle(t *testing.T) {
 	if rem := a.timerRemaining(); rem <= 119*time.Second || rem > 120*time.Second {
 		t.Errorf("running remaining = %v, want ~120s", rem)
 	}
-	if got := a.d.Prefs.TimerSecondsValue(); got != 120 {
+	if got := a.d.Prefs.Load().TimerSecondsValue(); got != 120 {
 		t.Errorf("start must persist the duration: got %d, want 120", got)
 	}
 

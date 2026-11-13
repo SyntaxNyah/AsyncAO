@@ -2,9 +2,9 @@
 # bundle-macos.sh — make a Homebrew-built macOS binary self-contained.
 #
 # THE PROBLEM this fixes: a plain `go build` on a macOS CI runner links the
-# CGO deps (SDL2, SDL2_ttf, SDL2_mixer, libwebp, libavif and their transitive
-# chain) against their Homebrew install paths, e.g. /opt/homebrew/opt/sdl2/lib/
-# libSDL2-2.0.0.dylib. On any Mac that lacks those exact formulas, dyld aborts
+# CGO deps (SDL3, SDL3_ttf, SDL3_mixer, libwebp, libavif and their transitive
+# chain) against their Homebrew install paths, e.g. /opt/homebrew/opt/sdl3/lib/
+# libSDL3.0.dylib. On any Mac that lacks those exact formulas, dyld aborts
 # at launch with "Library not loaded: /opt/homebrew/..." — one missing lib at a
 # time. This is the macOS analogue of what scripts/build.ps1 -Release does for
 # Windows: collect the runtime library closure NEXT TO the binary so it runs on
@@ -21,8 +21,7 @@
 #
 # On success the staging dir contains the rewritten binary and a lib/ holding
 # every non-system dependency with @rpath install names. The binary itself is
-# also left rewritten in place so it can ship as the bare self-update asset
-# (which, next to a bundled lib/, still loads its libs — see the rpath below).
+# also left rewritten in place.
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
@@ -60,15 +59,23 @@ cp -f "$BIN" "$STAGE/$BIN_NAME"
 # just below, so the very same rewrite works whether the binary sits inside the
 # staging dir (bundled install) or is dropped as a bare self-update asset next
 # to an existing lib/.
-# The SDL Mixer X fork installs its dylib straight into the Homebrew prefix's
-# lib/ with a bare "libSDL2_mixer_ext.2.dylib" install name (no keg dir, no
-# @rpath). dylibbundler's default search list doesn't include that prefix, so
-# point it there explicitly (-s) or it loops on "does not exist. Try again".
+# Point dylibbundler (-s) at the Homebrew prefix's lib/ and at wherever pkg-config
+# says each SDL library lives, so a dylib referenced by @rpath or a bare install
+# name resolves. setup-sdl builds SDL3, SDL3_ttf and SDL3_mixer into separate
+# prefixes. With a library unfound, dylibbundler asks where it is and, with no
+# one to answer, loops on "does not exist. Try again" forever.
+search_args=(-s "$(brew --prefix)/lib")
+for pkg in sdl3 sdl3-ttf sdl3-mixer; do
+  libdir="$(pkg-config --variable=libdir "$pkg" 2>/dev/null || true)"
+  if [ -n "$libdir" ]; then
+    search_args+=(-s "$libdir")
+  fi
+done
 dylibbundler -od -b \
   -x "$STAGE/$BIN_NAME" \
   -d "$LIBDIR" \
   -p "@rpath/" \
-  -s "$(brew --prefix)/lib"
+  "${search_args[@]}"
 
 # Teach the binary WHERE @rpath points, in priority order. First hit wins, so:
 #   1. @executable_path/lib  — the bundled libs we just staged. THIS is the fix:
@@ -100,7 +107,7 @@ add_rpath "/usr/local/lib"       "$STAGE/$BIN_NAME"
 # refuses to run code with a broken/absent signature. Ad-hoc sign (`-s -`)
 # EVERYTHING we modified so the staged bundle runs on a clean machine even with
 # no Apple secrets. When real Developer-ID secrets exist, the release workflow
-# re-signs properly AFTER this script (order matters — see release.yml); an
+# re-signs properly AFTER this script (order matters — see scripts/sign-macos.sh); an
 # ad-hoc signature here does no harm because that later step uses --force.
 # Sign inside-out: the libraries first, then the binary that references them.
 for dylib in "$LIBDIR"/*.dylib; do
@@ -146,14 +153,14 @@ done
 
 # --- Must-bundle assertion ----------------------------------------------------
 # check_clean proves nothing WRONG is referenced; this proves everything NEEDED
-# is PRESENT. dylibbundler only walks hard LC_LOAD_DYLIB links. The fork bundles
-# Ogg-Vorbis (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac) inside its own dylib,
+# is PRESENT. dylibbundler only walks hard LC_LOAD_DYLIB links. SDL3_mixer builds
+# Ogg-Vorbis (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac) into its own dylib,
 # so those codecs ride along automatically; only Ogg-Opus (libopusfile) is an
-# external shared library that must be staged here. If the fork ever flips a
+# external shared library that must be staged here. If a build ever flips a
 # codec to a dlopen shim (SDL_LoadObject), that library vanishes from the link
 # table: dylibbundler stages nothing, the no-Homebrew guard above still passes,
 # and on a clean Mac the dlopen finds nothing — music playback breaks silently.
-# Fail loudly instead: ci.yml runs this script as a blocking gate, so a build
+# Fail loudly instead: every PR packages through this script, so a build
 # change turns CI red before a release ships.
 check_present() {
   local glob="$1" why="$2"
@@ -167,18 +174,17 @@ check_present() {
   done
   echo "bundle-macos: FAIL — required dylib missing from $LIBDIR: $glob ($why)." >&2
   echo "  dylibbundler only follows hard LC_LOAD_DYLIB links; the Homebrew" >&2
-  echo "  sdl2_mixer formula likely switched this codec to a dlopen shim" >&2
-  echo "  (--enable-music-*-shared / SDL2MIXER_DEPS_SHARED), so the bundle" >&2
+  echo "  SDL3_mixer build likely switched this codec to a dlopen shim" >&2
+  echo "  (SDLMIXER_DEPS_SHARED=ON), so the bundle" >&2
   echo "  would ship without it and music would break on a clean Mac." >&2
   return 1
 }
 
-# The mixer itself plus the one music-codec dylib that lives OUTSIDE the fork.
-# The fork compiles Ogg-Vorbis (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac)
-# straight into libSDL2_mixer_ext, so those formats need no separate dylib —
-# only Ogg-Opus demux/seek (libopusfile) is an external shared library. Tracker
-# (xmp) and MIDI are built off by the build script and unreachable at runtime.
-check_present "libSDL2_mixer*.dylib" "SDL Mixer X — all music + SFX"
+# The mixer itself plus the one music-codec dylib that lives OUTSIDE it.
+# SDL3_mixer compiles Ogg-Vorbis (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac)
+# into libSDL3_mixer, so those formats need no separate dylib — only Ogg-Opus
+# demux/seek (libopusfile) is an external shared library.
+check_present "libSDL3_mixer*.dylib" "SDL3_mixer — all music + SFX"
 check_present "libopusfile*.dylib"   "Ogg-Opus demux/decode/seek — .opus music"
 
 echo "bundle-macos: OK — $STAGE/$BIN_NAME is self-contained ($bundled bundled dylibs)"

@@ -38,6 +38,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   A server can also declare `sfx_extensions` / `blips_extensions` to seed
   its sound-effect and blip formats; audio classes the manifest doesn't
   cover fall back to `.opus` → `.ogg` → `.mp3` → `.wav`.
+- **Extra asset hosts** (Settings → Assets): per server, a list of up to 8
+  more asset hosts in an order you choose. When the server's own host (from
+  ASS, always asked first) lacks a file, the hosts are asked top to bottom,
+  each with the formats its own `extensions.json` lists; the first host that
+  has the file wins. Changing the list makes files already marked missing
+  searched again. Each host, the server's own included, shows whether its
+  format list was read, is absent, couldn't be read, or isn't checked yet,
+  and the debug log gets one line per extra host when its result lands.
 - **Desks follow the manifest by default** (Settings → Formats): desk overlays
   auto-detect from the server's `extensions.json` like every other class
   (desks share the manifest's background class). Tick "Always use WebP for
@@ -112,31 +120,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   tab — TLS, both Origin overrides, folder casing, renderer modes + knobs, sprite
   mask, timings — while user *data* (saved mod chips, learned formats) survives
   (`TestResetPowerUser` pins the scope).
-- **Sprite thumbnail cache** (Settings → Power user, **OFF by default**): the
-  opt-in persistent low-quality stand-in store (`internal/assets/thumbcache.go`).
-  Every character sprite that decodes leaves a **~1 KB WebP still** (frame 0,
-  CatmullRom-shrunk to a tunable height, tunable quality) in `cache/thumbs/` —
-  its **own DiskCache instance** beside T3, so thumbs outlive the full sprites
-  they stand in for. On a cold sprite the paced heal path requests the thumb, a
-  dedicated loader reads + decodes it **off-thread**, the render thread uploads
-  it under a **`thumb://` T1 key** (the `theme://` scheme-prefix precedent), and
-  the miss path draws it **before** hold-previous (right character > right
-  quality; the key is precomputed per base-change so the miss path allocates
-  nothing). Every hand-off queue is **bounded and sheds** (thumbs are
-  speculative); the store hook rides the Manager's decode completion
-  (char-sprite type only, non-blocking); a webpenc-less fallback build simply
-  never stores. **Free when off** (one atomic gate per entry point); knobs:
-  height (32–160 px), quality (5–60), Clear button; the nuke reset disables it
-  but keeps the stored thumbs (Clear is deliberate). Pinned by
-  `TestThumbCacheRoundTrip`, `TestThumbStandIn` (draw order + 0-alloc) and
-  `TestThumbDefaultsPinned` (config↔assets constants).
 - **Frame limiter + event-driven renderer** (the GPU-burn fix; Settings → Power
   user → "Frame rate & GPU"): the main loop paces to `App.FramePace(focused)` /
   `App.HardCapBudget(focused)` instead of the monitor. **Shipped defaults
   (v1.55.0): active = ∞ / vsync** while you interact (`NoteInput`, an
   input-responsiveness hold measured in FRAMES, `NoteMotion`) or anything animates
   (`wantsFullRate` / `NoteAnimating`: message ceremony/queue, shake/flash,
-  transmitted sprite motion, replay/maker/export/voice, reaction floats, toasts,
+  transmitted sprite motion, replay/maker/export, reaction floats, toasts,
   the pinned second courtroom, the perf HUD, always-animating FX), **idle = off** —
   a static screen renders *nothing at all* (near-zero GPU) — and
   **background/unfocused = 5 fps**; minimized draws nothing. Each is a slider (the
@@ -204,22 +194,6 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   bg/desk already fill the stage) and only when nothing else owns a clip, so
   screenshake and the reflection's own clip are untouched; **off → no `SetClipRect`
   at all → byte-identical** (`TestSpriteMaskClipsToStage`, 0-alloc with the mask on).
-- **Full-character sprite preload** (#127, Settings → Assets, **OFF by default**):
-  on a character load the default grabs only the first few emotes' idle sprites;
-  with this on, AsyncAO pre-grabs the character's **whole** set — every emote's
-  idle *and* talk (with the bare-spelling fallback) — at **LOW priority**, so
-  switching emotes is instant. Speculative, so backpressure **sheds** it before
-  any live HIGH fetch and singleflight collapses anything already cached; it just
-  costs more bandwidth + cache up front, hence opt-in. Keybind `Ctrl+\`.
-- **Connection-quality chip** (#128, Settings → Assets, **OFF by default**): a tiny
-  signal-bar icon (bottom-left) showing the WebSocket round-trip — four bars,
-  green / amber / red by latency — with the **exact ms on hover**. A single
-  background goroutine pings the **active** connection (`Conn.Ping` → a WS ping/pong,
-  safe alongside the read loop) and stores the RTT atomically; the frame loop
-  starts / stops / retargets it as the active conn changes (connect, tab switch,
-  reconnect, disconnect) or the toggle flips. **Off → no goroutine at all**, so it's
-  genuinely zero-cost by default; on, the chip draw is 0-alloc (Fill bars + a cached
-  tooltip rebuilt only when the ms moves). Keybind `Ctrl+\``.
 - **CM / mod dashboard — server-software-aware** (#130, **Extras → Mod / CM**, or
   `Ctrl+/`; a standalone panel, never bloats the player list): one place to moderate
   that **builds each command for the server you're actually on**. AO moderation is
@@ -257,13 +231,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   display-size texture; the per-frame `CopyEx` then works at a gentle ratio and
   looks sharper. It's a **net speedup**: a smaller cached texture samples faster
   and uses far less VRAM (a 2000² RGBA frame is ~16 MB → ~4 MB at 1080p), easing
-  the 256 MiB budget. Downscale-only, so already-small art is untouched — and the
+  the texture budget. Downscale-only, so already-small art is untouched — and the
   WebP/AVIF *decode* stays exact; this is purely the resample that used to fall
   to the GPU every frame.
-- **Missing-asset banner is opt-in** (Settings → Assets, **default OFF**): the
-  red on-screen warning naming an asset that failed every format is off by
-  default (it was noisy on sparse-pack servers); the failures still stream to
-  the **debug overlay** (the dedicated failure log) regardless.
+- **Missing assets are logged, not shown**: an asset that failed every format is
+  written to the **Debug ▸ Log** tab; there's no on-screen warning (it was noisy
+  on sparse-pack servers).
 - **Decode-failure backoff + corrupt-cache purge**: a payload that downloads but
   won't *decode* (a corrupt/truncated file — e.g. a mangled TLS stream — distinct
   from a 404, which the network tier already caches) goes into a short-lived
@@ -281,13 +254,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **AVIF**: `.avif` probe format; `ftyp avif/avis` sniffing, libavif CGO
   decode (stills + animated sequences), Settings chip like every format.
 - **Typing-driven speculation**: picking an emote prefetches its idle/talk/
-  preanim/SFX at LOW priority; the Markov predictor now also learns
-  per-character **emote chains** and warms the predicted next speaker's
-  predicted next emote. The predictor now warms **both the idle and talk sprite
-  through the full spelling chain** (`(a)`/`(b)`/bare), so a bare-named pack no
-  longer 404s every prediction in all formats — and a speculative miss no longer
-  fires a missing-asset warning (real demand warnings are unchanged; the 404
-  cache and singleflight are untouched, so nothing re-probes).
+  preanim/SFX at LOW priority.
 - **Per-server pre-warm**: last-used character + last-seen background are
   remembered per server (ws URL key, capped) and prefetched on Ready.
 - **Master-list ETag**: lobby Refresh sends `If-None-Match`; unchanged
@@ -305,13 +272,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the current window the delay extends without incrementing), so a 2-second CDN
   hiccup stays at the first-failure tier while a genuinely-down host still climbs
   across windows.
-- **Zstd disk cache** (Settings, default off): self-describing zstd
-  blobs, kept only when smaller — sprites stay raw, INIs shrink 2–4×.
 - **Label texture atlas**: UI labels pack into ≤4 shared pages — the 4K
   char grid's ~1200 labels cost a handful of binds instead of 1200.
 - **Frame pacing**: dt clamp after stalls + a 144 Hz zero-missed-reveal
   typewriter gate in CI.
-- See docs/PERFORMANCE-ROADMAP.md for designs and measurements.
 
 ## Themes
 
@@ -608,7 +572,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   shader" path for SDL2's 2D renderer, which has no fragment-shader entry point, #47);
   **entrance slide-in** drifts a new speaker's sprite in from the side on the first line;
   **depth-of-field** soft-focuses + dims the background behind the speaker (a multi-offset
-  smear, since go-sdl2 exposes no per-texture scale mode for a true blur); **speaker
+  smear, since the 2D renderer has no blur shader); **speaker
   spotlight** (#121) dims the non-speaker layers — the pair partner + the desk — toward
   shadow so the talker pops, with a Dim slider (the background is left to depth-of-field, so
   the two compose without double-dimming); and **idle breathing** (#122) gives every static
@@ -741,7 +705,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - Settings shows a live chatbox preview with the applied colors.
 - **Floating Extras box** (the "★ Extras" button / **Ctrl+X**): a legacy AO2
   `courtroom_design.ini` has no element keys for AsyncAO's own features
-  (Wardrobe, Jukebox, Background, Theater, Pair, Evidence, Login, Settings, …),
+  (Jukebox, Background, Theater, Pair, Evidence, Login, Settings, …),
   so when a theme drives the courtroom layout they'd be unreachable. Pressing
   **★ Extras** (pinned bottom-left) — or **Ctrl+X** — opens a **non-blocking
   floating box** of all of them: the courtroom, chat and logs stay live
@@ -793,6 +757,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   adds synchronous I/O. The **default is 0 = unlimited**, which never deletes
   anything (T3's unboundedness is a deliberate design choice — no update silently
   wipes a cache).
+- **Cache folder** (Settings ▸ Assets ▸ Cache ▸ Disk): **Change…** picks any folder and
+  the cache moves at once, into an `AsyncAO/assets` folder inside it (never the
+  folder itself, so clearing the cache can't touch your other files). You choose
+  whether the files already cached **move** along or are **deleted**; the move
+  runs in the background and you can keep playing. **Use default** goes back to
+  the system cache folder. A folder inside the cache, or the cache inside it, is
+  refused.
 - **Reset to defaults** (Settings, with a confirmation pop-up): two scopes —
   **Reset settings** reverts the whole settings page (scales, volumes, theme,
   hotkeys, colours, toggles) to defaults but KEEPS your favourites, wardrobes,
@@ -815,7 +786,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 ## Quality of life
 
 - **App-wide menu bar** (#14): a persistent strip along the top of **every**
-  screen with real dropdown menus — **Servers** (refresh, connect-time sort,
+  screen with real dropdown menus — **Servers** (refresh,
   Phone Book, direct connect, disconnect, quit), **View** (keep aspect ratio, a
   **Theme fit ▸** submenu, plain backdrops, the F3 performance overlay),
   **Window** (restore default size, **Theme's design size**, fit to screen,
@@ -1046,54 +1017,22 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   every frame for the final encode). Saved to `recordings\<name>.webp`. Falls back
   to a clear message if a build was made without the encoder; the GIF path always
   works.
-- **Scene → MP4 / WebM video** (**🎥 Video**, beside every 🎞 GIF / 🎬 WebP
-  button — in the maker and Settings → Studio per recording): a **real video file**
-  for content creation. Same capture pipeline, but each raw frame is **streamed
-  into a system `ffmpeg`** (`internal/videoenc`, pure-Go — it shells out, no CGO)
-  over a stdin pipe: `rawvideo` → **H.264/MP4** (plays everywhere) or **VP9/WebM**
-  (smaller, open). **ffmpeg is runtime-optional** — the app boots and runs fully
-  without it; only the 🎥 Video button disables (with an "install ffmpeg" hint),
-  and GIF/WebP still work. Format is picked in **⚙ Export options**; the **quality
-  %** slider drives the codec CRF and the **size / frame-rate** apply as usual.
-  Because it **never holds frames** (each is written to ffmpeg and dropped — memory
-  stays flat no matter the length), video can run **hours long** — the only limit is a
-  generous **24-hour** wedge-brake so a stuck export can't encode forever. GIF, WebP,
-  and Comic keep their **much shorter** caps because they accumulate frames/panels in
-  memory. Saved to `recordings\<name>.mp4|webm`.
-  **Audio is baked in** (#99): the scene's **music bed** and each **SFX / shout
-  cry** are captured during the (silent, faster-than-realtime) render and, after
-  the encode, mixed into the video's audio track by a second ffmpeg pass — so the
-  saved file plays **with sound**. It **degrades cleanly** — full mix → music-only
-  bed → silent — so a missing track or an ffmpeg hiccup never breaks the export
-  (blips are excluded to keep the mix sane). The sound version is saved as
-  `<name>-audio.mp4|webm` (subtitle sidecars, if any, follow that name).
-- **Import an AO2 `.demo`** — **drag it anywhere onto the window**, or use the
-  **📥 Import .demo…** button in the **`.demo → video`** call-out at the top of
-  **Settings → Studio**. The button opens an **in-app file browser** (on **every
-  OS**) — navigate your PC, jump to Home / Downloads / Desktop / `recordings\`
-  (and your drives on Windows), and click any `.demo`/`.aorec` to pick it. (This
-  replaced the old Windows-only native file dialog, which could open behind the
-  app.) A dropped/picked `.demo` is **copied
+- **Import an AO2 `.demo`** — **drag it anywhere onto the window**. A dropped `.demo` is **copied
   into `recordings\`** (with a `-2` / `-3` suffix if the name is taken) so it joins
   the recordings library, where its rows get the **same buttons as a native
   `.aorec`** — **▶ Play**, **✎ Edit** (in the Scene Maker), and **🎞 GIF / 🎬 WebP /
-  🎥 Video / 🖼 Comic** export. The `.demo` is converted to AsyncAO's scene model on
+  🖼 Comic** export. The `.demo` is converted to AsyncAO's scene model on
   the fly — no separate format, so everything downstream just works. (The Scene
   Maker's **⇄ .demo** button does the reverse: it writes a scene back out as a
   `.demo` that AO2's own demo player can watch.)
-- **`.demo → video` in one step**: the **📥 Import .demo…** in-app browser (or a drop
-  onto the Studio tab) both **imports** the file and **kicks off a video export** of it —
-  turn a raw AO2 session recording into a shareable MP4/WebM without opening the
-  editor. Import is **bounded** (hard rule — no unbounded buffers): the **50,000-event
+- **Import is bounded** (hard rule — no unbounded buffers): the **50,000-event
   scene cap** is sized to swallow a **whole real session** (the largest real fixture is
   ~8,900 events), so a full demo imports intact; anything past it is dropped with a
   coherent leading prefix kept (the timeline stays consistent), and the **Debug panel**
   notes it, e.g. *"stopped at the 50000-event scene cap (N later events not
   imported)"*. Non-scene packets the model doesn't cover (SC/CT/HP/…) are
   **skipped** with their own separate count in that same note, so you can tell
-  "this demo has chatter" from "this demo is longer than the cap." If ffmpeg isn't
-  on PATH the import **still lands in Recordings** (GIF/WebP export it there); only
-  the video step needs ffmpeg.
+  "this demo has chatter" from "this demo is longer than the cap."
 - **Where a `.demo`'s assets come from** — a `.demo` records only bare asset *names*
   (songs, sprites, backgrounds), never the server they live on. On import, AsyncAO
   stamps the recording with the **asset host of the server you're connected to at
@@ -1105,7 +1044,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   — for a server that's gone — set **Settings → Assets → Asset source** to
   **"Only use my folders"** with a mount of the content folder you have on disk
   *before* importing, and the
-  recording resolves everything (including exported-video music) from your own
+  recording resolves everything (including music) from your own
   files, no network needed.
 - **Export options** (**⚙ Export** in the maker, and **Settings → Studio**): set
   the **size** (Small 384×288 → XL 720×540), **frame rate** (8–24 fps), **WebP
@@ -1490,8 +1429,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   cycle, music stop (`~stop.mp3` fake-track request, courtroom.cpp
   music_stop), log jump, screenshot (`screenshots/` beside the exe).
   **Per-menu shortcuts** jump straight to a menu without opening the Extras box:
-  Characters / Wardrobe / Jukebox / Background / Evidence / Pairing on
-  **Ctrl+5..0**, Call-mod / UI-chrome / Settings on Ctrl+O / F / **,** (comma —
+  Characters / Jukebox / Background / Evidence / Pairing on
+  **Ctrl+5, 7, 8, 9, 0**, Call-mod / UI-chrome / Settings on Ctrl+O / F / **,** (comma —
   Ctrl+Z stays free for the layout editor's undo). **Random
   character** (webAO `/randomchar` — swap to a uniformly-random FREE character)
   on **Ctrl+R**, also a "Random char" button in the Extras box. All rebindable
@@ -1534,7 +1473,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   track it always did, and the music URL is still built from it. The same short
   name is used on the "Now playing:" line, in the IC "*has played a song*" line
   and in the jukebox's Recently-played rows, so the three can't disagree.
-- **Jukebox playlist** (Wardrobe → **Jukebox** tab): a library of the music
+- **Jukebox playlist** (its own window: **Extras ▸ Jukebox…**, the Extras box or **Ctrl+7**): a library of the music
   links DJs/CMs `/play` in OOC (YouTube/Discord/etc.), organized into named
   playlists (folders) so you click instead of paste. Per song: a labelled
   **Play** button (clicking the song title plays it too — both send `/play
@@ -1599,11 +1538,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   snapshot the search and domain-grouping use), so the per-frame draw just walks a
   cached slice — **allocation-free**. Stars survive Export/Import; a merged-in
   shared config arrives un-starred (it can't restar your library).
-- **Audio codecs** (the "audio note"): the SDL Mixer X fork bundles Ogg-Vorbis
+- **Audio codecs** (the "audio note"): SDL3_mixer builds Ogg-Vorbis
   (stb_vorbis), MP3 (dr_mp3) and FLAC (dr_flac) straight into its own library, so
-  only **Opus** (libopusfile) ships as a separate DLL and is loaded at startup via
-  `Mix_Init` (best-effort — a missing codec just loses that one format, the rest
-  still play). This is what lets **`.opus`** work everywhere it
+  only **Opus** (libopusfile) ships as a separate library, loaded when the first
+  Opus file plays (best-effort — a missing codec just loses that one format, the
+  rest still play). This is what lets **`.opus`** work everywhere it
   matters: Discord `/play` CDN links (which are `.opus`) **and** a custom
   `.opus` callword/friend alert sound. Decoding always runs in C off the Go
   side (spec §8).
@@ -1626,16 +1565,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   music while a message is on stage (shout/preanim/talking) and restores it
   at idle, so dialogue stays clear. Transition-driven — the mixer volume is
   touched only when the duck state flips, never per frame.
-- **Packed-room catch-up** (Settings → Audio & Chat, ON by default): keeps the
-  IC stage real-time. **By default (threshold 1)** the newest message always
-  types out **in full — sprite, name, typewriter and effects** — while any
-  backlog stacked behind it flashes past, so when someone fires off several
-  lines a second the textbox jumps straight to the latest one instead of
-  crawling seconds behind. Normal back-and-forth (nothing waiting behind the
-  current line) plays every message in full, so you lose no animation in a
-  calm scene. The IC log keeps every line regardless (it stays the complete
-  record). Perf-positive (fewer frames spent on backlog). Raise the threshold
-  in Settings to watch more of a backlog animate; it sits alongside the
+- **Packed-room catch-up** (Settings → Audio & Chat, off by default): opt-in
+  webAO pacing. When enabled (threshold 1) the newest message always types out
+  **in full — sprite, name, typewriter and effects** — while any backlog stacked
+  behind it flashes past, so when someone fires off several lines a second the
+  textbox jumps straight to the latest one instead of crawling seconds behind.
+  Normal back-and-forth (nothing waiting behind the current line) plays every
+  message in full, so you lose no animation in a calm scene. **Off (default)**
+  is the original AO2 client's queue: every line plays in full and in order.
+  The IC log keeps every line regardless (it stays the complete record).
+  Perf-positive (fewer frames spent on backlog). Raise the threshold in
+  Settings to watch more of a backlog animate; it sits alongside the
   plain-English Text crawl / stay / chat-limit knobs.
 - **IC character counter** (ON by default, Settings → Audio & Chat): a live count
   to the right of the IC box that turns red past ~256 chars, where many servers
@@ -1707,8 +1647,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
     the favourites.
   - The ★ itself, to curate from anywhere in the grid.
 
-  Favourites are **per character and persisted** (kept across a settings reset,
-  like your wardrobe). They're keyed by the emote's **position, not its name** —
+  Favourites are **per character and persisted** (kept across a settings reset). They're keyed by the emote's **position, not its name** —
   emote labels and talking sprites *duplicate* within a character (Apollo has
   three distinct "normal" emotes that share a sprite), so a name key would merge
   them into one star. **Zero render cost**: a star toggle rebuilds a small lookup
@@ -1716,7 +1655,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   guard compare (verified 0 allocs/op), the box draws only while open, and the
   always-on render loop (`render.Viewport`) is untouched.
 - **Sprite preview magnifier**: every sprite preview pop-up (character select,
-  wardrobe, emote hover, background picker) has **− / + zoom controls** along
+  emote hover, background picker) has **− / + zoom controls** along
   its bottom OR the **mouse wheel** (in and out) over the box; past 1× the
   preview becomes a **magnifying glass** — move the mouse over it to pan around
   the magnified sprite and inspect pixel detail. **Left-drag the box** to move
@@ -1743,9 +1682,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   as often — showed a cell icon that loaded fine beside a preview box that stayed
   empty forever. The preview now reads the hovered character's char.ini and falls
   back to its **first real emote**, so every pack previews. A pack that does have
-  `normal` is unchanged and still costs a single probe. (The wardrobe / iniswap
-  grid and the pair menu already recovered this way; character select was the one
-  surface that didn't.)
+  `normal` is unchanged and still costs a single probe.
 - **Reposition sprites by dragging** (Settings → General, **default OFF**): when
   enabled, drag any character in the viewport to move them (the override sticks
   per character; right-click a sprite to reset it, or "Reset all moved sprites"
@@ -1776,10 +1713,6 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   with the Settings checkbox. Persisted. Suppressed in the same per-frame
   sprite-override pass (one pref read, then the existing short-circuit) — the
   render gate is untouched.
-- **★ favourite a character from Character Select**: a star on each character
-  icon adds it straight to your **per-server Wardrobe** (LemmyAO-style), so it
-  rides along on every connect. One click on, one click off; the Wardrobe tab
-  and courtroom Wardrobe menu show the same stars.
 - **Auto-login toast** (Settings → General, **ON by default**): when a saved
   auto-login fires on join, a one-shot in-app toast **and a desktop
   notification** name who/where you signed in as (masked in streamer mode), so
@@ -1787,11 +1720,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   want the popup. The login lines still send paced, one at a time (so a
   two-step Akashi prompt is answered in order).
 - **Background picker** (courtroom Background button): a thumbnail grid of
-  every background, modeled on the wardrobe menu. AO has no "list
+  every background. AO has no "list
   backgrounds" packet, so the set is discovered by fetching the asset
   host's `background/` directory and parsing its autoindex
-  (nginx/apache/caddy) — same idea as iniswap.txt seeding the wardrobe;
-  the current + last-seen backgrounds always seed it so it's never empty.
+  (nginx/apache/caddy); the current + last-seen backgrounds always seed it so it's never empty.
   The discovered list is **cached per server** (like the char list), so the
   next session's picker and slideshow show it **instantly** while a fresh
   listing refreshes in the background.
@@ -1805,12 +1737,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   scroll, instead of thrashing the cache and flickering. (Small-background
   servers fit everything and show every thumbnail.)
 - **Favorite backgrounds** (the ★ on each picker cell): pin the backgrounds
-  you use, exactly like the wardrobe star. Favorites are **saved per server**,
+  you use. Favorites are **saved per server**,
   float to the top of the list, and a **"Favorites only"** checkbox filters the
   grid to just them — so your go-to scenes are one click away even on a host
-  with no directory listing. Click the star again to unpin. Your favorites also
-  show up in the **Wardrobe's Backgrounds section** (below), where you can sort
-  them into folders and change the room to one with a click.
+  with no directory listing. Click the star again to unpin.
 - **Background slideshow** (Settings → **OFF by default**): when the courtroom
   is **idle** (no message on stage), the stage cycles through the server's
   backgrounds every few seconds (configurable, 3–600 s) as ambiance. It's a
@@ -1904,63 +1834,27 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Force character names** (Settings, off by default): show every speaker's
   **character** name instead of their custom showname, in both the chatbox and
   the IC log — true-roleplay immersion and anti-impersonation for casing.
-- **Per-server wardrobe**: custom character lists no longer carry
-  between servers; the pre-split collection migrates once to the first
-  server joined after updating.
-- **Wardrobe folders** (app-drawer style): folders are real objects you open,
-  not just filters. At the top level the grid leads with a **folder icon** per
-  category; **click one to open it** (the grid then shows only that folder's
-  characters) and a **‹ All folders** button takes you back. **Drag a character
-  cell onto a folder icon to file it**; drag it onto the back button to take it
-  out again. To make a new folder, type its name in the **New folder** box — a
-  folder icon appears immediately so you can drop the first character onto it
-  (the folder becomes permanent once it has a member). A plain click still
-  wears the character; a small drag threshold tells a click from a drag. Other
-  ways to file: **right-click → "move to folder"** (the only cross-folder move
-  once you're inside one; this menu also has **× Remove from wardrobe**),
-  **number keys 1-9** (file the hovered character into that-numbered folder,
-  0 = take out), or add with `folder/char`. **Search spans every folder.**
-  Folders are per server.
-- **Removing things**: the **★** on a cell removes that character from the
-  wardrobe (or unstars a background); right-click a character → **× Remove from
-  wardrobe**. **Delete a whole folder** with the **×** that appears on a folder
-  icon when you hover it — a confirmation then offers **"Delete + N items"**
-  (removes the folder's characters/backgrounds from your favorites) or **"Keep
-  items"** (just dissolves the folder, leaving everything unfiled). A folder
-  also disappears on its own once nothing is filed under it.
-- **Three wardrobe sections — Characters, Backgrounds, Iniswaps**: tabs at the
-  top of the Wardrobe switch between them. **Characters** is *your* curated set
-  only — the iniswaps you've starred or filed into folders — so it stays clean
-  instead of listing the whole server. **Iniswaps** is a flat browse of the
-  server's `iniswap.txt` **only** — favourites that aren't on the server's list
-  don't show here, they stay on Characters: search it, hover to preview, click
-  to try one on, and hit **★** to add it to your Characters wardrobe (where you
-  can then file it into folders). A server that publishes no `iniswap.txt` just
-  shows a note and an empty list (nothing to fetch). Both grids render from the
-  same backing list with the same indices, so switching tabs never repaints the
-  wrong thumbnail (the index-keyed icon cache stays valid).
-  The Backgrounds section uses the *same* navigable folders: drag a background
-  onto a folder icon to file it, open a folder to see inside, and click a
-  background to change the room to it (`/bg`). Its ★ removes a background from
-  favorites. Favorites are added by starring in the Background picker; the
-  section shows a hint pointing there when it's empty. Background folders are
-  saved per server, just like character folders.
-- **Per-server character keybinds**: a key badge on each wardrobe cell
-  binds a plain key (press A → wear that character instantly); fires
-  only with no text field focused. Right-click the badge to clear.
-- **Quick-swap (Ctrl+J by default)**: cycles through this server's wardrobe
-  characters and wears the next one, wrapping around — a fast way to flip
-  between your starred cast without opening the menu. It advances from
-  whatever you're wearing now, so the cycle stays predictable even after a
-  manual pick. The key is rebindable in Settings → Hotkeys (and listed in the
-  F1 cheat sheet); an empty wardrobe just shows a hint.
-- **Try-before-wear preview**: hovering a wardrobe character pops the usual
-  sprite preview, but now you can **flip through that character's emotes**
-  right in the preview box — the `<` `>` buttons or the Left/Right arrow keys
-  cycle them, with a caption naming each one. It reads the character's emote
-  list from the char.ini that was already warmed on hover (no extra download),
-  so you can see a character's range *before* committing to wear them. Nothing
-  is sent — wearing in the courtroom only affects your own next line anyway.
+- **Wardrobe** (courtroom **Wardrobe** button or `ctrl.wardrobe`, **Extras ▸ Wardrobe…**, the Extras box, or
+  **Ctrl+6**): your saved characters, kept across servers in their own `wardrobe.json`.
+  - **User / Server**: your own favourites, or the characters the server lists in its `iniswaps.ini` (greyed out when
+    it has none). **Grid / List** switches between cards and rows; icons are the native 40 × 40.
+  - **Folders** on the left: All favourites, your folders, Unfiled. A character can be in **several folders**.
+    Folders made on the server you're on carry a green ✓. Hover a folder for its pencil (name, icon, colour, or your
+    own PNG/WebP/GIF image, also by dropping a file on it) and its ×, which asks whether to delete the characters too
+    (only those in no other folder) or keep them. Double-click or F2 renames; drag folders to reorder.
+  - **Cards**: a click selects, a double-click (or Enter) switches to the character when its slot is free and wears
+    it as an iniswap otherwise, saying which. Iniswaps carry a small yellow tag. The bottom bar offers Switch, Wear
+    as iniswap, **Folders…** (a checklist in All favourites) or **Move to folder…** (inside a folder),
+    **Nickname…** (shown instead of the name, the real one smaller under it; only you see it) and **Remove…**
+    (asks first). Buttons that don't fit a narrow window move into **More…**.
+  - **Sort**: Custom (drag cards to reorder), Name, Last worn, or Folder (grouped under folder headings).
+    Search covers every folder and matches nicknames too.
+  - **Drag** a card onto a folder: from All favourites it adds that folder, from inside a folder it moves there.
+  - **Add**: type folder names (one per line or comma-separated; names the server has no slot for become
+    iniswaps), or tick them from the server's list.
+  - **Character Select ★** saves or removes a character in one click.
+  - **Settings ▸ General ▸ Wardrobe**: font (with suggestions from your installed fonts), text size, icon size
+    (40 / 80 / 120) and the highlight colour.
 - **Settings export/import**: Export writes the complete preferences
   file (knobs, favorites, wardrobes, keybinds, learned formats) beside
   the exe; Import = arm the button and drop the .json — applied on
@@ -2033,8 +1927,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   always work even with no name set.
 - **Perf HUD (F3, any screen)**: live frame-time graph (last 120 frames;
   green under 16.7 ms, amber to 33 ms, red past it, with the 60 fps line
-  drawn in), average/worst frame + fps, heap vs the 256 MiB GOMEMLIMIT
-  budget (amber at 75%, red over), GC pause p99, cache hit rate, network
+  drawn in), average/worst frame + fps, heap, GC pause p99, cache hit rate, network
   probes, and cached 404s — rendered from the 1 Hz sampler that already
   powered `--debug` logging. F3 again hides it.
 - **Blankposting**: Enter on an empty IC input sends the AO single-space
@@ -2238,41 +2131,26 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   inspect / prune (-older, -max-bytes, -all) / warm a URL list or char
   icons via a server's `extensions.json` into T3 — pre-seed a fresh
   install before ever connecting.
-- **Built-in single-asset downloader** (Settings, **OFF by default**): for
-  hosts that serve a directory listing, grab one character or background
-  straight off the server instead of a multi-GB pack. Turn it on and a
-  download (↓) badge appears on each character (char-select) and background
-  (Background menu) cell; it walks that folder's autoindex and saves the
-  files under `downloads/` — and a downloaded character also pulls the
-  `sounds/general` sfx and `sounds/blips` its `char.ini` names (those live
-  outside the folder, so a plain grab would be silent — the `char.ini` is
-  re-read from the server so this never depends on the just-walked copy).
-  A floating progress chip ("Downloading … — N files, X MiB") shows from any
-  screen while a grab runs, and the cell is marked. Bounded (file / byte /
-  depth caps), off-thread, cancelable, and path-traversal-guarded. Point
-  "Read assets from local folders" at the downloads folder to use the grabs
-  offline / in rehearsal. **Local mounts now resolve names with spaces and
-  parentheses**: a mounted pack folder like "Phoenix Wright" was requested as
-  `phoenix%20wright` and missed on disk — the local reader now also tries the
-  percent-decoded path (the `..` traversal guard runs on the decoded form too, so
-  an encoded `%2e%2e` can't escape the mount).
-  **v2:** grabs **queue** instead of refusing while one runs (the chip shows
-  "+N queued"); **right-click** a background cell to queue it; **Pause / Resume**
-  the active grab and the whole queue (Settings); and an optional **bandwidth
-  cap** (KiB/s, 0 = unlimited) paces downloads so a big grab doesn't hog your
-  connection.
+- **Local mounts resolve names with spaces and parentheses**: a mounted pack
+  folder like "Phoenix Wright" was requested as `phoenix%20wright` and missed on
+  disk; the local reader also tries the percent-decoded path (the `..` traversal
+  guard runs on the decoded form too, so an encoded `%2e%2e` can't escape the mount).
 - **Discord Rich Presence**: **enabled by default** on a normal build (untick
-  in Settings → Discord, or run a `-tags nodiscord` build), per-field privacy
+  in Settings → Discord), per-field privacy
   checkboxes, zero build/run dependency. The official AsyncAO **Application ID
   is baked in** (no user-editable ID box), so it shows "Playing AsyncAO" out of
   the box whenever Discord is running — full guide in [DISCORD.md](DISCORD.md).
-- **Update check + "What's New"** (Settings → on by default): one async check
-  of the GitHub Releases API at launch — fired once, after the window is up,
+- **Update check + "What's New"** (Settings → Updates, on by default): one async
+  check of the GitHub Releases API at launch — fired once, after the window is up,
   **never on the boot path** (zero startup cost), and a dev build skips it
-  entirely. When a newer version is published, a top-right **"Update N
-  available"** chip appears and a **What's New** panel shows that release's
-  **patch notes** (scrollable). Turn the setting off for no outbound call.
-  **"Get the update"** then downloads the new build next to the running exe,
+  entirely. When a newer version is published, a **What's New** panel shows that
+  release's **patch notes** (scrollable); Settings → Updates reopens it, shows the
+  running version, commit and build date, checks again on demand, and can include
+  pre-releases (ticked on a pre-release build's first launch). A pre-release build
+  is offered the highest stable release at or above its version, or else the
+  newest one, even if lower; a stable build is only offered higher versions.
+  Turn launch checks off for no outbound call at launch.
+  **"Download & Install…"** then downloads the new build next to the running exe,
   verifies it, and **stages an atomic self-replace** (rename the old aside →
   move the new in, **rolling back** if anything fails — so an AV lock mid-swap
   can't break the install); restart to finish, and the old binary is cleaned
@@ -2293,10 +2171,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (no per-frame allocations), and the `BenchmarkRenderFrame` alloc gate is
   unchanged.
 - **Linux AppImage** (CI + `scripts/build-appimage.sh`): a self-contained,
-  single-file Linux download that **bundles the SDL2 / SDL2_ttf / SDL2_mixer /
+  single-file Linux download that **bundles the SDL3 / SDL3_ttf / SDL3_mixer /
   libwebp / libavif runtime** (resolved from the binary by `linuxdeploy`) so it
   runs with no install step — the Linux equivalent of the Windows DLL bundle. CI
-  builds it on every push in **two flavors**, default and **Discord-free**
-  (`-tags nodiscord`), uploaded as `asyncao-linux-x86_64-AppImage` and
-  `…-AppImage-nodiscord`. Build it locally with `scripts/build-appimage.sh`
+  packages it on every ready PR and release. Build it locally with `scripts/build-appimage.sh`
   (see [BUILDING.md](../BUILDING.md)).

@@ -1,17 +1,12 @@
 package ui
 
-// Jukebox favorites (M12): star a song (★ on its row) and it shows up in a
-// dedicated "★ Favorites" view that spans every playlist, so your go-to tracks
-// are one click away wherever they live. The list is memoized against the
-// library revision (the same self-invalidating snapshot the search and the
-// domain-grouping use), so the per-frame draw never re-scans — it walks a cached
-// slice. The star itself reads off the by-value playlist snapshot (no lock).
+// Jukebox favorites: a view spanning every playlist, memoized on the library revision so the draw never re-scans.
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // favRef points at a starred song by (playlist, entry) index into jukeCache.
@@ -20,9 +15,7 @@ type favRef struct {
 	e  int
 }
 
-// refreshJukeFavs rebuilds the cross-playlist favorites list (and its cached
-// count label) when the library revision changed — never per frame. Reads the
-// jukeCache snapshot refreshJukeCache already maintains.
+// refreshJukeFavs rebuilds the favorites list and count label from jukeCache when the library revision changed.
 func (a *App) refreshJukeFavs() {
 	if a.jukeFavRev == a.jukeCacheRev && a.jukeFavs != nil {
 		return
@@ -39,8 +32,7 @@ func (a *App) refreshJukeFavs() {
 	a.jukeFavLbl = fmt.Sprintf("★ Favorites (%d)", len(a.jukeFavs))
 }
 
-// drawJukeFavorites is the top-level "★ Favorites" view: a back button and a
-// scrollable list of every starred song, with its source playlist shown.
+// drawJukeFavorites is the top-level Favorites view: a back button and a scrollable list of every starred song.
 func (a *App) drawJukeFavorites(x, y, wide, bottom int32) {
 	c := a.ctx
 	if c.Button(sdl.Rect{X: x, Y: y, W: 140, H: btnH}, "‹ Playlists") {
@@ -75,9 +67,7 @@ func (a *App) drawJukeFavorites(x, y, wide, bottom int32) {
 	}
 }
 
-// drawFavSongRow draws one starred song in the Favorites view: ★ (unstar), Play,
-// and — for real links — Share/Open, plus the title and its source playlist.
-// Uses the song's own (pl, e), so unstarring hits the right entry.
+// drawFavSongRow draws one starred song using its own (pl, e), so unstarring hits the right entry.
 func (a *App) drawFavSongRow(ref favRef, r sdl.Rect) {
 	c := a.ctx
 	if ref.pl < 0 || ref.pl >= len(a.jukeCache) {
@@ -102,14 +92,13 @@ func (a *App) drawFavSongRow(ref favRef, r sdl.Rect) {
 		}
 		bx -= 56
 		if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 52, H: r.H}, "Open") {
-			openBrowser(schemeForOpen(e.URL)) // a bare "www." link saved from a log opens with https://
+			a.openBrowser(schemeForOpen(e.URL)) // a bare "www." link saved from a log opens with https://
 		}
 	}
-	// ★ unstar (leftmost control, next to the title).
 	bx -= 28
 	sr := sdl.Rect{X: bx, Y: r.Y, W: 26, H: r.H}
 	c.Fill(sr, ColPanelHi)
-	c.Label(sr.X+5, r.Y+5, "★", ColStar)
+	c.IconLabel(sr, "★", ColStar)
 	c.Tooltip(sr, "Remove from favorites")
 	if c.hovering(sr) && c.clicked {
 		a.juke.SetEntryFav(ref.pl, ref.e, false)

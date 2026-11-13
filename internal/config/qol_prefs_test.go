@@ -18,10 +18,18 @@ func TestFontEverywhereRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.FontEverywhereOn() {
+	if p.Load().FontEverywhere {
 		t.Fatal("FontEverywhere must default OFF")
 	}
-	p.SetFontEverywhere(true)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			FontEverywhere =
+
+			true
+
+	})
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -29,7 +37,7 @@ func TestFontEverywhereRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.FontEverywhereOn() {
+	if !q.Load().FontEverywhere {
 		t.Error("FontEverywhere=true lost across save→load")
 	}
 }
@@ -44,10 +52,10 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if !p.RecordingsKeepAssetsOn() {
+	if !p.Load().RecordingsKeepAssets {
 		t.Fatal("RecordingsKeepAssetsOn must default true (in-app recordings keep their assets)")
 	}
-	p.SetRecordingsKeepAssets(false) // default-ON *bool — explicit false must survive
+	p.Update(func(sn *Settings) { sn.RecordingsKeepAssets = false }) // default-ON *bool — explicit false must survive
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -55,7 +63,7 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.RecordingsKeepAssetsOn() {
+	if q.Load().RecordingsKeepAssets {
 		t.Error("RecordingsKeepAssets=false lost (absent-default ON must not clobber explicit false)")
 	}
 	// And the other direction: an explicit ON on a file that had it OFF survives
@@ -66,10 +74,10 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	if p2.RecordingsKeepAssetsOn() {
+	if p2.Load().RecordingsKeepAssets {
 		t.Fatal("reopened file must still carry the explicit OFF")
 	}
-	p2.SetRecordingsKeepAssets(true)
+	p2.Update(func(sn *Settings) { sn.RecordingsKeepAssets = true })
 	if err := p2.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -77,7 +85,7 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.RecordingsKeepAssetsOn() {
+	if !r.Load().RecordingsKeepAssets {
 		t.Error("RecordingsKeepAssets=true lost across save→load")
 	}
 }
@@ -86,12 +94,12 @@ func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
 // default, then it persists the version the user last opened.
 func TestChangelogSeenRoundTrip(t *testing.T) {
 	p := &AssetPreferences{}
-	if p.ChangelogSeenVersion() != "" {
-		t.Fatalf("ChangelogSeenVersion default = %q, want empty", p.ChangelogSeenVersion())
+	if p.Load().ChangelogSeen != "" {
+		t.Fatalf("ChangelogSeenVersion default = %q, want empty", p.Load().ChangelogSeen)
 	}
-	p.SetChangelogSeen("v1.30.0")
-	if p.ChangelogSeenVersion() != "v1.30.0" {
-		t.Fatalf("ChangelogSeenVersion = %q, want v1.30.0", p.ChangelogSeenVersion())
+	p.Update(func(sn *Settings) { sn.ChangelogSeen = "v1.30.0" })
+	if p.Load().ChangelogSeen != "v1.30.0" {
+		t.Fatalf("ChangelogSeenVersion = %q, want v1.30.0", p.Load().ChangelogSeen)
 	}
 }
 
@@ -100,62 +108,56 @@ func TestChangelogSeenRoundTrip(t *testing.T) {
 // desk-follows-manifest ON (auto-detect; the WebP pin is the opt-out).
 func TestQoLPrefDefaults(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if !p.SpritePreviewsOn() {
+	if !p.Load().SpritePreviewOn {
 		t.Error("SpritePreviewsOn default must be true")
 	}
-	if got := p.PreviewHoverMillis(); got != DefaultPreviewHoverMs {
+	if got := p.Load().PreviewHoverMillis(); got != DefaultPreviewHoverMs {
 		t.Errorf("PreviewHoverMillis default = %d, want %d", got, DefaultPreviewHoverMs)
 	}
-	if p.AssetWarningsOn() {
-		t.Error("AssetWarningsOn default must be false (banner is opt-in)")
-	}
-	if p.SpriteMoveEnabled() {
+	if p.Load().SpriteMoveOn {
 		t.Error("SpriteMoveEnabled default must be false")
 	}
 	// Deliberate default flip (user order, 2026-08-08): desks auto-detect from
 	// the server manifest like every other class; pinning WebP is the opt-out.
-	if !p.DeskFollowsManifest() {
+	if !p.Load().DeskFollowManifest {
 		t.Error("DeskFollowsManifest default must be true (desks auto-detect like every other class)")
 	}
-	if !p.AutoLoginToastOn() {
+	if !p.Load().AutoLoginToast {
 		t.Error("AutoLoginToastOn default must be true")
 	}
-	if !p.CallwordToastOn() {
+	if !p.Load().CallwordToast {
 		t.Error("CallwordToastOn default must be true")
 	}
-	if !p.MessageCounterOn() {
+	if !p.Load().MessageCounter {
 		t.Error("MessageCounterOn default must be true")
 	}
-	if p.ICTimestampsOn() {
+	if p.Load().ICTimestamps {
 		t.Error("ICTimestampsOn default must be false (playtest: timestamps off by default)")
 	}
-	if p.AutoReconnectOn() {
+	if p.Load().AutoReconnect {
 		t.Error("AutoReconnectOn default must be false (drops stay at the lobby; auto-retry is opt-in)")
 	}
-	if !p.ScreenEffectsOn() {
+	if !p.Load().ScreenEffects {
 		t.Error("ScreenEffectsOn default must be true (AO2 screen effects ship ON)")
 	}
-	if !p.WordDeleteOn() {
+	if !p.Load().WordDelete {
 		t.Error("WordDeleteOn default must be true (Ctrl+Backspace word delete ships ON)")
 	}
-	if !p.MusicHistoryOn() {
+	if !p.Load().MusicHistory {
 		t.Error("MusicHistoryOn default must be true")
 	}
-	if !p.MusicStreamingOn() {
+	if !p.Load().MusicStreaming {
 		t.Error("MusicStreamingOn default must be true (custom /play streaming ships ON)")
 	}
-	if p.RainbowSpeed() != defaultRainbowSpeed || p.RainbowVividness() != defaultRainbowVivid {
+	if p.Load().RainbowSpriteSpeed != defaultRainbowSpeed || p.Load().RainbowSpriteVividness != defaultRainbowVivid {
 		t.Errorf("rainbow speed/vividness defaults = %d/%d, want %d/%d",
-			p.RainbowSpeed(), p.RainbowVividness(), defaultRainbowSpeed, defaultRainbowVivid)
+			p.Load().RainbowSpriteSpeed, p.Load().RainbowSpriteVividness, defaultRainbowSpeed, defaultRainbowVivid)
 	}
-	if p.SpriteTintColorRGB() != defaultSpriteTintColor {
-		t.Errorf("SpriteTintColor default = %06x, want %06x", p.SpriteTintColorRGB(), defaultSpriteTintColor)
+	if p.Load().SpriteTintColorRGB() != defaultSpriteTintColor {
+		t.Errorf("SpriteTintColor default = %06x, want %06x", p.Load().SpriteTintColorRGB(), defaultSpriteTintColor)
 	}
-	if p.RainbowSpriteGlowOn() || p.RainbowPairDesyncOn() || p.SpriteSolidTintOn() {
+	if p.Load().RainbowSpriteGlow || p.Load().RainbowPairDesync || p.Load().SpriteSolidTint {
 		t.Error("sprite-FX glow/desync/solid must default OFF")
-	}
-	if p.LoopPreanimOn() {
-		t.Error("LoopPreanim must default OFF (canonical AO2 plays preanims once)")
 	}
 }
 
@@ -164,17 +166,12 @@ func TestQoLPrefDefaults(t *testing.T) {
 // clause that would silently reset every export to defaults if it were dropped.
 func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if d := p.ExportOpts(); d.HeightPx != defaultExportHeight || d.FPS != defaultExportFPS || d.Quality != defaultExportQuality || !d.Loop || d.TextScale != defaultExportText || d.VideoFormat != defaultVideoFormat {
-		t.Fatalf("default export opts = %+v, want %d/%d/%d/%d/%s + loop", d, defaultExportHeight, defaultExportFPS, defaultExportQuality, defaultExportText, defaultVideoFormat)
-	}
-	// An unknown video format normalizes to the MP4 default (never crashes ffmpeg).
-	p.SetExportOpts(ExportOptions{HeightPx: 360, FPS: 12, Quality: 80, Loop: true, TextScale: 100, VideoFormat: "avi"})
-	if g := p.ExportOpts(); g.VideoFormat != defaultVideoFormat {
-		t.Fatalf("bogus video format = %q, want normalized to %q", g.VideoFormat, defaultVideoFormat)
+	if d := p.Load().Export; d.HeightPx != defaultExportHeight || d.FPS != defaultExportFPS || d.Quality != defaultExportQuality || !d.Loop || d.TextScale != defaultExportText {
+		t.Fatalf("default export opts = %+v, want %d/%d/%d/%d + loop", d, defaultExportHeight, defaultExportFPS, defaultExportQuality, defaultExportText)
 	}
 	// Out-of-range values clamp to the configured bounds.
 	p.SetExportOpts(ExportOptions{HeightPx: 99999, FPS: 0, Quality: 999, Loop: false, TextScale: 9999})
-	if g := p.ExportOpts(); g.HeightPx != maxExportHeight || g.FPS != minExportFPS || g.Quality != maxExportQuality || g.Loop || g.TextScale != maxExportText {
+	if g := p.Load().Export; g.HeightPx != maxExportHeight || g.FPS != minExportFPS || g.Quality != maxExportQuality || g.Loop || g.TextScale != maxExportText {
 		t.Fatalf("clamped export opts = %+v, want max/min/max/maxText + loop off", g)
 	}
 
@@ -183,7 +180,7 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetExportOpts(ExportOptions{HeightPx: 480, FPS: 24, Quality: 60, Loop: true, TextScale: 70, VideoFormat: "webm"})
+	q.SetExportOpts(ExportOptions{HeightPx: 480, FPS: 24, Quality: 60, Loop: true, TextScale: 70})
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -191,8 +188,8 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if o := r.ExportOpts(); o.HeightPx != 480 || o.FPS != 24 || o.Quality != 60 || !o.Loop || o.TextScale != 70 || o.VideoFormat != "webm" {
-		t.Fatalf("reloaded export opts = %+v, want 480/24/60/70/webm + loop (merge clause dropped a field?)", o)
+	if o := r.Load().Export; o.HeightPx != 480 || o.FPS != 24 || o.Quality != 60 || !o.Loop || o.TextScale != 70 {
+		t.Fatalf("reloaded export opts = %+v, want 480/24/60/70 + loop (merge clause dropped a field?)", o)
 	}
 }
 
@@ -201,15 +198,15 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 // toggle) — the merge clause that would silently drop the style otherwise.
 func TestSpriteStylePref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if s := p.SpriteStyle(); s.Tint || s.Glow || s.Opacity != 0 || s.Wobble || s.Spin {
+	if s := p.Load().MySpriteStyle; s.Tint || s.Glow || s.Opacity != 0 || s.Wobble || s.Spin {
 		t.Fatalf("default sprite style not empty: %+v", s)
 	}
-	if p.HideSpriteStylesOn() {
+	if p.Load().HideSpriteStyles {
 		t.Fatal("HideSpriteStyles should default OFF (show others' styles)")
 	}
 	// Opacity clamps to [0,100].
 	p.SetSpriteStyle(SpriteStylePref{Tint: true, R: 255, G: 60, B: 60, Opacity: 200})
-	if g := p.SpriteStyle(); g.Opacity != 100 {
+	if g := p.Load().MySpriteStyle; g.Opacity != 100 {
 		t.Errorf("opacity 200 clamped to %d, want 100", g.Opacity)
 	}
 
@@ -220,7 +217,16 @@ func TestSpriteStylePref(t *testing.T) {
 	}
 	want := SpriteStylePref{Tint: true, R: 10, G: 20, B: 30, Opacity: 50, Glow: true, Wobble: true, Spin: true, HueCycle: true, FlipH: true, Brightness: 70, Scale: 130, Rotation: 200}
 	q.SetSpriteStyle(want)
-	q.SetHideSpriteStyles(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			HideSpriteStyles =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -228,10 +234,10 @@ func TestSpriteStylePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if g := r.SpriteStyle(); g != want {
+	if g := r.Load().MySpriteStyle; g != want {
 		t.Errorf("reloaded sprite style = %+v, want %+v (merge clause dropped a field?)", g, want)
 	}
-	if !r.HideSpriteStylesOn() {
+	if !r.Load().HideSpriteStyles {
 		t.Error("HideSpriteStyles didn't persist")
 	}
 }
@@ -241,13 +247,13 @@ func TestSpriteStylePref(t *testing.T) {
 // silently drop the profile otherwise).
 func TestProfilePref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if pr := p.Profile(); pr.Enabled || pr.ShowOnList || pr.Name != "" || pr.Bio != "" {
+	if pr := p.Load().MyProfile; pr.Enabled || pr.ShowOnList || pr.Name != "" || pr.Bio != "" {
 		t.Fatalf("default profile not empty: %+v", pr)
 	}
 	// Oversized fields clamp to their caps.
 	long := strings.Repeat("x", 1000)
 	p.SetProfile(ProfilePref{Enabled: true, Name: long, Bio: long, ArtURL: long})
-	g := p.Profile()
+	g := p.Load().MyProfile
 	if len([]rune(g.Name)) != profileNameMax || len([]rune(g.Bio)) != profileBioMax || len([]rune(g.ArtURL)) != profileURLMax {
 		t.Errorf("fields not clamped: name=%d bio=%d url=%d", len([]rune(g.Name)), len([]rune(g.Bio)), len([]rune(g.ArtURL)))
 	}
@@ -266,7 +272,7 @@ func TestProfilePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if g := r.Profile(); g != want {
+	if g := r.Load().MyProfile; g != want {
 		t.Errorf("reloaded profile = %+v, want %+v (merge clause dropped a field?)", g, want)
 	}
 }
@@ -275,7 +281,7 @@ func TestProfilePref(t *testing.T) {
 // (confirm first), and the on state survives save→reload.
 func TestInstantDisconnectPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.InstantDisconnectOn() {
+	if p.Load().InstantDisconnect {
 		t.Error("InstantDisconnect must default OFF (Disconnect confirms first)")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -283,7 +289,16 @@ func TestInstantDisconnectPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetInstantDisconnect(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantDisconnect =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -291,7 +306,7 @@ func TestInstantDisconnectPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.InstantDisconnectOn() {
+	if !r.Load().InstantDisconnect {
 		t.Error("InstantDisconnect=true lost on reload")
 	}
 }
@@ -301,7 +316,7 @@ func TestInstantDisconnectPref(t *testing.T) {
 // absent field keeps the default-ON, not a silent off).
 func TestRightClickHideSpritePref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if !p.RightClickHideSpriteOn() {
+	if !p.Load().RightClickHideSprite {
 		t.Error("RightClickHideSprite must default ON")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -309,7 +324,7 @@ func TestRightClickHideSpritePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetRightClickHideSprite(false)
+	q.Update(func(sn *Settings) { sn.RightClickHideSprite = false })
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -317,7 +332,7 @@ func TestRightClickHideSpritePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if r.RightClickHideSpriteOn() {
+	if r.Load().RightClickHideSprite {
 		t.Error("RightClickHideSprite=false lost on reload (absent != default-on)")
 	}
 }
@@ -327,10 +342,10 @@ func TestRightClickHideSpritePref(t *testing.T) {
 // save→reload so the next launch knows where to dial.
 func TestAutoConnectOnLaunchPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.AutoConnectOnLaunchOn() {
+	if p.Load().AutoConnectOnLaunch {
 		t.Error("AutoConnectOnLaunch must default OFF (auto-connect is opt-in)")
 	}
-	if name, url := p.LastServer(); name != "" || url != "" {
+	if name, url := p.Load().LastServer(); name != "" || url != "" {
 		t.Errorf("LastServer default = %q/%q, want empty", name, url)
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -338,7 +353,16 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetAutoConnectOnLaunch(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			AutoConnectOnLaunch =
+
+			true
+
+	})
+
 	q.SetLastServer("Skrapegropen", "wss://example.test/ws")
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -347,10 +371,10 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.AutoConnectOnLaunchOn() {
+	if !r.Load().AutoConnectOnLaunch {
 		t.Error("AutoConnectOnLaunch=true lost on reload")
 	}
-	if name, url := r.LastServer(); name != "Skrapegropen" || url != "wss://example.test/ws" {
+	if name, url := r.Load().LastServer(); name != "Skrapegropen" || url != "wss://example.test/ws" {
 		t.Errorf("reloaded LastServer = %q/%q, want Skrapegropen/wss://example.test/ws", name, url)
 	}
 }
@@ -361,10 +385,10 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 // favourites and the favs-only display toggle survive a save→reload.
 func TestEmoteFavsPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.EmoteFavOnlyOn() {
+	if p.Load().EmoteFavOnly {
 		t.Error("EmoteFavOnly must default OFF")
 	}
-	if got := p.EmoteFavsFor("Apollo"); got != nil {
+	if got := p.Load().EmoteFavsFor("Apollo"); got != nil {
 		t.Errorf("fresh EmoteFavsFor = %v, want nil", got)
 	}
 	// Toggle two emotes on; toggling one again removes it (its own inverse).
@@ -372,18 +396,18 @@ func TestEmoteFavsPref(t *testing.T) {
 		t.Error("ToggleEmoteFav(0) should report now-favourited")
 	}
 	p.ToggleEmoteFav("Apollo", 10)
-	if !p.IsEmoteFav("Apollo", 0) || !p.IsEmoteFav("Apollo", 10) {
+	if !p.Load().IsEmoteFav("Apollo", 0) || !p.Load().IsEmoteFav("Apollo", 10) {
 		t.Fatal("both 0 and 10 should be favourited")
 	}
 	if now := p.ToggleEmoteFav("apollo", 0); now { // case-insensitive char key
 		t.Error("re-toggling 0 should report now-unfavourited")
 	}
-	if p.IsEmoteFav("Apollo", 0) {
+	if p.Load().IsEmoteFav("Apollo", 0) {
 		t.Error("0 should be removed after the second toggle")
 	}
 	// Removing the last favourite drops the map entry entirely.
 	p.ToggleEmoteFav("Apollo", 10)
-	if got := p.EmoteFavsFor("Apollo"); got != nil {
+	if got := p.Load().EmoteFavsFor("Apollo"); got != nil {
 		t.Errorf("after clearing, EmoteFavsFor = %v, want nil", got)
 	}
 
@@ -394,7 +418,16 @@ func TestEmoteFavsPref(t *testing.T) {
 	}
 	q.ToggleEmoteFav("Phoenix", 3)
 	q.ToggleEmoteFav("Phoenix", 7)
-	q.SetEmoteFavOnly(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteFavOnly =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -402,11 +435,11 @@ func TestEmoteFavsPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.EmoteFavOnlyOn() {
+	if !r.Load().EmoteFavOnly {
 		t.Error("EmoteFavOnly=true lost on reload")
 	}
-	if !r.IsEmoteFav("Phoenix", 3) || !r.IsEmoteFav("Phoenix", 7) {
-		t.Errorf("reloaded favourites = %v, want [3 7]", r.EmoteFavsFor("Phoenix"))
+	if !r.Load().IsEmoteFav("Phoenix", 3) || !r.Load().IsEmoteFav("Phoenix", 7) {
+		t.Errorf("reloaded favourites = %v, want [3 7]", r.Load().EmoteFavsFor("Phoenix"))
 	}
 }
 
@@ -416,20 +449,20 @@ func TestEmoteFavsPref(t *testing.T) {
 func TestServerIgnorePref(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	const key = "wss://example.test/ws"
-	if p.ServerIgnoreMatch(key, "Bob") {
+	if p.Load().ServerIgnoreMatch(key, "Bob") {
 		t.Error("nothing should be ignored by default")
 	}
 	p.SetServerIgnored(key, []string{"Bob", "  Alice  ", "bob", ""}) // dup (ci) + pad + blank
-	if got := p.ServerIgnored(key); len(got) != 2 {
+	if got := p.Load().ServerIgnored(key); len(got) != 2 {
 		t.Fatalf("ignored = %v, want 2 (Bob, Alice — deduped/trimmed)", got)
 	}
-	if !p.ServerIgnoreMatch(key, "BOB") || !p.ServerIgnoreMatch(key, "alice") {
+	if !p.Load().ServerIgnoreMatch(key, "BOB") || !p.Load().ServerIgnoreMatch(key, "alice") {
 		t.Error("match must be case-insensitive")
 	}
-	if p.ServerIgnoreMatch(key, "Carol") {
+	if p.Load().ServerIgnoreMatch(key, "Carol") {
 		t.Error("Carol isn't ignored")
 	}
-	if p.ServerIgnoreMatch("wss://other/ws", "Bob") {
+	if p.Load().ServerIgnoreMatch("wss://other/ws", "Bob") {
 		t.Error("ignore list must be per-server")
 	}
 
@@ -446,7 +479,7 @@ func TestServerIgnorePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.ServerIgnoreMatch(key, "Mallory") {
+	if !r.Load().ServerIgnoreMatch(key, "Mallory") {
 		t.Error("ignore list lost on reload")
 	}
 }
@@ -484,9 +517,9 @@ func TestServerAudioPref(t *testing.T) {
 	// takes p.mu.RLock(): the debounced saver goroutine may be flushing the
 	// SetAudioVolumes dirty-mark concurrently, and an unlocked map write here
 	// races that marshal (a -race flake, pre-existing).
-	p.mu.Lock()
-	p.ServerWarm["wss://partial/ws"] = ServerWarmInfo{AudioOn: true, AudioMaster: &mv} // music/sfx/blip unset
-	p.mu.Unlock()
+	p.Update(func(sn *Settings) {
+		sn.ServerWarm["wss://partial/ws"] = ServerWarmInfo{AudioOn: true, AudioMaster: &mv}
+	}) // music/sfx/blip unset
 	if on, m, mu, s, b := p.ServerAudio("wss://partial/ws"); !on || m != 50 || mu != 90 || s != 85 || b != 80 {
 		t.Errorf("unset channels must fall back to global: got %v/%d/%d/%d/%d, want true/50/90/85/80", on, m, mu, s, b)
 	}
@@ -521,18 +554,18 @@ func TestServerFriendNickColor(t *testing.T) {
 	// nick-only entry (name==nick, default colour) + a plain colour entry.
 	p.SetServerFriends(key, []string{"Phoenix=ff4488=Wright, buddy", "Alice==Allie", "Bob=00ff00"})
 
-	friend, color, nick := p.ServerFriendInfo(key, "phoenix") // case-insensitive
+	friend, color, nick := p.Load().ServerFriendInfo(key, "phoenix") // case-insensitive
 	if !friend || color != 0xff4488 || nick != "Wright buddy" {
 		t.Fatalf("Phoenix info = %v/%06x/%q, want true/ff4488/\"Wright buddy\" (comma stripped)", friend, color, nick)
 	}
-	if _, c, nk := p.ServerFriendInfo(key, "Alice"); c != -1 || nk != "Allie" {
+	if _, c, nk := p.Load().ServerFriendInfo(key, "Alice"); c != -1 || nk != "Allie" {
 		t.Fatalf("Alice info color/nick = %d/%q, want -1/\"Allie\"", c, nk)
 	}
-	if _, c, nk := p.ServerFriendInfo(key, "Bob"); c != 0x00ff00 || nk != "" {
+	if _, c, nk := p.Load().ServerFriendInfo(key, "Bob"); c != 0x00ff00 || nk != "" {
 		t.Fatalf("Bob info color/nick = %06x/%q, want 00ff00/\"\"", c, nk)
 	}
 	// ServerFriendMatch (the 2-return wrapper) still works for colour-only callers.
-	if f, c := p.ServerFriendMatch(key, "Phoenix"); !f || c != 0xff4488 {
+	if f, c := p.Load().ServerFriendMatch(key, "Phoenix"); !f || c != 0xff4488 {
 		t.Fatalf("ServerFriendMatch = %v/%06x, want true/ff4488", f, c)
 	}
 
@@ -549,7 +582,7 @@ func TestServerFriendNickColor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if f, c, nk := r.ServerFriendInfo(key, "Mallory"); !f || c != 0x123456 || nk != "Mal" {
+	if f, c, nk := r.Load().ServerFriendInfo(key, "Mallory"); !f || c != 0x123456 || nk != "Mal" {
 		t.Errorf("reloaded = %v/%06x/%q, want true/123456/\"Mal\"", f, c, nk)
 	}
 }
@@ -559,18 +592,38 @@ func TestServerFriendNickColor(t *testing.T) {
 // save→reload.
 func TestInstantReplayPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.InstantReplayOn() {
+	if p.Load().InstantReplay {
 		t.Error("InstantReplay must default OFF (opt-in)")
 	}
-	if got := p.InstantReplaySecondsValue(); got != InstantReplayDefaultSeconds {
+	if got := p.Load().InstantReplaySecondsValue(); got != InstantReplayDefaultSeconds {
 		t.Errorf("unset window = %d, want default %d", got, InstantReplayDefaultSeconds)
 	}
-	p.SetInstantReplaySeconds(2) // below the floor
-	if got := p.InstantReplaySecondsValue(); got != InstantReplayMinSeconds {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantReplaySeconds =
+
+			2
+
+	})
+
+	// below the floor
+	if got := p.Load().InstantReplaySecondsValue(); got != InstantReplayMinSeconds {
 		t.Errorf("clamped-low window = %d, want %d", got, InstantReplayMinSeconds)
 	}
-	p.SetInstantReplaySeconds(100000) // past the 1-hour ceiling
-	if got := p.InstantReplaySecondsValue(); got != InstantReplayMaxSeconds {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantReplaySeconds =
+
+			100000
+
+	})
+
+	// past the 1-hour ceiling
+	if got := p.Load().InstantReplaySecondsValue(); got != InstantReplayMaxSeconds {
 		t.Errorf("clamped-high window = %d, want %d", got, InstantReplayMaxSeconds)
 	}
 
@@ -579,8 +632,26 @@ func TestInstantReplayPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetInstantReplay(true)
-	q.SetInstantReplaySeconds(120)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantReplay =
+
+			true
+
+	})
+
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			InstantReplaySeconds =
+
+			120
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -588,10 +659,10 @@ func TestInstantReplayPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.InstantReplayOn() {
+	if !r.Load().InstantReplay {
 		t.Error("InstantReplay=true lost on reload")
 	}
-	if got := r.InstantReplaySecondsValue(); got != 120 {
+	if got := r.Load().InstantReplaySecondsValue(); got != 120 {
 		t.Errorf("reloaded window = %d, want 120", got)
 	}
 }
@@ -601,18 +672,18 @@ func TestInstantReplayPref(t *testing.T) {
 // survive save→reload.
 func TestTimerPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.TimerRepeatOn() {
+	if p.Load().TimerRepeat {
 		t.Error("TimerRepeat must default OFF")
 	}
-	if got := p.TimerSecondsValue(); got != TimerDefaultSeconds {
+	if got := p.Load().TimerSecondsValue(); got != TimerDefaultSeconds {
 		t.Errorf("unset duration = %d, want default %d", got, TimerDefaultSeconds)
 	}
 	p.SetTimerSeconds(0) // 0/unset → default, not the floor
-	if got := p.TimerSecondsValue(); got != TimerDefaultSeconds {
+	if got := p.Load().TimerSecondsValue(); got != TimerDefaultSeconds {
 		t.Errorf("zero duration = %d, want default %d", got, TimerDefaultSeconds)
 	}
 	p.SetTimerSeconds(1000000) // past the 99-minute ceiling
-	if got := p.TimerSecondsValue(); got != TimerMaxSeconds {
+	if got := p.Load().TimerSecondsValue(); got != TimerMaxSeconds {
 		t.Errorf("clamped-high duration = %d, want %d", got, TimerMaxSeconds)
 	}
 
@@ -622,7 +693,7 @@ func TestTimerPref(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 	q.SetTimerSeconds(90)
-	q.SetTimerRepeat(true)
+	q.Update(func(sn *Settings) { sn.TimerRepeat = true })
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -630,10 +701,10 @@ func TestTimerPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := r.TimerSecondsValue(); got != 90 {
+	if got := r.Load().TimerSecondsValue(); got != 90 {
 		t.Errorf("reloaded duration = %d, want 90", got)
 	}
-	if !r.TimerRepeatOn() {
+	if !r.Load().TimerRepeat {
 		t.Error("TimerRepeat=true lost on reload")
 	}
 }
@@ -642,7 +713,7 @@ func TestTimerPref(t *testing.T) {
 // and survives save→reload when enabled.
 func TestNotifyOnOOCPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.NotifyOnOOCOn() {
+	if p.Load().NotifyOnOOC {
 		t.Error("NotifyOnOOC must default OFF (IC-only badge)")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -650,7 +721,16 @@ func TestNotifyOnOOCPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetNotifyOnOOC(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			NotifyOnOOC =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -658,7 +738,7 @@ func TestNotifyOnOOCPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.NotifyOnOOCOn() {
+	if !r.Load().NotifyOnOOC {
 		t.Error("NotifyOnOOC=true lost on reload")
 	}
 }
@@ -673,7 +753,7 @@ func TestNotifyOnOOCPref(t *testing.T) {
 // tab user silently becomes a box user on upgrade — this test is the tripwire.
 func TestOOCBoxIsTheDefault(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.OOCInLogTabOn() {
+	if p.Load().OOCInLogTab {
 		t.Error("a fresh install must default to the OOC BOX (OOCInLogTab OFF)")
 	}
 
@@ -683,7 +763,16 @@ func TestOOCBoxIsTheDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetOOCInLogTab(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			OOCInLogTab =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -691,7 +780,7 @@ func TestOOCBoxIsTheDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.OOCInLogTabOn() {
+	if !r.Load().OOCInLogTab {
 		t.Error("OOCInLogTab=true lost on reload — the opt-in must survive the default flip")
 	}
 
@@ -725,7 +814,16 @@ func TestEmoteGridGapPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetEmoteGridGap(0)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteGridGapPx =
+
+			0
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -752,11 +850,31 @@ func TestEmoteGridGapPref(t *testing.T) {
 
 	// Out-of-range values clamp on the way in and on the way out.
 	s, _ := newTestPrefs(t)
-	s.SetEmoteGridGap(MaxEmoteGridGapPx + 500)
+	s.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteGridGapPx =
+
+			MaxEmoteGridGapPx +
+
+				500
+
+	})
+
 	if got := s.EmoteGridGap(); got != MaxEmoteGridGapPx {
 		t.Errorf("over-max EmoteGridGap = %d, want %d", got, MaxEmoteGridGapPx)
 	}
-	s.SetEmoteGridGap(-42)
+	s.Update(func(
+		sn *Settings) {
+
+		sn.
+			EmoteGridGapPx =
+
+			-42
+
+	})
+
 	if got := s.EmoteGridGap(); got != MinEmoteGridGapPx {
 		t.Errorf("under-min EmoteGridGap = %d, want %d", got, MinEmoteGridGapPx)
 	}
@@ -768,7 +886,7 @@ func TestEmoteGridGapPref(t *testing.T) {
 // not-load trap).
 func TestMusicAcrossTabsPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.MusicAcrossTabsOn() {
+	if p.Load().MusicAcrossTabs {
 		t.Error("MusicAcrossTabs must default OFF (backgrounded tab music ducks to 0)")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -776,7 +894,16 @@ func TestMusicAcrossTabsPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetMusicAcrossTabs(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicAcrossTabs =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -784,7 +911,7 @@ func TestMusicAcrossTabsPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.MusicAcrossTabsOn() {
+	if !r.Load().MusicAcrossTabs {
 		t.Error("MusicAcrossTabs=true lost on reload")
 	}
 }
@@ -793,16 +920,16 @@ func TestMusicAcrossTabsPref(t *testing.T) {
 // /gas area-group order) default to 0 and survive save→reload.
 func TestPlayerListSortPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.PlayerListSortMode() != 0 || p.PlayerListAreaSortMode() != 0 {
-		t.Fatalf("sort prefs must default to 0, got %d/%d", p.PlayerListSortMode(), p.PlayerListAreaSortMode())
+	if p.Load().PlayerListSort != 0 || p.Load().PlayerListAreaSort != 0 {
+		t.Fatalf("sort prefs must default to 0, got %d/%d", p.Load().PlayerListSort, p.Load().PlayerListAreaSort)
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	q, err := newWithDebounce(path, testDebounce)
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetPlayerListSort(1)
-	q.SetPlayerListAreaSort(2)
+	q.Update(func(sn *Settings) { sn.PlayerListSort = 1 })
+	q.Update(func(sn *Settings) { sn.PlayerListAreaSort = 2 })
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -810,8 +937,8 @@ func TestPlayerListSortPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if r.PlayerListSortMode() != 1 || r.PlayerListAreaSortMode() != 2 {
-		t.Errorf("reloaded sorts = %d/%d, want 1/2", r.PlayerListSortMode(), r.PlayerListAreaSortMode())
+	if r.Load().PlayerListSort != 1 || r.Load().PlayerListAreaSort != 2 {
+		t.Errorf("reloaded sorts = %d/%d, want 1/2", r.Load().PlayerListSort, r.Load().PlayerListAreaSort)
 	}
 }
 
@@ -819,19 +946,37 @@ func TestPlayerListSortPref(t *testing.T) {
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ChatboxOpacityPct() != DefaultChatboxOpacity {
-		t.Fatalf("ChatboxOpacity default = %d, want %d", p.ChatboxOpacityPct(), DefaultChatboxOpacity)
+	if p.Load().ChatboxOpacity != DefaultChatboxOpacity {
+		t.Fatalf("ChatboxOpacity default = %d, want %d", p.Load().ChatboxOpacity, DefaultChatboxOpacity)
 	}
-	p.SetChatboxOpacity(999)
-	if p.ChatboxOpacityPct() != MaxChatboxOpacity {
-		t.Errorf("over-max = %d, want %d", p.ChatboxOpacityPct(), MaxChatboxOpacity)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ChatboxOpacity =
+
+			999
+
+	})
+
+	if p.Load().ChatboxOpacity != MaxChatboxOpacity {
+		t.Errorf("over-max = %d, want %d", p.Load().ChatboxOpacity, MaxChatboxOpacity)
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	q, err := newWithDebounce(path, testDebounce)
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetChatboxOpacity(30)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			ChatboxOpacity =
+
+			30
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -839,8 +984,8 @@ func TestChatboxOpacityPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if r.ChatboxOpacityPct() != 30 {
-		t.Errorf("reloaded opacity = %d, want 30", r.ChatboxOpacityPct())
+	if r.Load().ChatboxOpacity != 30 {
+		t.Errorf("reloaded opacity = %d, want 30", r.Load().ChatboxOpacity)
 	}
 }
 
@@ -848,10 +993,10 @@ func TestChatboxOpacityPref(t *testing.T) {
 // with no custom file, and toggles + paths survive save→load.
 func TestModSFXPrefs(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ModBanSFXOn() || p.ModKickSFXOn() || p.ModMuteSFXOn() {
+	if p.Load().ModBanSFX || p.Load().ModKickSFX || p.Load().ModMuteSFX {
 		t.Error("mod-SFX toggles must default OFF")
 	}
-	if p.ModBanSoundPath() != "" || p.ModKickSoundPath() != "" || p.ModMuteSoundPath() != "" {
+	if p.Load().ModBanSoundFile != "" || p.Load().ModKickSoundFile != "" || p.Load().ModMuteSoundFile != "" {
 		t.Error("mod-SFX sound paths must default empty")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -859,9 +1004,36 @@ func TestModSFXPrefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetModBanSFX(true)
-	q.SetModKickSFX(true)
-	q.SetModMuteSFX(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			ModBanSFX =
+
+			true
+
+	})
+
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			ModKickSFX =
+
+			true
+
+	})
+
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			ModMuteSFX =
+
+			true
+
+	})
+
 	q.SetModBanSoundPath("ban.opus")
 	q.SetModKickSoundPath("kick.wav")
 	q.SetModMuteSoundPath("mute.ogg")
@@ -872,11 +1044,11 @@ func TestModSFXPrefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.ModBanSFXOn() || !r.ModKickSFXOn() || !r.ModMuteSFXOn() {
+	if !r.Load().ModBanSFX || !r.Load().ModKickSFX || !r.Load().ModMuteSFX {
 		t.Error("mod-SFX toggles lost across reload")
 	}
-	if r.ModBanSoundPath() != "ban.opus" || r.ModKickSoundPath() != "kick.wav" || r.ModMuteSoundPath() != "mute.ogg" {
-		t.Errorf("mod-SFX paths lost: %q %q %q", r.ModBanSoundPath(), r.ModKickSoundPath(), r.ModMuteSoundPath())
+	if r.Load().ModBanSoundFile != "ban.opus" || r.Load().ModKickSoundFile != "kick.wav" || r.Load().ModMuteSoundFile != "mute.ogg" {
+		t.Errorf("mod-SFX paths lost: %q %q %q", r.Load().ModBanSoundFile, r.Load().ModKickSoundFile, r.Load().ModMuteSoundFile)
 	}
 }
 
@@ -884,7 +1056,7 @@ func TestModSFXPrefs(t *testing.T) {
 // and an explicit ON survives save→load.
 func TestFollowEnabledPref(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.FollowEnabledOn() {
+	if p.Load().FollowEnabled {
 		t.Error("FollowEnabled must default OFF (opt-in)")
 	}
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -892,7 +1064,16 @@ func TestFollowEnabledPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetFollowEnabled(true)
+	q.Update(func(
+		sn *Settings) {
+
+		sn.
+			FollowEnabled =
+
+			true
+
+	})
+
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -900,7 +1081,7 @@ func TestFollowEnabledPref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !r.FollowEnabledOn() {
+	if !r.Load().FollowEnabled {
 		t.Error("FollowEnabled=true lost across save/load")
 	}
 }
@@ -908,12 +1089,17 @@ func TestFollowEnabledPref(t *testing.T) {
 // TestPreviewHoverClamp pins the dwell bounds (the setter is authoritative).
 func TestPreviewHoverClamp(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	p.SetPreviewHoverMs(1 << 30)
-	if got := p.PreviewHoverMillis(); got != maxPreviewHoverMs {
+	{
+		pv1 := 1 << 30
+		p.Update(func(sn *Settings) {
+			sn.PreviewHoverMs = pv1
+		})
+	}
+	if got := p.Load().PreviewHoverMillis(); got != maxPreviewHoverMs {
 		t.Errorf("clamp hi = %d, want %d", got, maxPreviewHoverMs)
 	}
-	p.SetPreviewHoverMs(1)
-	if got := p.PreviewHoverMillis(); got != minPreviewHoverMs {
+	p.Update(func(sn *Settings) { sn.PreviewHoverMs = 1 })
+	if got := p.Load().PreviewHoverMillis(); got != minPreviewHoverMs {
 		t.Errorf("clamp lo = %d, want %d", got, minPreviewHoverMs)
 	}
 }
@@ -927,23 +1113,61 @@ func TestICLogDepthRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.ICLogDepth() != 0 {
-		t.Fatalf("ICLogDepth must default 0 (the shipped 1024), got %d", p.ICLogDepth())
+	if p.Load().ICLogDepthVal != 0 {
+		t.Fatalf("ICLogDepth must default 0 (the shipped 1024), got %d", p.Load().ICLogDepthVal)
 	}
-	p.SetICLogDepth(5000)
-	if got := p.ICLogDepth(); got != 5000 {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICLogDepthVal =
+
+			5000
+
+	})
+
+	if got := p.Load().ICLogDepthVal; got != 5000 {
 		t.Fatalf("ICLogDepth = %d, want 5000", got)
 	}
-	p.SetICLogDepth(1 << 30)
-	if got := p.ICLogDepth(); got != ICLogDepthMax {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICLogDepthVal =
+
+			1 <<
+
+				30
+
+	})
+
+	if got := p.Load().ICLogDepthVal; got != ICLogDepthMax {
 		t.Fatalf("ICLogDepth clamp hi = %d, want %d", got, ICLogDepthMax)
 	}
-	p.SetICLogDepth(0)
-	if got := p.ICLogDepth(); got != 0 {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICLogDepthVal =
+
+			0
+
+	})
+
+	if got := p.Load().ICLogDepthVal; got != 0 {
 		t.Fatalf("ICLogDepth back to default = %d, want 0", got)
 	}
-	p.SetICLogDepth(ICLogDepthUnlimited)
-	if got := p.ICLogDepth(); got != ICLogDepthUnlimited {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICLogDepthVal =
+
+			ICLogDepthUnlimited
+
+	})
+
+	if got := p.Load().ICLogDepthVal; got != ICLogDepthUnlimited {
 		t.Fatalf("ICLogDepth unlimited = %d, want %d", got, ICLogDepthUnlimited)
 	}
 	if err := p.Close(); err != nil {
@@ -953,8 +1177,8 @@ func TestICLogDepthRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.ICLogDepth() != ICLogDepthUnlimited {
-		t.Errorf("unlimited sentinel lost across save→load: %d, want %d", q.ICLogDepth(), ICLogDepthUnlimited)
+	if q.Load().ICLogDepthVal != ICLogDepthUnlimited {
+		t.Errorf("unlimited sentinel lost across save→load: %d, want %d", q.Load().ICLogDepthVal, ICLogDepthUnlimited)
 	}
 }
 
@@ -967,40 +1191,157 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	p.SetSpritePreviews(false)
-	p.SetPreviewHoverMs(8000)
-	p.SetPreviewHeightPx(512)            // default-when-0 int — must survive
-	p.SetUpdateChannelExperimental(true) // default-OFF plain bool — must survive (the test-branch channel)
-	p.SetAssetWarnings(true)
-	p.SetSpriteMove(true)
-	p.SetDeskFollowManifest(false)   // explicit non-default false must survive the absent-default-ON pointer (default flipped OFF→ON 2026-08-08 — true would now be a no-op set)
-	p.SetAutoLoginToast(false)       // explicit false must survive the absent-default-ON pointer
-	p.SetCallwordToast(false)        // same absent-default-ON pointer
-	p.SetMessageCounter(false)       // same absent-default-ON pointer
-	p.SetICTimestamps(true)          // explicit non-default true must survive the absent-default-OFF pointer
-	p.SetAutoReconnect(true)         // explicit non-default true must survive the absent-default-OFF pointer
-	p.SetScreenEffects(false)        // default-ON *bool — explicit false must survive
-	p.SetWordDelete(false)           // default-ON *bool — explicit false must survive
-	p.SetMusicHistory(false)         // same absent-default-ON pointer
-	p.SetMusicStreaming(false)       // same absent-default-ON pointer — explicit OFF must survive
-	p.SetRainbowSprites(true)        // default-OFF plain bool — must survive as true
-	p.SetLoopPreanim(true)           // default-OFF plain bool — must survive as true
-	p.SetShowRecordButton(true)      // default-OFF plain bool
-	p.SetShowFriendButton(false)     // default-ON *bool — explicit false must survive
-	p.SetDragLayout(false)           // default-ON *bool — explicit false must survive
-	p.SetEventDrivenLoop(false)      // default-ON *bool — the experimental-loop kill switch must stick
-	p.SetFrameLimiterDisabled(true)  // #5 bypass — default-OFF plain bool must survive as true
-	p.SetMotionRedrawPerEvent(false) // per-event motion redraw — default-ON *bool, so an explicit OFF must survive
-	p.SetIdleFPS(FPSUnlimited)       // the ∞ sentinel must survive save→load un-clamped
-	p.SetRainbowSpriteSpeed(30)
-	p.SetRainbowSpriteVividness(95)
-	p.SetRainbowSpriteGlow(true)
-	p.SetRainbowPairDesync(true)
-	p.SetRainbowPerChar(true)
-	p.SetSpriteWobble(true)
-	p.SetSpriteSpin(true)
-	p.SetSpriteSolidTint(true)
-	p.SetSpriteTintColor(0x112233)
+	p.Update(func(sn *Settings) { sn.SpritePreviewOn = false })
+	p.Update(func(sn *Settings) { sn.PreviewHoverMs = 8000 })
+	p.SetPreviewHeightPx(512)                                   // default-when-0 int — must survive
+	p.Update(func(sn *Settings) { sn.UpdatePrerelease = true }) // default-OFF plain bool — must survive (the pre-release choice)
+	p.Update(func(sn *Settings) { sn.SpriteMoveOn = true })
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DeskFollowManifest =
+
+			false
+
+	})
+
+	// explicit non-default false must survive the absent-default-ON pointer (default flipped OFF→ON 2026-08-08 — true would now be a no-op set)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AutoLoginToast =
+
+			false
+
+	})
+
+	// explicit false must survive the absent-default-ON pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CallwordToast =
+
+			false
+
+	})
+
+	// same absent-default-ON pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MessageCounter =
+
+			false
+
+	})
+
+	// same absent-default-ON pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICTimestamps =
+
+			true
+
+	})
+
+	// explicit non-default true must survive the absent-default-OFF pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
+
+	// explicit non-default true must survive the absent-default-OFF pointer
+	p.Update(func(sn *Settings) { sn.ScreenEffects = false }) // default-ON *bool — explicit false must survive
+	p.Update(func(sn *Settings) { sn.WordDelete = false })    // default-ON *bool — explicit false must survive
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicHistory =
+
+			false
+
+	})
+
+	// same absent-default-ON pointer
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MusicStreaming =
+
+			false
+
+	})
+
+	// same absent-default-ON pointer — explicit OFF must survive
+	p.Update(func(sn *Settings) { sn.RainbowSprites = true })    // default-OFF plain bool — must survive as true
+	p.Update(func(sn *Settings) { sn.ShowRecordButton = true })  // default-OFF plain bool
+	p.Update(func(sn *Settings) { sn.ShowFriendButton = false }) // default-ON *bool — explicit false must survive
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DragLayout =
+
+			false
+
+	})
+
+	// default-ON *bool — the experimental-loop kill switch must stick
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DisableFrameLimiter =
+
+			true
+
+	})
+
+	// #5 bypass — default-OFF plain bool must survive as true
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MotionRedrawPerEvent =
+
+			false
+
+	})
+
+	// per-event motion redraw — default-ON *bool, so an explicit OFF must survive
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			FPSUnlimited
+
+	})
+
+	// the ∞ sentinel must survive save→load un-clamped
+	p.Update(func(sn *Settings) { sn.RainbowSpriteSpeed = 30 })
+	p.Update(func(sn *Settings) { sn.RainbowSpriteVividness = 95 })
+	p.Update(func(sn *Settings) { sn.RainbowSpriteGlow = true })
+	p.Update(func(sn *Settings) { sn.RainbowPairDesync = true })
+	p.Update(func(sn *Settings) { sn.RainbowPerChar = true })
+	p.Update(func(sn *Settings) { sn.SpriteWobble = true })
+	p.Update(func(sn *Settings) { sn.SpriteSpin = true })
+	p.Update(func(sn *Settings) { sn.SpriteSolidTint = true })
+	p.Update(func(sn *Settings) { sn.SpriteTintColor = 0x112233 })
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1009,89 +1350,80 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.SpritePreviewsOn() {
+	if q.Load().SpritePreviewOn {
 		t.Error("SpritePreview=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if got := q.PreviewHoverMillis(); got != 8000 {
+	if got := q.Load().PreviewHoverMillis(); got != 8000 {
 		t.Errorf("PreviewHoverMillis = %d, want 8000", got)
 	}
-	if !q.AssetWarningsOn() {
-		t.Error("ShowAssetWarnings lost")
-	}
-	if !q.SpriteMoveEnabled() {
+	if !q.Load().SpriteMoveOn {
 		t.Error("SpriteMove lost")
 	}
-	if q.DeskFollowsManifest() {
+	if q.Load().DeskFollowManifest {
 		t.Error("DeskFollowManifest=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.AutoLoginToastOn() {
+	if q.Load().AutoLoginToast {
 		t.Error("AutoLoginToast=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.ScreenEffectsOn() {
+	if q.Load().ScreenEffects {
 		t.Error("ScreenEffects=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.WordDeleteOn() {
+	if q.Load().WordDelete {
 		t.Error("WordDelete=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.CallwordToastOn() {
+	if q.Load().CallwordToast {
 		t.Error("CallwordToast=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.MessageCounterOn() {
+	if q.Load().MessageCounter {
 		t.Error("MessageCounter=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if !q.AutoReconnectOn() {
+	if !q.Load().AutoReconnect {
 		t.Error("AutoReconnect=true lost (absent-default OFF must not clobber explicit true)")
 	}
-	if q.MusicHistoryOn() {
+	if q.Load().MusicHistory {
 		t.Error("MusicHistory=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.MusicStreamingOn() {
+	if q.Load().MusicStreaming {
 		t.Error("MusicStreaming=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if !q.RainbowSpritesOn() {
+	if !q.Load().RainbowSprites {
 		t.Error("RainbowSprites=true lost across reload")
 	}
-	if !q.LoopPreanimOn() {
-		t.Error("LoopPreanim=true lost across reload (default-OFF plain bool must persist an explicit ON)")
-	}
-	if !q.ShowRecordButtonOn() {
+	if !q.Load().ShowRecordButton {
 		t.Error("ShowRecordButton=true lost across reload")
 	}
-	if q.DragLayoutOn() {
+	if q.Load().DragLayout {
 		t.Error("DragLayout=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.FriendButtonShown() {
+	if q.Load().ShowFriendButton {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.EventDrivenLoopOn() {
-		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
-	}
-	if !q.FrameLimiterDisabled() {
+	if !q.Load().DisableFrameLimiter {
 		t.Error("DisableFrameLimiter=true lost across reload")
 	}
-	if q.MotionRedrawPerEventOn() {
+	if q.Load().MotionRedrawPerEvent {
 		t.Error("MotionRedrawPerEvent=false lost across reload (default-ON *bool must persist an explicit OFF)")
 	}
-	if got := q.IdleFPS(); got != FPSUnlimited {
+	if got := q.Load().IdleFPS(); got != FPSUnlimited {
 		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
 	}
-	if got := q.PreviewHeightPx(); got != 512 {
+	if got := q.Load().PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
 	}
-	if !q.UpdateChannelExperimentalOn() {
-		t.Error("UpdateExperimental=true lost across reload (the channel swap must stick)")
+	if !q.Load().UpdatePrerelease {
+		t.Error("UpdatePrerelease=true lost across reload (the pre-release choice must stick)")
 	}
-	if q.RainbowSpeed() != 30 || q.RainbowVividness() != 95 {
-		t.Errorf("rainbow speed/vividness lost: %d/%d, want 30/95", q.RainbowSpeed(), q.RainbowVividness())
+	if q.Load().RainbowSpriteSpeed != 30 || q.Load().RainbowSpriteVividness != 95 {
+		t.Errorf("rainbow speed/vividness lost: %d/%d, want 30/95", q.Load().RainbowSpriteSpeed, q.Load().RainbowSpriteVividness)
 	}
-	if !q.RainbowSpriteGlowOn() || !q.RainbowPairDesyncOn() || !q.SpriteSolidTintOn() {
+	if !q.Load().RainbowSpriteGlow || !q.Load().RainbowPairDesync || !q.Load().SpriteSolidTint {
 		t.Error("a sprite-FX toggle (glow/desync/solid) lost across reload")
 	}
-	if !q.RainbowPerCharOn() || !q.SpriteWobbleOn() || !q.SpriteSpinOn() {
+	if !q.Load().RainbowPerChar || !q.Load().SpriteWobble || !q.Load().SpriteSpin {
 		t.Error("a wacky-FX toggle (per-char/wobble/spin) lost across reload")
 	}
-	if q.SpriteTintColorRGB() != 0x112233 {
-		t.Errorf("SpriteTintColor lost: %06x, want 112233", q.SpriteTintColorRGB())
+	if q.Load().SpriteTintColorRGB() != 0x112233 {
+		t.Errorf("SpriteTintColor lost: %06x, want 112233", q.Load().SpriteTintColorRGB())
 	}
 }
 
@@ -1105,15 +1437,15 @@ func TestShownameKeyBinds(t *testing.T) {
 	p.SetShownameKeyBind("F1", "Nick") // key lowercased on store
 	p.SetShownameKeyBind("f2", "Edgey")
 
-	if b := p.ShownameKeyBinds(); b["f1"] != "Nick" || b["f2"] != "Edgey" {
+	if b := p.Load().ShownameKeyBinds(); b["f1"] != "Nick" || b["f2"] != "Edgey" {
 		t.Fatalf("binds = %v, want f1->Nick f2->Edgey", b)
 	}
 	p.SetShownameKeyBind("f1", "") // empty showname clears the bind
-	if p.ShownameKeyBinds()["f1"] != "" {
+	if p.Load().ShownameKeyBinds()["f1"] != "" {
 		t.Error("f1 bind should be cleared")
 	}
 	p.RemoveShownamePreset("Edgey") // removing a preset drops its bind
-	if p.ShownameKeyBinds()["f2"] != "" {
+	if p.Load().ShownameKeyBinds()["f2"] != "" {
 		t.Error("removing Edgey must drop its f2 keybind")
 	}
 }
@@ -1134,7 +1466,7 @@ func TestShownameKeyBindRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.ShownameKeyBinds()["f1"]; got != "Nick" {
+	if got := q.Load().ShownameKeyBinds()["f1"]; got != "Nick" {
 		t.Errorf("keybind lost across save/load: f1 = %q, want Nick", got)
 	}
 }
@@ -1143,16 +1475,16 @@ func TestShownameKeyBindRoundTrip(t *testing.T) {
 // empty phrase clears, and a bind survives save→load.
 func TestICPhraseKeyBinds(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ICPhraseBinds() != nil {
+	if p.Load().ICPhraseBinds() != nil {
 		t.Error("no IC-phrase binds by default")
 	}
 	p.SetICPhraseKey("E", "Happy Pride Month") // key lowercased on store
 	p.SetICPhraseKey("q", "Objection!")
-	if b := p.ICPhraseBinds(); b["e"] != "Happy Pride Month" || b["q"] != "Objection!" {
+	if b := p.Load().ICPhraseBinds(); b["e"] != "Happy Pride Month" || b["q"] != "Objection!" {
 		t.Fatalf("binds = %v, want e->phrase q->Objection!", b)
 	}
 	p.SetICPhraseKey("e", "") // an empty phrase clears the bind
-	if p.ICPhraseBinds()["e"] != "" {
+	if p.Load().ICPhraseBinds()["e"] != "" {
 		t.Error("empty phrase should clear the e bind")
 	}
 
@@ -1169,7 +1501,7 @@ func TestICPhraseKeyBinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := r.ICPhraseBinds()["f1"]; got != "Take that!" {
+	if got := r.Load().ICPhraseBinds()["f1"]; got != "Take that!" {
 		t.Errorf("IC-phrase bind lost across save/load: f1 = %q, want Take that!", got)
 	}
 }
@@ -1178,22 +1510,22 @@ func TestICPhraseKeyBinds(t *testing.T) {
 // dedup, unmute, and survival across save → load.
 func TestMutedSFX(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.IsSFXMuted("sfx-stab") {
+	if p.Load().IsSFXMuted("sfx-stab") {
 		t.Error("nothing should be muted initially")
 	}
 	if !p.MuteSFX("SFX-Stab") { // stored lowercase
 		t.Error("MuteSFX should report a change")
 	}
-	if !p.IsSFXMuted("sfx-stab") || !p.IsSFXMuted("SFX-STAB") {
+	if !p.Load().IsSFXMuted("sfx-stab") || !p.Load().IsSFXMuted("SFX-STAB") {
 		t.Error("a muted SFX should match case-insensitively")
 	}
 	if p.MuteSFX("sfx-stab") {
 		t.Error("re-muting the same SFX must be a no-op")
 	}
-	if l := p.MutedSFXList(); len(l) != 1 || l[0] != "sfx-stab" {
+	if l := p.Load().MutedSFXList(); len(l) != 1 || l[0] != "sfx-stab" {
 		t.Fatalf("list = %v, want [sfx-stab]", l)
 	}
-	if !p.UnmuteSFX("sfx-stab") || p.IsSFXMuted("sfx-stab") {
+	if !p.UnmuteSFX("sfx-stab") || p.Load().IsSFXMuted("sfx-stab") {
 		t.Error("UnmuteSFX should clear it")
 	}
 }
@@ -1213,7 +1545,7 @@ func TestMutedSFXRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.IsSFXMuted("sfx-stab") {
+	if !q.Load().IsSFXMuted("sfx-stab") {
 		t.Error("muted SFX lost across save/load")
 	}
 }
@@ -1222,22 +1554,22 @@ func TestMutedSFXRoundTrip(t *testing.T) {
 // dedup, and survival across save → load.
 func TestSfxFavorites(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.IsSfxFavorite("sfx-stab") {
+	if p.Load().IsSfxFavorite("sfx-stab") {
 		t.Error("nothing should be starred initially")
 	}
 	if !p.ToggleSfxFavorite("SFX-Stab") { // stored lowercase; reports now-starred
 		t.Error("first toggle should report starred (true)")
 	}
-	if !p.IsSfxFavorite("sfx-stab") || !p.IsSfxFavorite("SFX-STAB") {
+	if !p.Load().IsSfxFavorite("sfx-stab") || !p.Load().IsSfxFavorite("SFX-STAB") {
 		t.Error("a starred SFX should match case-insensitively")
 	}
-	if l := p.SfxFavoritesList(); len(l) != 1 || l[0] != "sfx-stab" {
+	if l := p.Load().SfxFavoritesList(); len(l) != 1 || l[0] != "sfx-stab" {
 		t.Fatalf("list = %v, want [sfx-stab]", l)
 	}
 	if p.ToggleSfxFavorite("sfx-stab") { // toggling again unstars; reports false
 		t.Error("second toggle should report unstarred (false)")
 	}
-	if p.IsSfxFavorite("sfx-stab") {
+	if p.Load().IsSfxFavorite("sfx-stab") {
 		t.Error("toggle should have unstarred it")
 	}
 }
@@ -1257,7 +1589,7 @@ func TestSfxFavoritesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.IsSfxFavorite("sfx-stab") {
+	if !q.Load().IsSfxFavorite("sfx-stab") {
 		t.Error("starred SFX lost across save/load")
 	}
 }
@@ -1266,7 +1598,7 @@ func TestSfxFavoritesRoundTrip(t *testing.T) {
 // deduped case-insensitively), remove a seeded default, and the cap.
 func TestModReasonTemplates(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	def := p.ModReasonTemplatesList()
+	def := p.Load().ModReasonTemplatesList()
 	if len(def) == 0 {
 		t.Fatal("an unset list must return the built-in defaults")
 	}
@@ -1276,14 +1608,14 @@ func TestModReasonTemplates(t *testing.T) {
 	if p.AddModReasonTemplate("metagaming") { // case-insensitive duplicate
 		t.Error("dup add must be a no-op")
 	}
-	list := p.ModReasonTemplatesList()
+	list := p.Load().ModReasonTemplatesList()
 	if len(list) != len(def)+1 || list[len(list)-1] != "Metagaming" {
 		t.Errorf("after add = %v, want the defaults + Metagaming", list)
 	}
 	if !p.RemoveModReasonTemplate("spam") { // case-insensitive remove of the "Spam" default
 		t.Error("removing a seeded default should work")
 	}
-	for _, s := range p.ModReasonTemplatesList() {
+	for _, s := range p.Load().ModReasonTemplatesList() {
 		if s == "Spam" {
 			t.Error("Spam should be gone after removal")
 		}
@@ -1292,8 +1624,8 @@ func TestModReasonTemplates(t *testing.T) {
 	for i := 0; i < modReasonTemplatesCap+10; i++ {
 		p.AddModReasonTemplate("r" + strconv.Itoa(i))
 	}
-	if len(p.ModReasonTemplatesList()) > modReasonTemplatesCap {
-		t.Errorf("list grew to %d, want capped at %d", len(p.ModReasonTemplatesList()), modReasonTemplatesCap)
+	if len(p.Load().ModReasonTemplatesList()) > modReasonTemplatesCap {
+		t.Errorf("list grew to %d, want capped at %d", len(p.Load().ModReasonTemplatesList()), modReasonTemplatesCap)
 	}
 }
 
@@ -1304,102 +1636,218 @@ func TestModReasonTemplates(t *testing.T) {
 func TestResetPowerUser(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	// Scramble every knob off its default.
-	p.SetValidateTLSCerts(true)
+	p.Update(func(sn *Settings) { sn.ValidateTLSCerts = true })
 	p.SetAssetOriginHeader("https://a.example")
 	p.SetWSOriginHeader("https://b.example")
 	p.SetSpriteLoadMode(SpriteLoadWait)
 	p.SetSpriteWaitMs(4000)
-	p.SetSpriteWaitPair(true)
-	p.SetSpriteWaitPreanim(true)
-	p.SetShoutBypassQueue(false) // off the default (ON) — the nuke must restore it
-	p.SetHoldPrevMaxAgeMs(9000)
-	p.SetHoldDebugTint(true)
-	p.SetHotkeysEnabled(true)
-	p.SetShoutDurationMs(1000)
-	p.SetPreanimTimeoutMs(5000)
-	p.SetICQueueCap(128)
-	p.SetCatchUpLingerMs(250)
-	p.SetThumbCache(true)
-	p.SetThumbHeightPx(120)
-	p.SetThumbQuality(40)
-	p.SetThumbBudgetMiB(256)
-	p.SetNotFoundTTLSec(60)
-	p.SetAdaptiveLatMultiple(4)
-	p.SetSpriteDownscaleOff(true)
-	p.SetSpriteDownscalePct(150)
-	p.SetAnimatedSpriteCap(480)
-	p.SetTexBudgetMiB(96)
-	p.SetCrossfadeMs(300)
-	p.SetFPSCap(144)
-	p.SetIdleFPS(60)
-	p.SetUnfocusedFPS(30)
-	p.SetEventDrivenLoop(false)
-	p.SetFrameLimiterDisabled(true)  // #5 bypass — must revert to OFF on nuke
-	p.SetMotionRedrawPerEvent(false) // per-event motion redraw — must revert to its default (ON) on nuke
-	p.SetClipSpritesToStage(false)
-	p.SetProxyMode(ProxyModeManual)
+	p.Update(func(sn *Settings) { sn.SpriteWaitPair = true })
+	p.Update(func(sn *Settings) { sn.SpriteWaitPreanim = true })
+	p.Update(func(sn *Settings) { sn.ShoutBypassQueue = false }) // off the default (ON) — the nuke must restore it
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HoldPrevMaxAgeMsVal =
+
+			9000
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HoldDebugTint =
+
+			true
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HotkeysEnabled =
+
+			true
+
+	})
+
+	p.Update(func(sn *Settings) { sn.ShoutDurationMsVal = 1000 })
+	p.Update(func(sn *Settings) { sn.PreanimTimeoutMsVal = 5000 })
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ICQueueCapVal =
+
+			128
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CatchUpLingerMsVal =
+
+			250
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			NotFoundTTLSecVal =
+
+			60
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AdaptiveLatMultipleVal =
+
+			4
+
+	})
+
+	p.Update(func(sn *Settings) { sn.SpriteDownscaleOff = true })
+	p.Update(func(sn *Settings) { sn.SpriteDownscalePctVal = 150 })
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			AnimatedSpriteCapPxVal =
+
+			480
+
+	})
+
+	p.Update(func(sn *Settings) { sn.TexBudgetMiBVal = 96 })
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			CrossfadeMsVal =
+
+			300
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			FPSCapVal =
+
+			144
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			60
+
+	})
+
+	p.Update(func(sn *Settings) { sn.UnfocusedFPSVal = 30 })
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			DisableFrameLimiter =
+
+			true
+
+	})
+
+	// #5 bypass — must revert to OFF on nuke
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			MotionRedrawPerEvent =
+
+			false
+
+	})
+
+	// per-event motion redraw — must revert to its default (ON) on nuke
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			ClipSpritesToStage =
+
+			false
+
+	})
+
+	p.Update(func(sn *Settings) { sn.ProxyModeVal = ProxyModeManual })
 	p.SetProxyURL("http://proxy.example:8080")
+	p.Update(func(sn *Settings) { sn.ProxyBypass = "lan.test" })
 	p.SetAssetCharCasing(2)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
 	p.ResetPowerUser()
 
-	if p.ValidateTLSCertsOn() || p.AssetOriginHeader() != "" || p.WSOriginHeader() != "" {
+	if p.Load().ValidateTLSCerts || p.Load().AssetOrigin != "" || p.Load().WSOrigin != "" {
 		t.Error("nuke must clear TLS + both Origin overrides")
 	}
-	// Back to "use the machine's setting", NOT to "never proxy": the nuke is a
-	// return to shipped defaults, and shipping with the proxy ignored is the
-	// defect the setting exists to fix.
-	if p.ProxyMode() != ProxyModeSystem || p.ProxyURLValue() != "" {
-		t.Errorf("nuke left proxy mode=%d url=%q, want the system default and no manual URL", p.ProxyMode(), p.ProxyURLValue())
+	// The nuke returns to shipped defaults, which follow the machine's setting.
+	if p.Load().ProxyModeVal != ProxyModeSystem || p.Load().ProxyURL != "" || p.Load().ProxyBypass != "" {
+		t.Errorf("nuke left proxy mode=%d url=%q bypass=%q, want the system default and no manual settings", p.Load().ProxyModeVal, p.Load().ProxyURL, p.Load().ProxyBypass)
 	}
-	if p.AssetCharCasing() != 0 {
-		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.AssetCharCasing())
+	if p.Load().AssetCharCase != 0 {
+		t.Errorf("nuke left character-folder casing at %d, want lowercase", p.Load().AssetCharCase)
 	}
-	if p.SpriteLoadMode() != SpriteLoadDefault || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
-		p.SpriteWaitPairOn() || p.SpriteWaitPreanimOn() {
+	if p.Load().SpriteLoadModeVal != SpriteLoadDefault || p.Load().SpriteWaitMs() != SpriteWaitDefaultMs ||
+		p.Load().SpriteWaitPair || p.Load().SpriteWaitPreanim {
 		t.Error("nuke must reset the loading mode to its default (Default) + the wait knobs")
 	}
-	if !p.ShoutBypassQueueOn() {
+	if !p.Load().ShoutBypassQueue {
 		t.Error("nuke must restore the shout-bypass toggle to its default ON (AO2 parity)")
 	}
-	if p.HoldPrevMaxAgeMs() != 0 || p.HoldDebugTintOn() {
+	if p.Load().HoldPrevMaxAgeMsVal != 0 || p.Load().HoldDebugTint {
 		t.Error("nuke must reset the hold-previous knobs")
 	}
-	if p.HotkeysEnabledOn() {
+	if p.Load().HotkeysEnabled {
 		t.Error("nuke must reset the hotkeys opt-in to its default OFF")
 	}
-	if p.ShoutDurationMs() != 0 || p.PreanimTimeoutMs() != 0 || p.ICQueueCap() != 0 || p.CatchUpLingerMs() != 0 {
+	if p.Load().ShoutDurationMsVal != 0 || p.Load().PreanimTimeoutMsVal != 0 || p.Load().ICQueueCapVal != 0 || p.Load().CatchUpLingerMsVal != 0 {
 		t.Error("nuke must reset the core timings + queue knobs to their defaults")
 	}
-	if !p.ClipSpritesToStageOn() {
+	if !p.Load().ClipSpritesToStage {
 		t.Error("nuke must restore the sprite mask to its default ON")
 	}
-	if p.ThumbCacheOn() || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault || p.ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
-		t.Error("nuke must reset the thumbnail-cache knobs (stored thumbs on disk are untouched — Clear is separate)")
-	}
-	if p.NotFoundTTLSec() != 0 || p.AdaptiveLatMultiple() != 0 {
+	if p.Load().NotFoundTTLSecVal != 0 || p.Load().AdaptiveLatMultipleVal != 0 {
 		t.Error("nuke must reset the network knobs to their 0 = default sentinels")
 	}
-	if p.SpriteDownscaleOffOn() || p.SpriteDownscalePct() != 0 || p.AnimatedSpriteCap() != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
+	if p.Load().SpriteDownscaleOff || p.Load().SpriteDownscalePctVal != 0 || p.Load().AnimatedSpriteCapPxVal != 0 || p.Load().TexBudgetMiB() != TexBudgetDefaultMiB {
 		t.Error("nuke must reset the downscale + texture-budget knobs")
 	}
-	if p.CrossfadeMs() != 0 {
+	if p.Load().CrossfadeMsVal != 0 {
 		t.Error("nuke must reset the crossfade to off")
 	}
-	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
+	if p.Load().FPSCap() != FPSCapDefault || p.Load().IdleFPS() != IdleFPSDefault || p.Load().UnfocusedFPS() != UnfocusedFPSDefault {
 		t.Error("nuke must reset the frame-pacing rates to their defaults")
 	}
-	if !p.EventDrivenLoopOn() {
-		t.Error("nuke must restore the experimental event-driven loop to its default ON")
-	}
-	if p.FrameLimiterDisabled() {
+	if p.Load().DisableFrameLimiter {
 		t.Error("nuke must restore the frame-limiter bypass to its default OFF")
 	}
-	if !p.MotionRedrawPerEventOn() {
+	if !p.Load().MotionRedrawPerEvent {
 		t.Error("nuke must restore per-event motion redraw to its default ON")
 	}
-	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
+	if got := p.Load().ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)
 	}
 }
@@ -1413,7 +1861,7 @@ func TestModDurations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if got := p.ModDurationsList(); len(got) != 0 {
+	if got := p.Load().ModDurationsList(); len(got) != 0 {
 		t.Fatalf("a fresh config must have no custom durations, got %v", got)
 	}
 	if !p.AddModDuration("45m") {
@@ -1426,7 +1874,7 @@ func TestModDurations(t *testing.T) {
 		t.Error("blank add must be a no-op")
 	}
 	p.AddModDuration("2d")
-	if got := p.ModDurationsList(); len(got) != 2 || got[0] != "45m" || got[1] != "2d" {
+	if got := p.Load().ModDurationsList(); len(got) != 2 || got[0] != "45m" || got[1] != "2d" {
 		t.Errorf("after adds = %v, want [45m 2d]", got)
 	}
 	if !p.RemoveModDuration("45m") {
@@ -1438,7 +1886,7 @@ func TestModDurations(t *testing.T) {
 	for i := 0; i < modDurationsCap+10; i++ {
 		p.AddModDuration(strconv.Itoa(i+1) + "h")
 	}
-	if n := len(p.ModDurationsList()); n > modDurationsCap {
+	if n := len(p.Load().ModDurationsList()); n > modDurationsCap {
 		t.Errorf("list grew to %d, want capped at %d", n, modDurationsCap)
 	}
 	if err := p.Close(); err != nil {
@@ -1448,7 +1896,7 @@ func TestModDurations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.ModDurationsList(); len(got) == 0 || got[0] != "2d" {
+	if got := q.Load().ModDurationsList(); len(got) == 0 || got[0] != "2d" {
 		t.Errorf("custom durations lost across save/load: %v", got)
 	}
 }
@@ -1469,7 +1917,7 @@ func TestModReasonTemplatesRoundTrip(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	found := false
-	for _, s := range q.ModReasonTemplatesList() {
+	for _, s := range q.Load().ModReasonTemplatesList() {
 		if s == "Metagaming" {
 			found = true
 		}
@@ -1487,10 +1935,10 @@ func TestShowPairStatusRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	if p.ShowPairStatusOn() {
+	if p.Load().ShowPairStatus {
 		t.Error("ShowPairStatus must default OFF")
 	}
-	p.SetShowPairStatus(true)
+	p.Update(func(sn *Settings) { sn.ShowPairStatus = true })
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -1498,7 +1946,7 @@ func TestShowPairStatusRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.ShowPairStatusOn() {
+	if !q.Load().ShowPairStatus {
 		t.Error("ShowPairStatus lost across save/load (missing copy-on-load line?)")
 	}
 }
@@ -1508,13 +1956,13 @@ func TestShowPairStatusRoundTrip(t *testing.T) {
 // entry (so the map only holds real adjustments).
 func TestBlipVolume(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if v := p.BlipVolumeFor("phoenix"); v != 100 {
+	if v := p.Load().BlipVolumeFor("phoenix"); v != 100 {
 		t.Errorf("unset char = %d, want default 100", v)
 	}
 	if !p.SetBlipVolume("Phoenix", 40) { // stored lowercase
 		t.Error("SetBlipVolume should report a change")
 	}
-	if v := p.BlipVolumeFor("phoenix"); v != 40 {
+	if v := p.Load().BlipVolumeFor("phoenix"); v != 40 {
 		t.Errorf("after set = %d, want 40", v)
 	}
 	if p.SetBlipVolume("phoenix", 40) {
@@ -1523,16 +1971,16 @@ func TestBlipVolume(t *testing.T) {
 	if !p.SetBlipVolume("phoenix", 999) { // clamps to 100 → also resets the entry
 		t.Error("clamped change should report a change")
 	}
-	if v := p.BlipVolumeFor("phoenix"); v != 100 {
+	if v := p.Load().BlipVolumeFor("phoenix"); v != 100 {
 		t.Errorf("clamped-high = %d, want 100", v)
 	}
-	if vols := p.BlipVolumes(); len(vols) != 0 {
+	if vols := p.Load().BlipVolumes(); len(vols) != 0 {
 		t.Errorf("resetting to 100 should clear the entry, got %v", vols)
 	}
 	if !p.SetBlipVolume("edgeworth", -5) { // clamps to 0
 		t.Error("clamp-low should report a change")
 	}
-	if v := p.BlipVolumeFor("edgeworth"); v != 0 {
+	if v := p.Load().BlipVolumeFor("edgeworth"); v != 0 {
 		t.Errorf("clamped-low = %d, want 0", v)
 	}
 	if p.SetBlipVolume("", 50) {
@@ -1555,7 +2003,7 @@ func TestBlipVolumeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if v := q.BlipVolumeFor("phoenix"); v != 25 {
+	if v := q.Load().BlipVolumeFor("phoenix"); v != 25 {
 		t.Errorf("per-char blip scale lost across save/load: %d", v)
 	}
 }
@@ -1592,7 +2040,7 @@ func TestClearLearnedType(t *testing.T) {
 	p.RecordLearned("h.example", TypeDeskOverlay, ExtPNG)
 	p.RecordLearned("h.example", TypeBackground, ExtPNG)
 	p.ClearLearnedType(TypeDeskOverlay)
-	snap := p.LearnedSnapshot()
+	snap := p.Load().LearnedSnapshot()
 	if _, ok := snap[LearnedKey("h.example", TypeDeskOverlay)]; ok {
 		t.Error("ClearLearnedType(DeskOverlay) must drop desk learned entries")
 	}
@@ -1627,7 +2075,7 @@ func TestClampWindowSize(t *testing.T) {
 // clamping included).
 func TestHoldClearDefaults(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	on, key, ms := p.HoldClear()
+	on, key, ms := p.Load().HoldClear()
 	if !on {
 		t.Error("hold-to-clear must default ON")
 	}
@@ -1637,13 +2085,34 @@ func TestHoldClearDefaults(t *testing.T) {
 	if ms != DefaultHoldClearMs {
 		t.Errorf("default ms = %d, want %d", ms, DefaultHoldClearMs)
 	}
-	p.SetHoldClearMs(1 << 20) // over-large clamps to max
-	if _, _, got := p.HoldClear(); got != MaxHoldClearMs {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HoldClearMs =
+
+			1 <<
+
+				20
+
+	})
+
+	// over-large clamps to max
+	if _, _, got := p.Load().HoldClear(); got != MaxHoldClearMs {
 		t.Errorf("ms clamp = %d, want %d", got, MaxHoldClearMs)
 	}
-	p.SetHoldClearOn(false)
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			HoldClearOn =
+
+			false
+
+	})
+
 	p.SetHoldClearKey("Delete")
-	if gotOn, gotKey, _ := p.HoldClear(); gotOn || gotKey != "Delete" {
+	if gotOn, gotKey, _ := p.Load().HoldClear(); gotOn || gotKey != "Delete" {
 		t.Errorf("after edits: on=%v key=%q, want false, Delete", gotOn, gotKey)
 	}
 }
@@ -1652,11 +2121,11 @@ func TestHoldClearDefaults(t *testing.T) {
 // (stock look), and a full round-trip of the five colours + gradient flag.
 func TestExtrasBoxStyle(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if bg, _, _, _, _, grad := p.ExtrasBoxStyle(); bg != "" || grad {
+	if bg, _, _, _, _, grad := p.Load().ExtrasBoxStyle(); bg != "" || grad {
 		t.Errorf("default ExtrasBoxStyle = bg %q grad %v, want blank/false", bg, grad)
 	}
 	p.SetExtrasBoxStyle("101018", "000000", "78aaff", "202030", "ffffff", true)
-	bg, bg2, border, title, text, grad := p.ExtrasBoxStyle()
+	bg, bg2, border, title, text, grad := p.Load().ExtrasBoxStyle()
 	if bg != "101018" || bg2 != "000000" || border != "78aaff" || title != "202030" || text != "ffffff" || !grad {
 		t.Errorf("round-trip = %q %q %q %q %q %v", bg, bg2, border, title, text, grad)
 	}
@@ -1676,7 +2145,7 @@ func TestShownamePresets(t *testing.T) {
 	if p.AddShownamePreset("phoenix") { // case-insensitive duplicate
 		t.Error("duplicate AddShownamePreset must not change")
 	}
-	if got := p.ShownameList(); len(got) != 2 {
+	if got := p.Load().ShownameList(); len(got) != 2 {
 		t.Fatalf("ShownameList = %v, want 2", got)
 	}
 	if !p.RemoveShownamePreset("Phoenix") {
@@ -1689,7 +2158,7 @@ func TestShownamePresets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got := q.ShownameList(); len(got) != 1 || got[0] != "Edgeworth" {
+	if got := q.Load().ShownameList(); len(got) != 1 || got[0] != "Edgeworth" {
 		t.Errorf("after reload: ShownameList = %v, want [Edgeworth]", got)
 	}
 }
@@ -1704,30 +2173,36 @@ func TestShownamePresets(t *testing.T) {
 // Native, not Custom.
 func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("ThemeFitMode default = %d, want Native(%d)", p.ThemeFitMode(), ThemeFitNative)
+	if p.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("ThemeFitMode default = %d, want Native(%d)", p.Load().ThemeFit, ThemeFitNative)
 	}
-	if p.ThemeZoom() != DefaultThemeZoom {
-		t.Errorf("ThemeZoom default = %d, want %d", p.ThemeZoom(), DefaultThemeZoom)
+	if p.Load().ThemeZoom() != DefaultThemeZoom {
+		t.Errorf("ThemeZoom default = %d, want %d", p.Load().ThemeZoom(), DefaultThemeZoom)
 	}
-	if !p.PlainLobbyOn() {
+	if !p.Load().PlainLobby {
 		t.Error("PlainLobbyOn default must be true (readable server list)")
 	}
 	p.SetThemeFit(99) // out of range → clamps to the last mode (Native)
-	if p.ThemeFitMode() != ThemeFitNative {
-		t.Errorf("SetThemeFit clamp = %d, want Native(%d)", p.ThemeFitMode(), ThemeFitNative)
+	if p.Load().ThemeFit != ThemeFitNative {
+		t.Errorf("SetThemeFit clamp = %d, want Native(%d)", p.Load().ThemeFit, ThemeFitNative)
 	}
 	p.SetThemeFit(-1) // below the first mode → clamps to Stretch(0)
-	if p.ThemeFitMode() != ThemeFitStretch {
-		t.Errorf("SetThemeFit low clamp = %d, want Stretch(%d)", p.ThemeFitMode(), ThemeFitStretch)
+	if p.Load().ThemeFit != ThemeFitStretch {
+		t.Errorf("SetThemeFit low clamp = %d, want Stretch(%d)", p.Load().ThemeFit, ThemeFitStretch)
 	}
-	p.SetThemeFit(ThemeFitCustom) // restore a mid mode so the zoom/pan checks below are meaningful
-	p.SetThemeFitZoom(1 << 20)
-	if p.ThemeZoom() != MaxThemeZoom {
-		t.Errorf("zoom clamp = %d, want %d", p.ThemeZoom(), MaxThemeZoom)
+	p.SetThemeFit(ThemeFitCustom)
+	{
+		pv1 := // restore a mid mode so the zoom/pan checks below are meaningful
+			1 << 20
+		p.Update(func(sn *Settings) {
+			sn.ThemeFitZoom = pv1
+		})
+	}
+	if p.Load().ThemeZoom() != MaxThemeZoom {
+		t.Errorf("zoom clamp = %d, want %d", p.Load().ThemeZoom(), MaxThemeZoom)
 	}
 	p.SetThemeFitPan(999, -999)
-	if x, y := p.ThemePan(); x != MaxThemePan || y != -MaxThemePan {
+	if x, y := p.Load().ThemePan(); x != MaxThemePan || y != -MaxThemePan {
 		t.Errorf("pan clamp = (%d,%d), want (%d,%d)", x, y, MaxThemePan, -MaxThemePan)
 	}
 }
@@ -1745,41 +2220,97 @@ func TestFPSKnobDomain(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 	// A fresh (absent-key) prefs resolves to the defaults, never 0/off.
-	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
+	if p.Load().FPSCap() != FPSCapDefault || p.Load().IdleFPS() != IdleFPSDefault || p.Load().UnfocusedFPS() != UnfocusedFPSDefault {
 		t.Fatalf("fresh defaults = %d/%d/%d, want %d/%d/%d",
-			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS(), FPSCapDefault, IdleFPSDefault, UnfocusedFPSDefault)
+			p.Load().FPSCap(), p.Load().IdleFPS(), p.Load().UnfocusedFPS(), FPSCapDefault, IdleFPSDefault, UnfocusedFPSDefault)
 	}
 	// Below the old floors is now allowed, not clamped up.
-	p.SetFPSCap(5)
-	p.SetIdleFPS(2)
-	p.SetUnfocusedFPS(1)
-	if p.FPSCap() != 5 || p.IdleFPS() != 2 || p.UnfocusedFPS() != 1 {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			FPSCapVal =
+
+			5
+
+	})
+
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			2
+
+	})
+
+	p.Update(func(sn *Settings) { sn.UnfocusedFPSVal = 1 })
+	if p.Load().FPSCap() != 5 || p.Load().IdleFPS() != 2 || p.Load().UnfocusedFPS() != 1 {
 		t.Errorf("low rates clamped: cap=%d idle=%d unfocused=%d, want 5/2/1",
-			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS())
+			p.Load().FPSCap(), p.Load().IdleFPS(), p.Load().UnfocusedFPS())
 	}
 	// Out-of-range positives still clamp to the max.
-	p.SetIdleFPS(99999)
-	if got := p.IdleFPS(); got != IdleFPSMax {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			99999
+
+	})
+
+	if got := p.Load().IdleFPS(); got != IdleFPSMax {
 		t.Errorf("idle over-max = %d, want clamp to %d", got, IdleFPSMax)
 	}
 	// The Settings "0"/off maps to FPSOff; ∞ to FPSUnlimited. Both are held live
 	// and must survive the disk round-trip un-normalized.
-	p.SetIdleFPS(FPSOff)
-	p.SetUnfocusedFPS(FPSOff)
-	p.SetFPSCap(FPSUnlimited)
-	if p.IdleFPS() != FPSOff || p.UnfocusedFPS() != FPSOff || p.FPSCap() != FPSUnlimited {
-		t.Fatalf("sentinels not held live: idle=%d unfocused=%d cap=%d", p.IdleFPS(), p.UnfocusedFPS(), p.FPSCap())
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			FPSOff
+
+	})
+
+	p.Update(func(sn *Settings) { sn.UnfocusedFPSVal = FPSOff })
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			FPSCapVal =
+
+			FPSUnlimited
+
+	})
+
+	if p.Load().IdleFPS() != FPSOff || p.Load().UnfocusedFPS() != FPSOff || p.Load().FPSCap() != FPSUnlimited {
+		t.Fatalf("sentinels not held live: idle=%d unfocused=%d cap=%d", p.Load().IdleFPS(), p.Load().UnfocusedFPS(), p.Load().FPSCap())
 	}
 	// Input-grace frames: default 1, clamps into range, survives the round-trip.
-	if got := p.InputGraceFrames(); got != InputGraceFramesDefault {
+	if got := p.Load().InputGraceFrames(); got != InputGraceFramesDefault {
 		t.Errorf("input-grace default = %d, want %d", got, InputGraceFramesDefault)
 	}
-	p.SetInputGraceFrames(99999)
-	if got := p.InputGraceFrames(); got != InputGraceFramesMax {
+	p.Update(func(
+		sn *Settings) {
+
+		sn.
+			InputGraceFramesVal =
+
+			99999
+
+	})
+
+	if got := p.Load().InputGraceFrames(); got != InputGraceFramesMax {
 		t.Errorf("input-grace over-max = %d, want clamp to %d", got, InputGraceFramesMax)
 	}
-	p.SetInputGraceFrames(0) // 0 = OFF — must read back as 0 and survive as 0 (NOT snap to the default)
-	if got := p.InputGraceFrames(); got != 0 {
+	p.SetInputGraceFrames(0)
+
+	// 0 = OFF — must read back as 0 and survive as 0 (NOT snap to the default)
+	if got := p.Load().InputGraceFrames(); got != 0 {
 		t.Errorf("input-grace off = %d, want 0", got)
 	}
 	if err := p.Close(); err != nil { // flush + release before reload
@@ -1789,16 +2320,16 @@ func TestFPSKnobDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if q.IdleFPS() != FPSOff {
-		t.Errorf("idle off (FPSOff) lost across reload: %d, want %d (0 = off must persist)", q.IdleFPS(), FPSOff)
+	if q.Load().IdleFPS() != FPSOff {
+		t.Errorf("idle off (FPSOff) lost across reload: %d, want %d (0 = off must persist)", q.Load().IdleFPS(), FPSOff)
 	}
-	if q.UnfocusedFPS() != FPSOff {
-		t.Errorf("unfocused off (FPSOff) lost across reload: %d, want %d", q.UnfocusedFPS(), FPSOff)
+	if q.Load().UnfocusedFPS() != FPSOff {
+		t.Errorf("unfocused off (FPSOff) lost across reload: %d, want %d", q.Load().UnfocusedFPS(), FPSOff)
 	}
-	if q.FPSCap() != FPSUnlimited {
-		t.Errorf("active ∞ lost across reload: %d, want %d", q.FPSCap(), FPSUnlimited)
+	if q.Load().FPSCap() != FPSUnlimited {
+		t.Errorf("active ∞ lost across reload: %d, want %d", q.Load().FPSCap(), FPSUnlimited)
 	}
-	if q.InputGraceFrames() != 0 {
-		t.Errorf("input-grace OFF lost across reload: %d, want 0 (off must persist, not snap to the default)", q.InputGraceFrames())
+	if q.Load().InputGraceFrames() != 0 {
+		t.Errorf("input-grace OFF lost across reload: %d, want 0 (off must persist, not snap to the default)", q.Load().InputGraceFrames())
 	}
 }

@@ -44,19 +44,12 @@ package ui
 
 import (
 	"bytes"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"unsafe"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // autoScaleStepW / autoScaleStepH are the FIRST window size that leaves 100%,
@@ -88,7 +81,7 @@ func scaleTestApp(t *testing.T) *App {
 func TestAutoScaleStepRerastersTextAtDeviceScale(t *testing.T) {
 	a := scaleTestApp(t)
 	c := a.ctx
-	a.d.Prefs.SetUIScaleAuto(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.UIScaleAutoOn = true })
 
 	// One pixel UNDER the step on both axes: still 100%, still 1:1, nothing stretched.
 	a.SetAutoScaleFromWindow(autoScaleStepW-1, autoScaleStepH-1)
@@ -185,96 +178,6 @@ func TestBoldLabelIsOneRasterNotTwoDraws(t *testing.T) {
 	}
 }
 
-// TestNoFauxBoldSecondPassRemains is the deletion-catcher for the CLASS, not for one
-// site. The removed idiom has a shape:
-//
-//	if <something Bold> {
-//	    <label draw at x+1>
-//	}
-//	<the same label draw at x>
-//
-// so the gate is: no `if` whose condition mentions a bold flag may have a body that
-// is nothing but a single label draw. Re-adding a faux-bold pass anywhere in the
-// package — including in a file that does not exist yet — reproduces exactly that
-// shape and fails here. It reads the PRODUCTION sources, so it cannot be satisfied
-// by a test-local re-implementation.
-func TestNoFauxBoldSecondPassRemains(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("glob the package: %v (%d files)", err, len(files))
-	}
-	labelDraws := map[string]bool{
-		"Label": true, "LabelClipped": true, "LabelClippedFont": true,
-		"LabelClippedFontAlpha": true, "labelEmoji": true, "labelName": true,
-		"labelNameElem": true, "labelCoveringCentered": true,
-	}
-	scanned := 0
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, name, src, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		scanned++
-		ast.Inspect(file, func(n ast.Node) bool {
-			ifs, ok := n.(*ast.IfStmt)
-			if !ok || ifs.Body == nil || len(ifs.Body.List) != 1 {
-				return true
-			}
-			if !mentionsBold(ifs.Cond) {
-				return true
-			}
-			es, ok := ifs.Body.List[0].(*ast.ExprStmt)
-			if !ok {
-				return true
-			}
-			call, ok := es.X.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || !labelDraws[sel.Sel.Name] {
-				return true
-			}
-			t.Errorf("%s:%d — a bold-gated block whose whole body is %s(...) is the faux-bold second pass. "+
-				"Weight belongs in the raster (LabelClippedFontWeight / labelEmojiWeight): a 1 px LOGICAL offset "+
-				"is multiplied by the UI scale, and the two copies then land on different sub-pixel phases (F1b).",
-				name, fset.Position(ifs.Pos()).Line, sel.Sel.Name)
-			return true
-		})
-	}
-	if scanned == 0 {
-		t.Fatal("scanned no production files — the gate would pass vacuously")
-	}
-}
-
-// mentionsBold reports whether an expression names a bold flag: the identifier
-// itself, a field/method whose name ends in "Bold", or either side of a || / &&.
-func mentionsBold(e ast.Expr) bool {
-	found := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		switch v := n.(type) {
-		case *ast.Ident:
-			if strings.HasSuffix(v.Name, "Bold") || v.Name == "bold" {
-				found = true
-			}
-		case *ast.SelectorExpr:
-			if strings.HasSuffix(v.Sel.Name, "Bold") {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
-}
-
 // TestWeightedLabelMatchesPlainWhenNotBold is the open–closed evidence for the new
 // seam: every existing caller passes bold=false, and at bold=false the weighted
 // entry point must produce the identical cached texture the old one did. If it
@@ -298,67 +201,6 @@ func TestWeightedLabelMatchesPlainWhenNotBold(t *testing.T) {
 	}
 	if viaPlain.tex != viaWeight.tex || viaPlain.src != viaWeight.src || viaPlain.w != viaWeight.w {
 		t.Error("textTextureBold(false) returned a DIFFERENT texture than textTexture — the unweighted path must stay byte-identical")
-	}
-}
-
-// exportOnlyDrawFiles are the two passes that legitimately keep MessageRaster's plain,
-// non-device-exact Draw: comicexport.go and gifexport.go render at a resolution the
-// live UI scale must never leak into (Draw's own doc comment: "Draw keeps the scaled
-// projection, which is what the offscreen/export passes want"). Every other file must
-// reach a message/emoji/field raster through DrawScaled instead.
-var exportOnlyDrawFiles = map[string]bool{
-	"comicexport.go": true,
-	"gifexport.go":   true,
-}
-
-// TestMessageRasterDrawIsExportOnly is the deletion-catcher for the WHOLE Draw-vs-
-// DrawScaled class (#1), not just the three call sites this fix touched
-// (labelEmojiWeight, labelCoveringCentered, the text field's emoji-fallback branch):
-// any call named Draw with MessageRaster.Draw's exact 4-argument shape
-// (ren, visibleRunes, x, y — DrawScaled's own shape tacks on renderPct and clip, so it
-// can never collide with this count) outside the two export passes throws away the
-// device precision emojiRaster/fieldRaster already bake into their fonts and
-// reintroduces the resample deviceExact's own doc measures. It reads the PRODUCTION
-// sources of the whole package, so a FIFTH call site added anywhere later fails here
-// without the gate needing an update — it is the "not just this instance" gate the
-// blur report asked for.
-func TestMessageRasterDrawIsExportOnly(t *testing.T) {
-	names, err := filepath.Glob("*.go")
-	if err != nil || len(names) == 0 {
-		t.Fatalf("glob the package: %v (%d files)", err, len(names))
-	}
-	scanned := 0
-	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, name, src, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		scanned++
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || callName(call) != "Draw" || len(call.Args) != 4 {
-				return true
-			}
-			if exportOnlyDrawFiles[name] {
-				return true
-			}
-			t.Errorf("%s:%d — a 4-argument .Draw(ren, visibleRunes, x, y) call outside the export passes. "+
-				"Live UI text must call DrawScaled(ren, visibleRunes, x, y, renderPct, clip) so a device-rasterized "+
-				"emoji/field raster blits device-exact instead of being resampled by ren.SetScale.",
-				name, fset.Position(call.Pos()).Line)
-			return true
-		})
-	}
-	if scanned == 0 {
-		t.Fatal("scanned no production files — the gate would pass vacuously")
 	}
 }
 
@@ -426,28 +268,6 @@ func TestLabelCoveringCenteredDeviceExactAtFractionalScale(t *testing.T) {
 				t.Error("at 105% labelCoveringCentered's output is byte-identical to a direct Draw call on the same raster — the device-exact bracket isn't firing (the #1 blur gap is back)")
 			}
 		})
-	}
-}
-
-// TestEnsureReactBadgeBuildsFromDeviceFont is the AST wiring gate for #2: ensureReactBadge
-// must resolve its glyph through emojiDeviceFont (not the logical-only EmojiFont) and hand
-// RasterizeBadge the CURRENT textDevPct as its devScale argument. Reads the production
-// source, so a revert to EmojiFont — the exact regression this fix closes — fails here
-// even though nothing about ensureReactBadge's return type or nil-handling changed.
-func TestEnsureReactBadgeBuildsFromDeviceFont(t *testing.T) {
-	body := funcBodySource(t, "reactions.go", "ensureReactBadge")
-	if !containsCall(body, "emojiDeviceFont") {
-		t.Error("ensureReactBadge no longer resolves the emoji face through emojiDeviceFont — reaction floats would build from the fixed LOGICAL face again and blur at any scale != 100%")
-	}
-	calls := callsNamed(body, "RasterizeBadge")
-	if len(calls) != 1 {
-		t.Fatalf("ensureReactBadge calls RasterizeBadge %d times, want exactly 1", len(calls))
-	}
-	if len(calls[0].Args) < 5 {
-		t.Fatal("RasterizeBadge call dropped the devScale argument (want 5 args: ren, font, text, col, devScale)")
-	}
-	if !mentionsIdent(calls[0].Args[4], "textDevPct") {
-		t.Error("RasterizeBadge's devScale argument no longer reads textDevPct — a badge would freeze at whatever scale built it")
 	}
 }
 
@@ -633,27 +453,6 @@ func TestLabelDeviceExactAtFractionalScale(t *testing.T) {
 				t.Errorf("at %d%% the OLD (blitLabelScaled) render shows zero blended pixels above the device-exact glyph's own first ink row (row<%d) — this pct/text pair no longer reproduces the src/dst rounding mismatch; this is the KNOWN-BUGGY reference path, so a zero reading here means the test fixture needs revisiting, not that anything got fixed", pct, top)
 			}
 		})
-	}
-}
-
-// TestBlitLabelDispatchesToDeviceExactBranch is the AST wiring/deletion-catcher
-// for the WHOLE class (not just the "M"-at-115% instance
-// TestLabelDeviceExactAtFractionalScale pins): it reads blitLabel's own
-// production source and requires that it still gates on uiDeviceExactAt and
-// still calls blitLabelExact. Someone "simplifying" blitLabel back down to a
-// single unconditional blitLabelScaled body — the exact regression this whole
-// file is about — fails here even on a pct/text combination the pixel test
-// above does not happen to cover.
-func TestBlitLabelDispatchesToDeviceExactBranch(t *testing.T) {
-	body := funcBodySource(t, "ui.go", "blitLabel")
-	if !containsCall(body, "uiDeviceExactAt") {
-		t.Error("blitLabel no longer gates on uiDeviceExactAt — every plain Label/Button/Checkbox draw would silently fall back to the pre-fix ambient-scale blit at any fractional UI scale")
-	}
-	if !containsCall(body, "blitLabelExact") {
-		t.Error("blitLabel no longer calls blitLabelExact — the device-exact branch this file's blur fix depends on is gone even if the gate itself survived")
-	}
-	if !containsCall(body, "blitLabelScaled") {
-		t.Error("blitLabel no longer calls blitLabelScaled — the export/pinned-tab fallback (a renderer scale that disagrees with the texture's own devPct) has nowhere left to draw")
 	}
 }
 

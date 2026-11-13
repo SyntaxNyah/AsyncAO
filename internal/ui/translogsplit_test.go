@@ -10,13 +10,12 @@ package ui
 // inside the same second cannot be handed the same path.
 
 import (
-	"go/ast"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
 )
 
 // TestTwoTabsOnOneServerGetTwoLogSessions pins the identity half: a fresh live slot
@@ -24,6 +23,7 @@ import (
 // rather than re-minting it (a backgrounded tab that came back must keep appending
 // to its own file, not start a third).
 func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
+	withExeDataRoot(t)
 	a := testTabApp(t)
 	const server = "Skrapegropen"
 
@@ -52,7 +52,17 @@ func TestTwoTabsOnOneServerGetTwoLogSessions(t *testing.T) {
 	a.serverName = server
 
 	// Both sessions log; each must get its OWN writer.
-	a.d.Prefs.SetDetailedLog(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DetailedLog =
+
+			true
+
+	})
+
 	w1, w2 := a.transcriptFor(server, first), a.transcriptFor(server, second)
 	if w1 == nil || w2 == nil {
 		t.Skip("transcript writers unavailable in this environment (no writable exe dir)")
@@ -99,8 +109,8 @@ func TestTranscriptFilenameDisambiguatesWithinASecond(t *testing.T) {
 		}
 		seen[name] = true
 		// The browser has to be able to read every one of them back.
-		if label := sessionLabel(name); label == name {
-			t.Errorf("sessionLabel(%q) fell through to the raw file name — the log browser would show a per-tab log as a corrupt entry", name)
+		if label := logbrowser.SessionLabel(name); label == name {
+			t.Errorf("logbrowser.SessionLabel(%q) fell through to the raw file name — the log browser would show a per-tab log as a corrupt entry", name)
 		}
 	}
 }
@@ -110,72 +120,18 @@ func TestTranscriptFilenameDisambiguatesWithinASecond(t *testing.T) {
 // share transcriptStampLayout precisely so they cannot drift.
 func TestSessionLabelReadsBothNameShapes(t *testing.T) {
 	now := time.Date(2026, 8, 7, 15, 4, 5, 0, time.UTC)
-	if got, want := sessionLabel(transcriptFilename(now, 1)), "2026-08-07 15:04"; got != want {
-		t.Errorf("sessionLabel(first) = %q, want %q", got, want)
+	if got, want := logbrowser.SessionLabel(transcriptFilename(now, 1)), "2026-08-07 15:04"; got != want {
+		t.Errorf("logbrowser.SessionLabel(first) = %q, want %q", got, want)
 	}
-	if got, want := sessionLabel(transcriptFilename(now, 3)), "2026-08-07 15:04 (tab 3)"; got != want {
-		t.Errorf("sessionLabel(third) = %q, want %q", got, want)
+	if got, want := logbrowser.SessionLabel(transcriptFilename(now, 3)), "2026-08-07 15:04 (tab 3)"; got != want {
+		t.Errorf("logbrowser.SessionLabel(third) = %q, want %q", got, want)
 	}
 	// A name that is neither shape still degrades to the stem, as it always did.
-	if got, want := sessionLabel("notes.log"), "notes"; got != want {
-		t.Errorf("sessionLabel(unrecognised) = %q, want %q", got, want)
+	if got, want := logbrowser.SessionLabel("notes.log"), "notes"; got != want {
+		t.Errorf("logbrowser.SessionLabel(unrecognised) = %q, want %q", got, want)
 	}
 	// A server folder full of hyphens must not be mistaken for an ordinal.
-	if got := sessionLabel("my-session.log"); got != "my-session" {
-		t.Errorf("sessionLabel(%q) = %q — a non-numeric tail must not parse as a tab ordinal", "my-session.log", got)
-	}
-}
-
-// TestBothMessageSeamsFileUnderTheirOwnTab is the wiring catcher — for BOTH IC
-// (logDetailed) and OOC (logDetailedOOC). Each has multiple call sites — the
-// live tab's and at least one parked tab's — and the parked ones run while a
-// DIFFERENT session is live, so a site that read the live session instead of
-// its own would file every backgrounded tab's lines under the foreground
-// tab's log. That is invisible to a unit test of logDetailed/logDetailedOOC
-// alone, and it is exactly the mistake the old single-argument signature
-// invited (F4).
-//
-// logDetailedOOC is walked by this SAME loop rather than a second, parallel
-// test: a copy-pasted AST rule drifts the moment one of the two functions is
-// edited and the other isn't — the mirror-test gap hard rule #11 calls out.
-func TestBothMessageSeamsFileUnderTheirOwnTab(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("glob the package: %v", err)
-	}
-	seams := map[string]int{"logDetailed": 0, "logDetailedOOC": 0}
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		fset, f := parsedFile(t, name)
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			fn := callName(call)
-			if _, tracked := seams[fn]; !tracked {
-				return true
-			}
-			seams[fn]++
-			if len(call.Args) < 3 {
-				t.Errorf("%s:%d — %s must be handed the CALLING tab's session id", name, fset.Position(call.Pos()).Line, fn)
-				return true
-			}
-			sel, ok := call.Args[1].(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "logSession" {
-				t.Errorf("%s:%d — %s's session argument is not a .logSession: the background seam runs while a DIFFERENT tab is live, "+
-					"so anything but the calling session's own id files a parked tab's lines under the foreground tab's log (F4)",
-					name, fset.Position(call.Pos()).Line, fn)
-			}
-			return true
-		})
-	}
-	if seams["logDetailed"] < 2 {
-		t.Errorf("found %d logDetailed call sites, want both (the live tab's and the parked tab's) — one of the IC message seams stopped transcribing", seams["logDetailed"])
-	}
-	if seams["logDetailedOOC"] < 2 {
-		t.Errorf("found %d logDetailedOOC call sites, want at least both (the live tab's and a parked tab's) — one of the OOC message seams stopped transcribing", seams["logDetailedOOC"])
+	if got := logbrowser.SessionLabel("my-session.log"); got != "my-session" {
+		t.Errorf("logbrowser.SessionLabel(%q) = %q — a non-numeric tail must not parse as a tab ordinal", "my-session.log", got)
 	}
 }

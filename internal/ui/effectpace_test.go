@@ -9,7 +9,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // A live screen-effect overlay must hold the frame pacer up, and must let go when it
@@ -42,7 +42,7 @@ func overlayPace(t *testing.T, store *render.TextureStore, a *App, base string, 
 func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -50,8 +50,29 @@ func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
 	a.ctx.Ren = ren
 	a.room = &courtroom.Courtroom{}
 	a.d.Viewport = render.NewViewport(store)
-	a.d.Prefs.SetFPSCap(60)
-	a.d.Prefs.SetIdleFPS(10) // the reported setting: an idle floor of 10 fps
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			FPSCapVal =
+
+			60
+
+	})
+
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			10
+
+	})
+
+	// the reported setting: an idle floor of 10 fps
 	a.lastInputAt = time.Now().Add(-time.Hour)
 	a.lastMotionAt = a.lastInputAt
 	vp := sdl.Rect{X: 0, Y: 0, W: 64, H: 48}
@@ -118,7 +139,7 @@ func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
 func TestAParkedLoopWakesForAnEffect(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -126,7 +147,19 @@ func TestAParkedLoopWakesForAnEffect(t *testing.T) {
 	a.ctx.Ren = ren
 	a.room = &courtroom.Courtroom{}
 	a.d.Viewport = render.NewViewport(store)
-	a.d.Prefs.SetIdleFPS(config.FPSOff) // idle renders OFF: only real deadlines wake
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			IdleFPSVal =
+
+			config.
+				FPSOff
+
+	})
+
+	// idle renders OFF: only real deadlines wake
 	a.lastInputAt = time.Now().Add(-time.Hour)
 	a.lastMotionAt = a.lastInputAt
 

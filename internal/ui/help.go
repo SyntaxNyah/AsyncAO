@@ -1,24 +1,20 @@
 package ui
 
 import (
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// The in-app Help screen: a glossary of Attorney Online terms (and, in its
-// Privacy section, a plain-English "what the server can see" explainer) for
-// newcomers. Reached from the lobby top bar and the courtroom Extras menu. The
-// content is reflowed + cached by column width like drawChangelog / drawAbout, so
-// the page stays allocation-free per frame.
+// The in-app Help screen: an AO glossary and a Privacy section for newcomers, reached from the lobby top bar and the
+// courtroom Extras menu. Content is reflowed and cached by column width, like drawChangelog / drawAbout.
 
-// helpSectionNames drives the section tab row (which hides itself when there's
-// only one section).
+// helpSectionNames drives the section tab row (hidden when there is only one section).
 var helpSectionNames = []string{"Glossary", "Privacy"}
 
 // glossaryEntry is one Attorney Online term and its plain-English explanation.
 type glossaryEntry struct{ term, def string }
 
-// glossaryEntries is the AO newcomer glossary — deliberately plain language, for
-// someone who just opened the client and doesn't yet know what "IC" or "CM" mean.
+// glossaryEntries is the AO newcomer glossary, in plain language.
 var glossaryEntries = []glossaryEntry{
 	{"IC — In Character", "Talking AS your character in the courtroom: your line shows in the chatbox over your sprite. This is the main roleplay channel."},
 	{"OOC — Out Of Character", "Talking as YOURSELF, not your character — for coordinating, joking or asking questions. It shows in the OOC box, never over a sprite."},
@@ -27,7 +23,7 @@ var glossaryEntries = []glossaryEntry{
 	{"WTCE", "Witness Testimony / Cross Examination: the splash animations a judge plays to begin testimony or cross-examination (and the Guilty / Not Guilty verdicts)."},
 	{"Pos — Position", "Where your character stands: wit (witness), def (defense), pro (prosecution), jud (judge), hld/hlp (helpers), jur (jury), sea (seance). Set it with the Pos dropdown or /pos."},
 	{"Area", "A room on the server. One server hosts many areas; switch in the Areas tab. Each has its own background, music and players."},
-	{"Iniswap", "Borrowing another character's sprites and sounds while keeping your own name — AsyncAO's Wardrobe does this for you without editing any files."},
+	{"Iniswap", "Borrowing another character's sprites and sounds while keeping your own name."},
 	{"Pairing", "Sharing the stage with another character so two sprites appear side by side. Set it up in the Pair panel."},
 	{"Evidence", "Images with descriptions attached to the case (a knife, a photo…). 'Presenting' one shows it to the whole room."},
 	{"Showname", "The name shown over your chatbox. It can differ from the character's real name; many servers let you set it freely."},
@@ -45,9 +41,7 @@ type privacySection struct {
 	body    []string
 }
 
-// privacySections is the plain-English "what a server can see" explainer. Honest
-// and specific: it names exactly what AsyncAO sends (see internal/hwid for the
-// HDID) so there are no surprises, rather than vaguely reassuring.
+// privacySections explains what a server can see, naming exactly what AsyncAO sends (HDID: internal/hwid).
 var privacySections = []privacySection{
 	{"What every server can see", []string{
 		"Connecting to an Attorney Online server — like opening any website or joining any game — lets it see a few things about you. AsyncAO can't hide these, so here's exactly what they are.",
@@ -87,11 +81,6 @@ var privacySections = []privacySection{
 		"A failed connection is FAR more often your network or the server than a bug in AsyncAO — so before you open a GitHub issue, rule out the usual causes first. Is your own internet up (does another site or app work)? Is a VPN, firewall or antivirus in the way (some servers block VPNs — see above)? Is the server itself just down, or is it a yellow/black server AsyncAO can't use? The quickest test: try a different known-good server — if THAT one connects, the problem is the first server or your route to it, not the client.",
 		"If you've genuinely ruled all of that out and a server that should be reachable still won't connect — or connects but misbehaves — then it's worth a GitHub issue, with what you already tried, so someone can actually reproduce it.",
 	}},
-	{"Voice chat & your IP", []string{
-		"Voice chat is built so it can't leak your IP. The obvious way to do voice — peer-to-peer, your PC talking straight to the others' — would expose your address to everyone in the call: anyone could read it off their own connection with a packet sniffer like Wireshark. So AsyncAO doesn't do that.",
-		"WebRTC with TURN relay servers was an option, and it does work, but for an always-on chatroom it's fragile: drop the connection once and you often can't get back in, and it's more setup and headache than it's worth.",
-		"Instead, AsyncAO and LemmyAO use the Nyathena voice handshake, which relays your voice over the SAME WebSocket you're already connected on. Your audio goes to the server and back out to the others, so nobody in the call ever sees your address. The only IP anyone can snoop is the public server's — which everyone's already connected to anyway. Private and stable at once.",
-	}},
 	{"What you type — and that it's logged", []string{
 		"Everything you say IC and OOC, your character, showname and OOC name, the music and evidence you present, and which area you're in are visible to the room — that's the game.",
 		"On top of that, nearly every AO server LOGS your messages — for moderation and their own record-keeping — so what you type tends to stick around, not vanish when you leave. Treat it like a public, permanent chat: keep your real-life details off the server, don't reveal anything you wouldn't post publicly, and you never know what someone might do with information you hand out. A good habit is a showname/username that ISN'T tied to your real identity.",
@@ -109,13 +98,11 @@ var privacySections = []privacySection{
 		"Bottom line: prefer green (WSS) servers, treat yellow (WS) like a postcard anyone on the way can read, and pair either with a VPN if your IP is also a concern.",
 	}},
 	{"What AsyncAO does NOT do", []string{
-		"AsyncAO has no analytics, ads or tracking. It only talks to the network for things you'd expect: the public server list (to fill the lobby), the assets you load from a server, and an optional update check. Discord Rich Presence and voice chat are both OFF until you turn them on, and Discord-free / voice-free builds exist.",
+		"AsyncAO has no analytics, ads or tracking. It only talks to the network for things you'd expect: the public server list (to fill the lobby), the assets you load from a server, and an optional update check. Discord Rich Presence is ON by default: if Discord is running, it shows your server, character and showname on your profile. Turn it off, or choose what it shows, in Settings → Discord.",
 	}},
 }
 
-// buildHelpFlat reflows the active Help section to colW (cached by width via
-// a.helpFlat / a.helpFlatW). The aboutFlatLine model + the draw loop mirror
-// drawChangelog, so the wrap runs only on a resize, never per frame.
+// buildHelpFlat reflows the active section to colW, cached by width; mirrors drawChangelog.
 func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 	out := make([]aboutFlatLine, 0, 128)
 	switch a.helpTab {
@@ -151,8 +138,7 @@ func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 	return out
 }
 
-// openHelp switches to the Help screen on a given section tab (0 = Glossary,
-// 1 = Privacy), re-reflowing for that section. Callers set prevScreen first.
+// openHelp switches to the Help screen on a section tab (0 = Glossary, 1 = Privacy); callers set prevScreen first.
 func (a *App) openHelp(tab int) {
 	a.helpTab, a.helpFlat, a.helpDocScroll = tab, nil, 0
 	a.screen = ScreenHelp
@@ -161,7 +147,7 @@ func (a *App) openHelp(tab int) {
 func (a *App) drawHelp(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
-	// Content starts below the app-chrome band (#14, chrometop.go).
+	// Content starts below the app-chrome band (chrometop.go).
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "Help", ColText)
 	c.Label(pad, hdrY+30, "What the words mean — and what a server can see about you.", ColTextDim)
@@ -192,12 +178,7 @@ func (a *App) drawHelp(w, h int32) {
 
 	// Centered reading column (mirrors drawChangelog).
 	colW := w - 2*pad - scrollBarW - 2*pad
-	if colW > aboutMaxColW {
-		colW = aboutMaxColW
-	}
-	if colW < 200 {
-		colW = 200
-	}
+	colW = value.Clamp(colW, 200, aboutMaxColW)
 	x0 := (w - scrollBarW - colW) / 2
 	if x0 < pad {
 		x0 = pad

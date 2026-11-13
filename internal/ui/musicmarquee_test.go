@@ -9,24 +9,9 @@ package ui
 // deletable with the whole package still green.
 
 import (
-	"go/ast"
 	"testing"
 	"time"
 )
-
-// containsIdent reports whether n mentions the identifier name anywhere. The
-// sibling of containsCall (srcgate_test.go) for the gates that must catch a VALUE
-// being used, not a function being called.
-func containsIdent(n ast.Node, name string) bool {
-	found := false
-	ast.Inspect(n, func(node ast.Node) bool {
-		if id, ok := node.(*ast.Ident); ok && id.Name == name {
-			found = true
-		}
-		return !found
-	})
-	return found
-}
 
 // TestMarqueeConstantsAreAO2s pins the four numbers the port copied out of
 // scrolltext.cpp. They are not tunables: a "nicer" separator or a faster step is a
@@ -201,99 +186,6 @@ func TestMarqueeSlotSteadyStateAllocatesNothing(t *testing.T) {
 		}
 	}); n != 0 {
 		t.Errorf("a steady marquee frame allocates %.1f/op, want 0 — the tiled string is being rebuilt per frame", n)
-	}
-}
-
-// TestMusicMarqueeJoinsThePacingCensus is the deletion catcher for the frame-pacing
-// wiring, in the shape TestStageEggCensusIsComplete uses for the eggs.
-//
-// WHY A SOURCE GATE. The census is a CALL with no return value and no observable
-// state of its own from a headless test: removing `a.NoteAnimating()` from
-// drawMusicMarquee leaves every behavioural test in this package green while the
-// pacer parks at the idle cadence and the marquee crawls at a few pixels a second —
-// the msAnim precedent, and exactly the regression this port was warned about.
-func TestMusicMarqueeJoinsThePacingCensus(t *testing.T) {
-	body := funcBodySource(t, "theme_layout.go", "drawMusicMarquee")
-	// The census plus the three calls that make the draw AO2's: the position, the
-	// clamped first copy, and the clip that cuts the tiling at the widget.
-	for _, call := range []string{"NoteAnimating", "marqueeScrollPos", "marqueeFirstX", "pushClip"} {
-		if !containsCall(body, call) {
-			t.Errorf("drawMusicMarquee no longer calls %s — the marquee is unpaced or no longer AO2's", call)
-		}
-	}
-	// The clip bracket must be released on EVERY exit, including the early return
-	// the tile loop sits after.
-	if !deferredCall(body, "popClip") {
-		t.Error("drawMusicMarquee must release its clip with defer — an early return would leak the widget clip onto the rest of the frame")
-	}
-	// The tiled string comes from the SLOT, not from a concatenation at the draw
-	// site: built here it is a heap allocation on every scrolling frame, and the
-	// slot is the only thing that already invalidates on the title changing.
-	if !containsCall(body, "frame") {
-		t.Error("drawMusicMarquee no longer takes its tiled string and epoch from the marquee slot")
-	}
-	if containsIdent(body, "ao2MarqueeSeparator") {
-		t.Error("drawMusicMarquee builds the tiled string itself again — that concatenation allocates once per frame inside the render loop; it belongs in marqueeSlot.frame")
-	}
-
-	// And the gate on the caller: AO2 scrolls only what does not fit, and
-	// ReduceMotion is the accessibility opt-out. Losing either turns every title
-	// into a permanently animating surface.
-	plate := funcBodySource(t, "theme_layout.go", "drawThemedMusicPlate")
-	for _, call := range []string{"marqueeScrolls", "ReduceMotion", "drawMusicMarquee"} {
-		if !containsCall(plate, call) {
-			t.Errorf("drawThemedMusicPlate no longer calls %s — the marquee's entry condition is gone", call)
-		}
-	}
-}
-
-// TestMusicNameMeasuresAtTheWeightItDraws is the source gate for the weighted-metric
-// wiring, in the shape of the ao2MarqueeSeparator check above: the ABSENCE of the
-// unweighted twin, not just the presence of the weighted one.
-//
-// WHY A SOURCE GATE. The plate and the marquee both draw through
-// LabelClippedFontWeight, and every measurement feeding that draw has to be taken at
-// the same weight (AO2 measures with fontMetrics() of the widget's own font —
-// scrolltext.cpp:45 for singleTextWidth, :62 for wholeTextSize). Swapping any of
-// them back to the unweighted twin is a one-token edit that leaves every behavioural
-// test in this package green, because a headless test of the DRAW cannot see the
-// clamp: it only shows up as a cut tail and creeping tiles on a theme that sets
-// music_name_bold. TestMarqueeTileWidthIsTheDrawnWidth below pins the consequence;
-// this pins the call.
-func TestMusicNameMeasuresAtTheWeightItDraws(t *testing.T) {
-	for _, tc := range []struct {
-		fn      string
-		want    []string
-		forbid  map[string]string
-		context string
-	}{
-		{
-			fn:   "drawMusicMarquee",
-			want: []string{"fontTextWidthWeight"},
-			forbid: map[string]string{
-				"fontTextWidth": "the tile width is measured plain while the tile is drawn bold: LabelClippedFontWeight clamps the blit to it (cutting AO2's \"   ---   \" separator off every copy) and `x += wholeW` under-steps, so the copies creep together instead of repeating at wholeTextSize.width() (scrolltext.cpp:79)",
-			},
-		},
-		{
-			fn:   "drawThemedMusicPlate",
-			want: []string{"fontTextWidthWeight", "fitLabelToFontWeight"},
-			forbid: map[string]string{
-				"fontTextWidth":  "the fit test is measured plain while the title is drawn bold (AO2's singleTextWidth is fontMetrics() on the widget font, scrolltext.cpp:45): a title that fits plain but not bold gets neither the scroll nor the ellipsis, and is hard-cut mid-glyph at avail",
-				"fitLabelToFont": "the ellipsis is placed on plain advances while the title is drawn bold, so the \"fitted\" string still overflows and the marker it ends with is clipped off along with the tail it marks",
-			},
-		},
-	} {
-		body := funcBodySource(t, "theme_layout.go", tc.fn)
-		for _, call := range tc.want {
-			if !containsCall(body, call) {
-				t.Errorf("%s no longer calls %s — its measurement is no longer taken at the weight it draws at", tc.fn, call)
-			}
-		}
-		for call, why := range tc.forbid {
-			if containsCall(body, call) {
-				t.Errorf("%s calls the unweighted %s: %s", tc.fn, call, why)
-			}
-		}
 	}
 }
 

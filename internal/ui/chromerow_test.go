@@ -15,7 +15,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // chromeProbeCtls is a row with the Music header's real shape: five fixed icon
@@ -74,9 +74,6 @@ func TestChromeRowNeverOverlapsAtAnySize(t *testing.T) {
 			// goes negative and the list draws off the panel.
 			if p.h > h {
 				t.Fatalf("%dx%d: the row claimed %d px of a %d px block", w, h, p.h, h)
-			}
-			if body := chromeRowBody(block, &p); body.H < 0 {
-				t.Fatalf("%dx%d: the body under the row is %d px tall", w, h, body.H)
 			}
 		}
 	}

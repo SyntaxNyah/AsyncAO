@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -57,27 +59,24 @@ const ghListJSON = `[
    "assets": [{"name": "asyncao-windows-x86_64.exe", "browser_download_url": "https://example/stable.exe"}]}
 ]`
 
-// TestCheckExperimental pins the experimental channel: drafts never offer,
-// the newest published entry wins on ANY tag difference (sideways/downgrade
-// included — that's how you hop on AND off the test branch), and running the
-// channel's newest build reports nothing.
-func TestCheckExperimental(t *testing.T) {
+// TestCheckPrerelease pins the pre-release feed: drafts never offer, a stable
+// build moves up to the newest build, and running the newest build reports nothing.
+func TestCheckPrerelease(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(ghListJSON))
 	}))
 	defer srv.Close()
 
-	// A stable build hops ONTO the test branch (the prerelease tag ranks
-	// BELOW no one — it differs, so it offers).
-	rel, err := CheckExperimental(context.Background(), srv.URL, "v1.54.5", "windows-x86_64.exe")
+	// A stable build hops onto the newer test build.
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.54.5", "windows-x86_64.exe", true)
 	if err != nil {
-		t.Fatalf("CheckExperimental: %v", err)
+		t.Fatalf("Check: %v", err)
 	}
 	if rel == nil || rel.Tag != "v1.55.0-test.2" {
 		t.Fatalf("must offer the newest published build, got %+v", rel)
 	}
 	if !rel.Prerelease {
-		t.Error("a prerelease offer must be flagged (the UI says 'test build')")
+		t.Error("a prerelease offer must be flagged (the UI says 'pre-release')")
 	}
 	if rel.AssetURL != "https://example/test.exe" {
 		t.Errorf("asset match picked %q", rel.AssetURL)
@@ -85,20 +84,20 @@ func TestCheckExperimental(t *testing.T) {
 
 	// Running the channel's newest build → nothing to do (the draft above it
 	// never counts).
-	if rel, err = CheckExperimental(context.Background(), srv.URL, "v1.55.0-test.2", "windows"); err != nil || rel != nil {
-		t.Fatalf("current test build must report no update, got %+v err=%v", rel, err)
+	if rel, err = Check(context.Background(), http.DefaultClient, srv.URL, "v1.55.0-test.2", "windows", true); err != nil || rel != nil {
+		t.Fatalf("current pre-release build must report no update, got %+v err=%v", rel, err)
 	}
 
 	// A dev build never self-updates on any channel.
-	if rel, err = CheckExperimental(context.Background(), srv.URL, "dev", ""); err != nil || rel != nil {
+	if rel, err = Check(context.Background(), http.DefaultClient, srv.URL, "dev", "", true); err != nil || rel != nil {
 		t.Fatalf("dev build must never update, got %+v err=%v", rel, err)
 	}
 }
 
-// TestCheckExperimentalOffersStableReturn pins the way back OFF the test
+// TestCheckPrereleaseOffersStableReturn pins the way back OFF pre-releases
 // branch: when the newest published entry is a STABLE release and we run a
 // prerelease, it offers even though the semver may not rank higher.
-func TestCheckExperimentalOffersStableReturn(t *testing.T) {
+func TestCheckPrereleaseOffersStableReturn(t *testing.T) {
 	const listStableFirst = `[
 	  {"tag_name": "v1.54.5", "prerelease": false, "body": "n", "html_url": "https://example/s", "assets": []}
 	]`
@@ -106,12 +105,62 @@ func TestCheckExperimentalOffersStableReturn(t *testing.T) {
 		_, _ = w.Write([]byte(listStableFirst))
 	}))
 	defer srv.Close()
-	rel, err := CheckExperimental(context.Background(), srv.URL, "v1.54.5-test.9", "")
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.54.5-test.9", "", true)
 	if err != nil {
-		t.Fatalf("CheckExperimental: %v", err)
+		t.Fatalf("Check: %v", err)
 	}
 	if rel == nil || rel.Tag != "v1.54.5" || rel.Prerelease {
-		t.Fatalf("a test build must be offered the newest stable, got %+v", rel)
+		t.Fatalf("a pre-release build must be offered the newest stable, got %+v", rel)
+	}
+}
+
+func TestCheckPrereleaseOffersOwnStable(t *testing.T) {
+	const listNewerTestFirst = `[
+	  {"tag_name": "v1.55.0-test.3", "prerelease": true, "body": "t", "html_url": "https://example/t", "assets": []},
+	  {"tag_name": "v1.55.0", "prerelease": false, "body": "s", "html_url": "https://example/s", "assets": []},
+	  {"tag_name": "v1.55.0-test.2", "prerelease": true, "body": "t", "html_url": "https://example/t2", "assets": []}
+	]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(listNewerTestFirst))
+	}))
+	defer srv.Close()
+
+	for _, current := range []string{"v1.55.0-test.2", "v1.55.0-test.3"} {
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "", true)
+		if err != nil {
+			t.Fatalf("Check(%s): %v", current, err)
+		}
+		if rel == nil || rel.Tag != "v1.55.0" {
+			t.Errorf("pre-release %s must be offered its own stable release, got %+v", current, rel)
+		}
+	}
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.55.0", "", true)
+	if err != nil {
+		t.Fatalf("Check(v1.55.0): %v", err)
+	}
+	if rel != nil {
+		t.Errorf("a stable build only moves up, got %+v", rel)
+	}
+}
+
+func TestCheckPrereleaseOffersHighestStable(t *testing.T) {
+	const listSkippedAhead = `[
+	  {"tag_name": "v1.57.0-test.1", "prerelease": true, "body": "t", "html_url": "https://example/t", "assets": []},
+	  {"tag_name": "v1.55.0", "prerelease": false, "body": "s", "html_url": "https://example/s1", "assets": []},
+	  {"tag_name": "v1.56.0", "prerelease": false, "body": "s", "html_url": "https://example/s2", "assets": []},
+	  {"tag_name": "v1.55.0-test.2", "prerelease": true, "body": "t", "html_url": "https://example/t2", "assets": []}
+	]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(listSkippedAhead))
+	}))
+	defer srv.Close()
+
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.55.0-test.2", "", true)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if rel == nil || rel.Tag != "v1.56.0" {
+		t.Errorf("a pre-release build must be offered the highest stable above it, got %+v", rel)
 	}
 }
 
@@ -124,7 +173,7 @@ func TestCheckNewer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), srv.URL, "v1.2.0", "windows")
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.2.0", "windows", false)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -142,7 +191,7 @@ func TestCheckNewer(t *testing.T) {
 	}
 }
 
-// ghMultiAssetJSON enumerates EVERY asset release.yml publishes (default +
+// ghMultiAssetJSON enumerates EVERY asset a release publishes (default +
 // Discord-free builds, the first-install bundles — Windows DLL .zip, macOS
 // dylib .tar.gz —, the macOS Homebrew-edition .tar.gz, both .flatpak variants,
 // and SHA256SUMS.txt), in SCRAMBLED order. Asset matching is the brick-risk
@@ -152,7 +201,7 @@ func TestCheckNewer(t *testing.T) {
 // macos-arm64 binary on purpose — an adversarial ordering that proves the darwin
 // token "macos-arm64" matches neither "macos-bundle-arm64" nor
 // "macos-homebrew-arm64" — and the .flatpak decoys sit before the AppImage for
-// the same reason. Keep this list in lockstep with release.yml's asset table: it
+// the same reason. packaging/release-assets.txt is the current list; the -nodiscord names stay as decoys because older releases carry them: it
 // is the enumeration gate that catches a future token loosened toward a
 // non-default asset name.
 const ghMultiAssetJSON = `{
@@ -194,7 +243,7 @@ func TestSelfUpdatePicksSwappableDefault(t *testing.T) {
 		"darwin":  "https://example/mac-bundle.tar.gz",
 	}
 	for goos, wantURL := range want {
-		rel, err := Check(context.Background(), srv.URL, "v1.0.0", SelfUpdateAssetMatch(goos))
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", SelfUpdateAssetMatch(goos), false)
 		if err != nil {
 			t.Fatalf("%s: Check: %v", goos, err)
 		}
@@ -214,12 +263,29 @@ func TestCheckNotNewer(t *testing.T) {
 	defer srv.Close()
 
 	for _, current := range []string{"v1.4.0", "v1.5.0", "v2.0.0"} {
-		rel, err := Check(context.Background(), srv.URL, current, "")
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "", false)
 		if err != nil {
 			t.Fatalf("Check(%s): %v", current, err)
 		}
 		if rel != nil {
 			t.Errorf("current %s is >= latest, must report no update, got %+v", current, rel)
+		}
+	}
+}
+
+func TestCheckOffersStableToPrereleaseBuild(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(ghJSON))
+	}))
+	defer srv.Close()
+
+	for _, current := range []string{"v1.5.0-rc.2", "v1.4.0-rc.1"} {
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "", false)
+		if err != nil {
+			t.Fatalf("Check(%s): %v", current, err)
+		}
+		if rel == nil || rel.Version != "1.4.0" {
+			t.Errorf("pre-release %s must be offered the latest stable, got %+v", current, rel)
 		}
 	}
 }
@@ -232,7 +298,7 @@ func TestCheckDevNeverUpdates(t *testing.T) {
 	defer srv.Close()
 
 	for _, current := range []string{"dev", ""} {
-		rel, err := Check(context.Background(), srv.URL, current, "")
+		rel, err := Check(context.Background(), http.DefaultClient, srv.URL, current, "", false)
 		if err != nil || rel != nil {
 			t.Errorf("current %q: want (nil,nil), got (%+v,%v)", current, rel, err)
 		}
@@ -245,7 +311,7 @@ func TestCheckServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := Check(context.Background(), srv.URL, "v1.0.0", ""); err == nil {
+	if _, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", "", false); err == nil {
 		t.Fatal("a non-200 response must surface an error")
 	}
 }
@@ -274,7 +340,7 @@ func TestCheckCapturesSumsAssetAndName(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), srv.URL, "v1.0.0", SelfUpdateAssetMatch("windows"))
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.0.0", SelfUpdateAssetMatch("windows"), false)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -298,7 +364,7 @@ func TestCheckNoSumsAssetLeavesSumsURLEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rel, err := Check(context.Background(), srv.URL, "v1.2.0", "windows")
+	rel, err := Check(context.Background(), http.DefaultClient, srv.URL, "v1.2.0", "windows", false)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -350,7 +416,7 @@ func TestFetchSums(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := FetchSums(context.Background(), srv.URL, "asyncao-windows-x86_64.exe")
+	got, err := FetchSums(context.Background(), http.DefaultClient, srv.URL, "asyncao-windows-x86_64.exe")
 	if err != nil {
 		t.Fatalf("FetchSums: %v", err)
 	}
@@ -360,7 +426,7 @@ func TestFetchSums(t *testing.T) {
 	// A matched asset that is missing from a published manifest is an error (a
 	// release with sums lists every shipped binary — a gap means abort, not
 	// proceed-unverified).
-	if _, err := FetchSums(context.Background(), srv.URL, "asyncao-macos-arm64"); err == nil {
+	if _, err := FetchSums(context.Background(), http.DefaultClient, srv.URL, "asyncao-macos-arm64"); err == nil {
 		t.Fatal("an asset missing from the manifest must error")
 	}
 }
@@ -370,7 +436,62 @@ func TestFetchSumsServerError(t *testing.T) {
 		http.Error(w, "gone", http.StatusNotFound)
 	}))
 	defer srv.Close()
-	if _, err := FetchSums(context.Background(), srv.URL, "x.exe"); err == nil {
+	if _, err := FetchSums(context.Background(), http.DefaultClient, srv.URL, "x.exe"); err == nil {
 		t.Fatal("a non-200 SHA256SUMS fetch must surface an error")
+	}
+}
+
+// legacyAssetMatches are the names clients up to v1.95.1 match. They copy the matched binary over themselves without
+// its libraries, so a release must publish nothing they match; they then open the release page instead.
+var legacyAssetMatches = []string{"windows-x86_64.exe", "macos-arm64"}
+
+// TestNoManifestAssetMatchesLegacyClients keeps old clients from installing a binary without its libraries.
+func TestNoManifestAssetMatchesLegacyClients(t *testing.T) {
+	for _, name := range manifestAssets(t) {
+		for _, legacy := range legacyAssetMatches {
+			if strings.Contains(strings.ToLower(name), legacy) {
+				t.Errorf("%s matches %q, so clients up to v1.95.1 would install it without its libraries", name, legacy)
+			}
+		}
+	}
+}
+
+func manifestAssets(t *testing.T) []string {
+	t.Helper()
+	const manifestPath = "../../packaging/release-assets.txt"
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for line := range strings.Lines(string(manifest)) {
+		if kind, name, ok := strings.Cut(strings.TrimSpace(line), " "); ok && kind != "#" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// TestSelfUpdateMatchesOneManifestAsset checks the matcher against what a release really publishes.
+func TestSelfUpdateMatchesOneManifestAsset(t *testing.T) {
+	names := manifestAssets(t)
+	for _, goos := range []string{"windows", "linux", "darwin"} {
+		var matches []string
+		for _, name := range names {
+			if strings.Contains(strings.ToLower(name), SelfUpdateAssetMatch(goos)) {
+				matches = append(matches, name)
+			}
+		}
+		if len(matches) != 1 {
+			t.Errorf("%s: matcher %q matches %v, want exactly one asset", goos, SelfUpdateAssetMatch(goos), matches)
+		}
+	}
+}
+
+func TestIsPrerelease(t *testing.T) {
+	for v, want := range map[string]bool{"v2.1.0-rc.1": true, "2.1.0-test.2": true, "v2.1.0": false, "dev": false, "": false} {
+		if got := IsPrerelease(v); got != want {
+			t.Errorf("IsPrerelease(%q) = %v, want %v", v, got, want)
+		}
 	}
 }

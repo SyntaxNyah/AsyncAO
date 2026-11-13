@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestMessagesSlotSeedsPanel pins that the Group Chat panel adopts its persisted
@@ -39,7 +39,7 @@ func TestMessagesSlotPersistsOnMove(t *testing.T) {
 	if got := a.classicOv[slotMessages]; got != want {
 		t.Errorf("live override = %v, want %v", got, want)
 	}
-	if got := a.d.Prefs.ClassicLayoutOverrides()[slotMessages]; got != want {
+	if got := a.d.Prefs.Load().ClassicLayoutOverrides()[slotMessages]; got != want {
 		t.Errorf("persisted override = %v, want %v", got, want)
 	}
 	if a.showMessages {
@@ -50,7 +50,7 @@ func TestMessagesSlotPersistsOnMove(t *testing.T) {
 // TestMessagesSlotEditorMetadata pins the editor integration: the panel is a
 // resizable slot and carries a human label naming Group Chat.
 func TestMessagesSlotEditorMetadata(t *testing.T) {
-	if !slotResizable(slotMessages) {
+	if slotResizeEdges(slotMessages) == 0 {
 		t.Error("the Group Chat panel must be resizable in the layout editor")
 	}
 	if got := classicSlotLabel(slotMessages); !strings.Contains(got, "Group Chat") {

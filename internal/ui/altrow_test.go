@@ -4,10 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestDisableAltEmoteRowGatesNumberRow pins the kill-switch: with the pref on, a
@@ -27,7 +26,16 @@ func TestDisableAltEmoteRowGatesNumberRow(t *testing.T) {
 	a.emoteVisible = []int{0}
 	a.ctx.keyPressed, a.ctx.altHeld = sdl.K_1, true
 
-	prefs.SetDisableAltEmoteRow(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableAltEmoteRow =
+
+			true
+
+	})
 	a.handleEmoteKeys()
 
 	if a.ctx.focusNext != "" {

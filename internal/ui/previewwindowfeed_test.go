@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // previewFeedFixtureBase is the fixture texture's key — a real URL shape is
@@ -38,7 +38,7 @@ func newPreviewFeedApp(t testing.TB) *App {
 	if err != nil {
 		t.Skipf("Ctx unavailable: %v", err)
 	}
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -59,7 +59,7 @@ func newPreviewFeedApp(t testing.TB) *App {
 	a := &App{ctx: ctx, activeTab: -1}
 	a.d.Prefs = prefs
 	a.d.Store = store
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	t.Cleanup(a.d.Preview.Close)
 	a.resetSessionState()
 	a.previewBase = previewFeedFixtureBase
@@ -146,7 +146,7 @@ func TestDetachedPreviewSuppressesTheInAppBox(t *testing.T) {
 		t.Fatal("setup: toggle did not detach")
 	}
 	a.previewFrameRect = sdl.Rect{X: 1, Y: 2, W: 3, H: 4} // poison: must be cleared, not left stale
-	a.drawSpritePreview(800, 600, false, "")
+	a.drawSpritePreview(800, 600, "")
 	if a.previewFrameRect != (sdl.Rect{}) {
 		t.Errorf("drawSpritePreview left a hit rect (%+v) while detached — the in-app box must not draw at all", a.previewFrameRect)
 	}
@@ -163,7 +163,7 @@ func TestDrawSpritePreviewReattachedDrawsAgain(t *testing.T) {
 	if a.previewIsDetached() {
 		t.Fatal("setup: did not re-attach")
 	}
-	a.drawSpritePreview(800, 600, false, "")
+	a.drawSpritePreview(800, 600, "")
 	if a.previewFrameRect.W <= 0 || a.previewFrameRect.H <= 0 {
 		t.Errorf("previewFrameRect = %+v after re-attaching with a ready sprite — the box must draw", a.previewFrameRect)
 	}
@@ -405,7 +405,7 @@ func TestAdvanceDetachedPreviewClosedIsZeroAlloc(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 	a.d.Prefs = prefs
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	a.resetSessionState()
 
 	n := testing.AllocsPerRun(1000, func() { a.AdvanceDetachedPreview() })
@@ -427,7 +427,7 @@ func BenchmarkAdvanceDetachedPreviewClosed(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = prefs.Close() })
 	a.d.Prefs = prefs
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	a.resetSessionState()
 
 	b.ReportAllocs()
@@ -479,7 +479,7 @@ func TestSyncPreviewWindowPersistsOnReattach(t *testing.T) {
 	}
 	a.syncPreviewWindow() // the real per-frame call site notices the falling edge
 
-	x, y, w, h, ok := a.d.Prefs.PreviewWindowRect()
+	x, y, w, h, ok := a.d.Prefs.Load().PreviewWindowRect()
 	if !ok {
 		t.Fatal("no preview window rect was persisted after re-attaching")
 	}
@@ -515,7 +515,7 @@ func TestClosingTheDetachedWindowWithItsOwnXReconciles(t *testing.T) {
 	}
 	a.syncPreviewWindow() // the real per-frame poll that notices the edge
 
-	x, y, w, h, ok := a.d.Prefs.PreviewWindowRect()
+	x, y, w, h, ok := a.d.Prefs.Load().PreviewWindowRect()
 	if !ok {
 		t.Fatal("a self-close (titlebar X) did not persist the window's final rect")
 	}
@@ -524,7 +524,7 @@ func TestClosingTheDetachedWindowWithItsOwnXReconciles(t *testing.T) {
 	}
 	// The pop-out button's whole state is previewIsDetached(); drawing the
 	// box must work again exactly as if the user had used the toggle.
-	a.drawSpritePreview(800, 600, false, "")
+	a.drawSpritePreview(800, 600, "")
 	if a.previewFrameRect.W <= 0 {
 		t.Error("the in-app box did not resume drawing after the window's own close")
 	}
@@ -588,8 +588,7 @@ func TestDetachedPreviewSurvivesSessionReset(t *testing.T) {
 // --- "closed = free": the real per-frame call site --------------------------
 
 // TestSyncPreviewWindowClosedIsZeroAlloc is the phase brief's own explicit
-// bar, modeled on internal/assets/mountserve_test.go's
-// TestNoMountsIsExactlyOneAtomicLoad: with nothing ever detached, the REAL
+// bar: with nothing ever detached, the REAL
 // per-frame touch point handlePreviewInput calls unconditionally
 // (syncPreviewWindow) must resolve to nil checks and stop — no allocation,
 // no SDL call. Deliberately built with a.d.Preview as a freshly-constructed
@@ -603,7 +602,7 @@ func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
 	a.d.Prefs = prefs
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	a.resetSessionState()
 
 	n := testing.AllocsPerRun(1000, func() { a.syncPreviewWindow() })
@@ -613,9 +612,7 @@ func TestSyncPreviewWindowClosedIsZeroAlloc(t *testing.T) {
 }
 
 // BenchmarkSyncPreviewWindowClosed / BenchmarkSyncPreviewWindowOpen are the
-// closed-vs-open comparison pair the phase brief asks for, modeled directly
-// on internal/assets/mountserve_test.go's BenchmarkActiveMountLayerNoMounts /
-// BenchmarkActiveMountLayerConfigured — run together so the RATIO is the
+// closed-vs-open comparison pair the phase brief asks for, run together so the RATIO is the
 // meaningful number:
 //
 //	go test ./internal/ui/... -run NONE -bench SyncPreviewWindow -benchmem
@@ -627,7 +624,7 @@ func BenchmarkSyncPreviewWindowClosed(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = prefs.Close() })
 	a.d.Prefs = prefs
-	a.d.Preview = render.NewPreviewWindow()
+	a.d.Preview = render.NewPreviewWindow(host.OpenExtraWindow)
 	a.resetSessionState()
 
 	b.ReportAllocs()

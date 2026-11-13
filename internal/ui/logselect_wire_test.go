@@ -21,10 +21,9 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/ttf"
 )
 
 // oocRowSelectionFixture builds a headless App with a real font-loaded Ctx (via
@@ -60,7 +59,7 @@ func TestLogPrefixWidthUsesBoldWeightForNamedOOCRow(t *testing.T) {
 	const line = "Wright: hold it, that's not how it happened"
 	a, _ := oocRowSelectionFixture(t, line, speaker)
 	c := a.ctx
-	if !a.d.Prefs.BoldNamesOn() {
+	if !a.d.Prefs.Load().BoldNamesOn() {
 		t.Fatal("fixture assumes the real BoldNamesOn default (ON) — this report reproduces on a stock install")
 	}
 
@@ -169,35 +168,24 @@ func TestLogPointAtDoesNotReportFullSelectionBeforeTheRowsTrueRightEdge(t *testi
 	}
 }
 
-// TestDrawLogLineNamedGatesEveryDrawOnLogRowSplit is the deletion-catcher for the
-// funky-fonts double-draw defect: it reads drawLogLineNamed's PRODUCTION source
-// and requires logRowSplit — the function that proves BOTH the prefix and the
-// speaker will measure — to be the FIRST relevant call in the function body. A
-// LabelClippedFontWeight / LabelClippedFont / labelEmoji draw ahead of it would
-// mean some segment can be painted before the code has committed to (or ruled
-// out) the split, which is exactly the shape of the old bug: the timestamp
-// prefix drew, then a failed speaker-width lookup fell through to redraw the
-// WHOLE line on top of it via the plain-weight fallback.
-func TestDrawLogLineNamedGatesEveryDrawOnLogRowSplit(t *testing.T) {
-	body := funcBodySource(t, "logselect_wire.go", "drawLogLineNamed")
-	order := callOrder(body, "logRowSplit", "LabelClippedFontWeight", "LabelClippedFont", "labelEmoji")
-	if len(order) == 0 {
-		t.Fatal("drawLogLineNamed calls none of logRowSplit / LabelClippedFontWeight / LabelClippedFont / labelEmoji — the gate would pass vacuously")
-	}
-	if order[0] != "logRowSplit" {
-		t.Errorf("drawLogLineNamed's first relevant call is %s, want logRowSplit — "+
-			"a draw call ahead of the split decision can commit a partial draw before the code "+
-			"knows whether the rest of the split will succeed (the funky-fonts double-draw)", order[0])
-	}
-}
-
 // TestLogPrefixWidthUsesBoldWeightForNamedICRow covers the IC twin of the OOC
 // fix: IC's speaker split is additionally gated on NameColorsOn (screens.go),
 // so this turns it on explicitly rather than relying on BoldNamesOn alone.
 func TestLogPrefixWidthUsesBoldWeightForNamedICRow(t *testing.T) {
 	a := scaleTestApp(t)
 	a.logPct = DefaultScalePct
-	a.d.Prefs.SetNameColors(true) // IC's split additionally requires this (OOC's doesn't — see logRowNameStyle)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			NameColors =
+
+			true
+
+	})
+
+	// IC's split additionally requires this (OOC's doesn't — see logRowNameStyle)
 	const speaker = "Wright"
 	a.icLog = []icEntry{{text: "Wright: hold it, that's not how it happened", speaker: speaker}}
 	a.icLogSeq++

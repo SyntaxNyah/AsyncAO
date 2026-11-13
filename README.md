@@ -22,7 +22,7 @@ everything in memory and on disk, and renders without allocating.
   loads resolve in <100 ns without touching the network), a three-tier cache
   (64 MiB GPU textures — full animations downscale to fit a 500 MiB budget
   — / 128 MiB raw bytes / on-disk by full URL), and a
-  **zero-allocation render loop** under a 256 MiB budget. Cold-loading a
+  **zero-allocation render loop**. Cold-loading a
   200-character server costs ~285 probes, not thousands.
 - **Easy on your GPU and battery** — a real frame limiter, not vsync: a static
   courtroom renders *nothing at all* (near-zero GPU), and the client only redraws
@@ -78,11 +78,9 @@ everything in memory and on disk, and renders without allocating.
   private), direct-connect by `ip:port` / `url:port` / `ws(s)://`, or turn
   streaming off entirely and read from local AO2 asset folders.
 - **Discord Rich Presence (optional, no DLL)** — show server, character,
-  showname and area on your profile, with per-field privacy toggles. Off by
-  default and **pure-Go IPC** — no DLL, no Discord dependency, and a closed
-  Discord never blocks launch. A lean **Discord-free** build (`-tags "nodiscord
-  novoice"` — all Discord code *and* the optional voice chat stripped, settings
-  UI included) ships alongside every release. See [docs/DISCORD.md](docs/DISCORD.md)
+  showname and area on your profile, with per-field privacy toggles. On by
+  default, turned off in Settings → Discord, and **pure-Go IPC** — no DLL, no Discord dependency, and a closed
+  Discord never blocks launch. See [docs/DISCORD.md](docs/DISCORD.md)
   and [BUILDING.md](BUILDING.md).
 - **Quality-of-life everything** — a non-blocking **floating Extras box**, a live
   **player list** that groups a `/gas` by area and jumps you there on a click,
@@ -102,7 +100,7 @@ a downloaded build is quarantined, so run `xattr -dr com.apple.quarantine .` in
 the extracted folder once (clears the per-library Gatekeeper prompts), then
 right-click → Open on the first launch; each tarball's `INSTALL.txt` spells this
 out. Prefer Homebrew and a smaller download? Grab
-`asyncao-macos-homebrew-arm64.tar.gz`, run `brew install sdl2 sdl2_ttf sdl2_mixer
+`asyncao-macos-homebrew-arm64.tar.gz`, run `brew install sdl3 sdl3_ttf sdl3_mixer
 webp libavif opus opusfile`, and it uses those libraries instead of a bundled `lib/`.
 After the first install AsyncAO keeps itself up to date in place. Prefer to build from source? See **[BUILDING.md](BUILDING.md)** for the
 detailed per-OS guide.
@@ -207,12 +205,10 @@ AGPL-v3-compatible licence**, with no proprietary or licence-incompatible pieces
   MIT ([aolib](https://github.com/AO-Underground/aolib/tree/main/go),
   [xxhash](https://github.com/cespare/xxhash)), Apache-2.0
   ([jsonschema](https://github.com/santhosh-tekuri/jsonschema)), BSD-3
-  ([go-sdl2](https://github.com/veandco/go-sdl2),
-  [kettek/apng](https://github.com/kettek/apng),
-  [klauspost/compress](https://github.com/klauspost/compress), and the
+  ([kettek/apng](https://github.com/kettek/apng) and the
   `golang.org/x/*` libraries), and MPL-2.0
   ([hashicorp/golang-lru](https://github.com/hashicorp/golang-lru)).
-- **Bundled engine** — zlib ([SDL2](https://www.libsdl.org) / ttf / SDL Mixer X);
+- **Bundled engine** — zlib ([SDL3](https://www.libsdl.org) / SDL3_ttf / SDL3_mixer);
   BSD ([libwebp](https://chromium.googlesource.com/webm/libwebp),
   [libavif](https://github.com/AOMediaCodec/libavif) + dav1d/aom,
   [Opus/Ogg](https://xiph.org), WavPack, stb_vorbis); MIT / public-domain (qoa,

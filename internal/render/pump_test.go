@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
@@ -40,14 +41,16 @@ func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) (*ass
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
-		Source: source, LocalMode: localMode, Pool: pool, Decoder: decoder,
+		Source: source, Decoder: decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
+		mgr.SetFolders(lf.Mounts(), nil)
+	}
 	return mgr, resolver
 }
 
@@ -95,7 +98,7 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	// learned format (what a real extensions.json / a prior learned hit provides).
 	resolver.RecordSuccess(assets.HostOf(base), assets.AssetTypeCharSprite, config.ExtPNG)
 
-	store, err := NewTextureStore(ren)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,8 +139,8 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	}))
 	defer srvCorrupt.Close()
 
-	mgr, _ := buildPumpManager(t, network.NewClient(), false)
-	store, err := NewTextureStore(ren)
+	mgr, _ := buildPumpManager(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
+	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

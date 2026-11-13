@@ -4,12 +4,12 @@ AsyncAO is Go ≥ 1.24 with CGO. The C dependencies are:
 
 | Library | Used for |
 |---|---|
-| SDL2 | window, renderer, input |
-| SDL2_ttf | font rasterization |
-| SDL2_mixer (≥ 2.6, with opusfile) | Opus/OGG/MP3/FLAC/WAV decoding in C |
+| SDL3 (≥ 3.4) | window, renderer, input |
+| SDL3_ttf | font rasterization |
+| SDL3_mixer (with opusfile) | music + SFX: Opus/OGG/MP3/FLAC/WAV decoding, loop points, crossfades |
 | libwebp + libwebpdemux | static & animated WebP decode (SIMD) |
 | libavif (+ dav1d/aom) | AVIF image decode |
-| opus | Opus (voice chat + Opus music via SDL2_mixer) |
+| opus | Opus music via SDL3_mixer |
 
 Everything else is pure Go and fetched by `go build` automatically.
 
@@ -29,9 +29,9 @@ Everything else is pure Go and fetched by `go build` automatically.
 
    ```bash
    pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-pkgconf \
-             mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_ttf \
-             mingw-w64-ucrt-x86_64-SDL2_mixer mingw-w64-ucrt-x86_64-libwebp \
-             mingw-w64-ucrt-x86_64-libavif mingw-w64-ucrt-x86_64-opus
+             mingw-w64-ucrt-x86_64-sdl3 mingw-w64-ucrt-x86_64-sdl3-ttf \
+             mingw-w64-ucrt-x86_64-sdl3-mixer mingw-w64-ucrt-x86_64-opusfile \
+             mingw-w64-ucrt-x86_64-libwebp mingw-w64-ucrt-x86_64-libavif
    ```
 
 3. **Build** (sets all the CGO env vars for you, stages runtime DLLs):
@@ -53,7 +53,7 @@ Everything else is pure Go and fetched by `go build` automatically.
    go build -pgo=auto -trimpath -ldflags "-s -w" -o bin\asyncao.exe .\cmd\asyncao
    ```
 
-   To run the exe outside an MSYS2 shell, the SDL2/webp DLLs must sit next to
+   To run the exe outside an MSYS2 shell, the SDL3/webp DLLs must sit next to
    it — `scripts\build.ps1` copies them for you.
 
 ### Windows troubleshooting
@@ -77,20 +77,21 @@ Everything else is pure Go and fetched by `go build` automatically.
 ## Linux
 
 ```bash
-./scripts/setup-deps.sh        # Debian/Ubuntu, Fedora, Arch auto-detected
+./scripts/setup-deps.sh        # Debian/Ubuntu (builds SDL3 from source), Fedora, Arch auto-detected
 go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 ./asyncao
 ```
 
 Package names if you'd rather install manually:
 
-- **Debian/Ubuntu:** `libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev libopus-dev`
-- **Fedora:** `SDL2-devel SDL2_ttf-devel SDL2_mixer-devel libwebp-devel libavif-devel opus-devel`
-- **Arch:** `sdl2 sdl2_ttf sdl2_mixer libwebp libavif opus`
+- **Debian/Ubuntu:** `libwebp-dev libavif-dev libopus-dev libopusfile-dev`, then
+  `sudo scripts/build-sdl3.sh /usr/local` (the distro SDL3 is older than 3.4)
+- **Fedora:** `SDL3-devel SDL3_ttf-devel SDL3_mixer-devel libwebp-devel libavif-devel opus-devel opusfile-devel`
+- **Arch:** `sdl3 sdl3_ttf sdl3_mixer libwebp libavif opus opusfile`
 
 ### Linux AppImage (self-contained download)
 
-The bare binary above runs only where the SDL2/webp/avif shared libraries are
+The bare binary above runs only where the SDL3/webp/avif shared libraries are
 already installed. To produce a **single self-contained executable** that
 bundles those libraries (the Linux equivalent of the Windows DLL bundle):
 
@@ -103,40 +104,38 @@ sudo apt-get install -y patchelf desktop-file-utils   # AppImage tooling
 The script builds the release binary, downloads `linuxdeploy` (cached under
 `/.deps/`), bundles the binary's shared-library dependencies, and packs them
 with the Mayo icon and `packaging/linux/asyncao.desktop`. The result runs on any
-reasonably modern x86_64 desktop with no install step. CI builds the same
-AppImage on every push in two flavors (Actions → latest run):
-`asyncao-linux-x86_64-AppImage` (default) and
-`asyncao-linux-x86_64-AppImage-nodiscord` (the lean build: Discord **and** voice
-chat compiled out, `-tags "nodiscord novoice"`). To build the lean one locally:
-`go build -tags "nodiscord novoice" -o asyncao ./cmd/asyncao && APPIMAGE_OUTPUT=AsyncAO-nodiscord-x86_64.AppImage ./scripts/build-appimage.sh ./asyncao`.
+reasonably modern x86_64 desktop with no install step. CI packages the same
+AppImage on every ready PR and release.
 
 ## macOS
 
 ```bash
-brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile pkg-config
+brew install sdl3 sdl3_ttf sdl3_mixer webp libavif opus opusfile pkg-config
 go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 ./asyncao
 ```
 
 Works on Apple Silicon and Intel. Homebrew is a **build-time** dependency here:
 a from-source build links against the brew dylibs and needs them present to run.
-(`opusfile` — not the bare `opus` codec, which serves voice chat — is what gives
-SDL2_mixer Ogg-Opus **music** decode and seeking; the formula hard-links it, so
+(`opusfile` — not the bare `opus` codec — is what gives
+SDL3_mixer Ogg-Opus **music** decode and seeking; the formula links it, so
 brew pulls it in anyway, but it's named explicitly to pin the requirement.)
+Release builds use a cached source build of SDL3_mixer instead (the same one
+`scripts/build-sdl3.sh` makes): Homebrew's formula links every codec it can,
+MIDI and tracker libraries included, and the bundle would ship them all.
 
 The **prebuilt release** (`asyncao-macos-bundle-arm64.tar.gz`) needs **no
 Homebrew** — the release pipeline runs `scripts/bundle-macos.sh` to collect the
 dylib closure into a `lib/` folder beside the binary (rewriting install names to
 `@rpath/`, the macOS analogue of the Windows DLL staging), so it runs on a clean
 Mac. The script asserts both directions: no Homebrew path survives in the
-binary, **and** the SDL Mixer X + opusfile dylibs made it into `lib/` (the fork
-bundles Vorbis/MP3/FLAC inside its own dylib, so those need no separate staging)
+binary, **and** the SDL3_mixer + opusfile dylibs made it into `lib/` (SDL3_mixer
+builds Vorbis/MP3/FLAC into its own dylib, so those need no separate staging)
 — the bundler only follows hard links, so a switch to dlopen codec shims would
-otherwise silently ship a tarball whose music can't play on a brew-less Mac. The
-bare `asyncao-macos-arm64` asset is the
-self-update target; for a first install, `tar -xzf
-asyncao-macos-bundle-arm64.tar.gz` (the binary and its `lib/` land flat in the
-current folder) and run `./asyncao-macos-arm64`.
+otherwise silently ship a tarball whose music can't play on a brew-less Mac. To
+install, `tar -xzf asyncao-macos-bundle-arm64.tar.gz` (the binary and its `lib/`
+land flat in the current folder) and run `./asyncao-macos-arm64`. The in-app
+updater downloads the same tarball and replaces the binary and `lib/` together.
 
 A downloaded, unsigned/unnotarized build carries `com.apple.quarantine` on every
 extracted file, so on first launch Gatekeeper asks to allow each bundled library
@@ -153,17 +152,14 @@ then right-click → Open once (macOS remembers the choice). Each tarball ships 
 
 For a smaller download the release also publishes a **Homebrew edition**,
 `asyncao-macos-homebrew-arm64.tar.gz` (bare binary + `INSTALL.txt`, no bundled
-`lib/`). Run `brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile` and the
-binary resolves its libraries via its `/opt/homebrew/lib` rpath fallback — the
-same rewrite `bundle-macos.sh` applies to the bare asset. Neither
-`asyncao-macos-bundle-arm64.tar.gz` nor `asyncao-macos-homebrew-arm64.tar.gz`
-contains the `macos-arm64` self-update token, so the in-app updater never renames
-a tarball over the running binary (it always targets the bare
-`asyncao-macos-arm64`).
+`lib/`). Run `brew install sdl3 sdl3_ttf sdl3_mixer webp libavif opus opusfile` and the
+binary resolves its libraries via its `/opt/homebrew/lib` rpath fallback, which
+`bundle-macos.sh` writes into it. No bare binary is published: clients up to
+v1.95.1 would copy one over themselves without its libraries.
 
 ## Android / iOS
 
-Out of scope: the SDL2 + CGO toolchain story on mobile is a project of its
+Out of scope: the SDL3 + CGO toolchain story on mobile is a project of its
 own. Desktop Windows/Linux/macOS are the supported targets.
 
 ## Supported platforms (why no 32-bit or Windows 7 build)
@@ -193,8 +189,6 @@ build has been asked about; it isn't offered, for two independent reasons:
 | `GOAMD64=v3 go build ...` | AVX2-tuned build (2013+ CPUs); ship the default build as baseline fallback |
 | `go build -tags nocgo_webp ...` | pure-Go WebP fallback (static images only; animated WebP errors visibly) |
 | `go build -tags nocgo_avif ...` | no libavif binding (AVIF sniffing stays; decode errors visibly) |
-| `go build -tags nodiscord ...` | Rich Presence compiled out entirely (see below) |
-| `go build -tags novoice ...` | voice chat compiled out entirely — the LemmyAO/Nyathena VS_* relay + Opus codec, plus its UI, buttons and settings (see below). Opus **music** is unaffected. |
 | `CGO_ENABLED=0 go build ./cmd/asyncao-cache` | cache companion CLI (stats/inspect/prune/warm T3) — pure Go, no SDL/CGO, builds anywhere |
 
 ## Debug builds & crash logs
@@ -215,7 +209,7 @@ inlining — full `file:line` traces, and the binary loads in Delve:
 Every build now installs a **process-wide crash hook** at startup
 (`cmd/asyncao/main.go` → `setupCrashOutput`) via `runtime/debug.SetCrashOutput`,
 so any unhandled panic or fatal runtime error — including cgo signal faults from
-the SDL2/webp/avif decode paths — is written with a full goroutine dump
+the SDL3/webp/avif decode paths — is written with a full goroutine dump
 (`debug.SetTraceback("all")`) to:
 
 - `asyncao-crash.log` — next to the exe (all builds)
@@ -233,42 +227,15 @@ running Discord client over its IPC pipe (`\\.\pipe\discord-ipc-N` on
 Windows, `$XDG_RUNTIME_DIR/discord-ipc-N` elsewhere) — nothing is linked,
 fetched, or vendored.
 
-- **Default build**: the feature exists but is OFF until the user enables
-  it in Settings. Without Discord running it idles silently (one paced
+- The feature is ON by default; turn it off in Settings → Discord. Without Discord running it idles silently (one paced
   reconnect probe per 30 s, only while updates are pending). There is no
   Discord DLL — the code is in the exe itself; the DLLs staged next to
-  `asyncao.exe` on Windows are the SDL2/webp/avif engine and are required
+  `asyncao.exe` on Windows are the SDL3/webp/avif engine and are required
   regardless of Discord, so deleting one breaks the client (it does not
   "remove Discord").
-- **`-tags nodiscord`**: even that code compiles out; the package becomes
-  a no-op stub with the same API. Use this if your distro policy wants
-  zero proprietary-service integration in the binary. CI builds every
-  platform in both flavors, so you can also just download the prebuilt
-  `asyncao-<platform>-nodiscord` artifact (Actions → latest run) — which is
-  also **voice-free** (built `-tags "nodiscord novoice"`; see *Voice chat* below).
 - To get the AsyncAO icon on profiles, create a Discord application named
   "AsyncAO" in the developer portal, upload the icon under the asset key
   `appicon`, and paste the application ID into Settings → Discord.
-
-## Voice chat (never required)
-
-The optional **voice chat** — the LemmyAO/Nyathena server-relayed VS_* transport
-plus the Opus codec in `internal/voice` — is off unless a server advertises it
-(VS_CAPS) and you join. Like Discord, it can be compiled out entirely:
-
-- **`-tags novoice`**: the whole voice stack is removed — the Opus encoder/
-  decoder binding, the VS_* protocol reducer, the floating voice panel, the
-  courtroom **Voice** button, the Extras → *Voice* entry, and the **Settings →
-  Voice** tab. The remaining UI surface is inert no-op stubs, so no voice control
-  ever appears.
-- **Opus MUSIC keeps working.** Music and SFX play through SDL2_mixer, which
-  links `libopusfile`/`libopus` independently of the voice binding, so `.opus`
-  tracks still decode in a `novoice` build (those DLLs ship via SDL2_mixer either
-  way — the voice binding was never what carried them).
-- The **prebuilt Discord-free downloads are also voice-free**: every
-  `asyncao-<platform>-nodiscord` artifact is built `-tags "nodiscord novoice"`,
-  so the "no Discord" build is the lean build with neither Discord nor voice.
-  Build it locally with `go build -tags "nodiscord novoice" ./cmd/asyncao`.
 
 ## Tests & benchmarks
 
@@ -279,4 +246,4 @@ go test -run=NONE -bench=. -benchmem ./...   # alloc-gated benchmarks
 
 The pure-Go packages (`config`, `cache`, `network`, `protocol`, `assets`,
 `courtroom`, `theme`) test fine with `CGO_ENABLED=0`; `render`/`ui` need the
-SDL2 toolchain and use SDL's dummy video driver headlessly.
+SDL3 toolchain and use SDL's dummy video driver headlessly.

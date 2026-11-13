@@ -5,10 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 func presetTestApp(t *testing.T) *App {
@@ -32,7 +31,7 @@ func TestStylePresetSaveApply(t *testing.T) {
 	a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{Tint: true, R: 200, Glow: true})
 
 	a.saveStylePreset("Rage")
-	ps := a.d.Prefs.StylePresets()
+	ps := a.d.Prefs.Load().StylePresets()
 	if len(ps) != 1 || ps[0].Name != "Rage" || ps[0].Color != 3 || ps[0].Emote != "angry" {
 		t.Fatalf("saved preset = %+v", ps)
 	}
@@ -50,7 +49,7 @@ func TestStylePresetSaveApply(t *testing.T) {
 	if a.emoteIdx != 1 {
 		t.Errorf("emote-by-name not applied: emoteIdx=%d, want 1 (angry)", a.emoteIdx)
 	}
-	if s := a.d.Prefs.SpriteStyle(); !s.Tint || s.R != 200 || !s.Glow {
+	if s := a.d.Prefs.Load().MySpriteStyle; !s.Tint || s.R != 200 || !s.Glow {
 		t.Errorf("style not applied: %+v", s)
 	}
 }

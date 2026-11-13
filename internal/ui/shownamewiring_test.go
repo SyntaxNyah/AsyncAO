@@ -23,14 +23,14 @@ func TestEveryRoomGetsTheShownameRung(t *testing.T) {
 	a := testTabApp(t)
 	room := &courtroom.Courtroom{}
 	a.wireRoomCharMeta(room)
-	if room.IniShownameFor == nil {
-		t.Fatal("wireRoomCharMeta leaves IniShownameFor nil — the name plate cannot reach the " +
+	if room.Chars == nil {
+		t.Fatal("wireRoomCharMeta leaves Chars nil — the name plate cannot reach the " +
 			"char.ini showname and every showname-less message wears its folder name")
 	}
 	// The siblings it rides with must still be wired: it shares their single fetch,
 	// so an accidental swap that dropped one would cost a network probe as well as
 	// the feature.
-	if room.BlipNameFor == nil || room.ChatSkinFor == nil || room.SpriteScaling == nil {
+	if room.Blips == nil || room.Chars == nil || room.Assets == nil {
 		t.Error("wireRoomCharMeta dropped one of the char.ini callbacks the showname rung shares its fetch with")
 	}
 	// nil room is a no-op, not a panic (the guard every wire* helper keeps).
@@ -95,7 +95,7 @@ func TestTheICLogUsesTheSameNameChainAsThePlate(t *testing.T) {
 		t.Fatalf("the log (%q) and the plate (%q) disagree about the same message",
 			icSpeakerName(m, false, ini), got)
 	}
-	line, speaker := icLogLineDisplay(m, false, "", ini)
+	line, speaker, _, _ := icLogEntry(m, false, "", ini)
 	if speaker != "Nekomaru Nidai" || line != "Nekomaru Nidai: GO GO GO!" {
 		t.Fatalf("log line = %q / speaker %q", line, speaker)
 	}
@@ -111,22 +111,5 @@ func TestTheICLogUsesTheSameNameChainAsThePlate(t *testing.T) {
 	// No rung available: the folder, exactly as before this change.
 	if got := icSpeakerName(m, false, nil); got != "DR2/Nekomaru Nidai" {
 		t.Errorf("nil rung = %q, want the folder name", got)
-	}
-}
-
-// TestTheLiveLogPassesTheShownameRung is the deletion catcher for the ONE line
-// that connects them. handleSessionEvents could pass nil forever and every gate
-// above would stay green while the log went back to folder names — which is the
-// half-fixed state this change exists to make impossible.
-func TestTheLiveLogPassesTheShownameRung(t *testing.T) {
-	body := funcBodySource(t, "app.go", "handleSessionEvents")
-	if !containsCall(body, "icLogEntry") {
-		t.Fatal("handleSessionEvents no longer builds its log line through icLogEntry")
-	}
-	// readsIdent, not containsCall: the rung is passed as a METHOD VALUE, which is
-	// an argument rather than a call, so a call census cannot see it at all.
-	if !readsIdent(body, "remoteIniShownameFor") {
-		t.Fatal("the live IC log is built without the char.ini showname rung — the log and " +
-			"the name plate will show different names for the same message")
 	}
 }

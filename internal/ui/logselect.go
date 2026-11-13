@@ -2,22 +2,13 @@ package ui
 
 // Mouse text selection for the IC/OOC logs (drag to highlight, Ctrl+C to copy).
 //
-// The hard parts live here as PURE functions so they're unit-tested without
-// SDL: the selection is anchored to CONTENT (source entry + rune offset within
-// that entry), never to a screen row, so a scroll or a freshly appended/capped
-// line can't corrupt it. Hit-testing binary-searches prefix widths via an
-// injected measure func, so the cursor's line costs ~log2(len) width measures —
-// never the per-rune-per-row metrics the kit warns against (ui.go pickMemo).
-//
-// The render + input wiring (which feeds these from the live logs) lives with
-// the IC/OOC draw paths; all of it is gated on an active selection so a log
-// with no selection draws exactly as before.
+// The selection is anchored to content (source entry plus rune offset), never a screen row, so scrolling or a
+// newly appended or capped line cannot corrupt it. Hit-testing binary-searches prefix widths via an injected
+// measure func, avoiding per-rune-per-row metrics (ui.go pickMemo). All wiring is gated on an active selection.
 
 import "strings"
 
-// selPoint is a position in a log: a source-entry index and a rune offset
-// within that entry's full (unwrapped) text. Comparing two points orders the
-// selection regardless of which end the drag started.
+// selPoint is a position in a log: a source-entry index and a rune offset within that entry's full unwrapped text.
 type selPoint struct {
 	entry int
 	off   int
@@ -28,11 +19,10 @@ func (p selPoint) before(q selPoint) bool {
 	return p.entry < q.entry || (p.entry == q.entry && p.off < q.off)
 }
 
-// equal reports a zero-width selection (nothing to highlight or copy).
+// equal reports a zero-width selection.
 func (p selPoint) equal(q selPoint) bool { return p.entry == q.entry && p.off == q.off }
 
-// orderSel returns the two points low-to-high so callers don't care which way
-// the user dragged.
+// orderSel returns the two points low-to-high regardless of drag direction.
 func orderSel(a, b selPoint) (lo, hi selPoint) {
 	if b.before(a) {
 		return b, a
@@ -40,11 +30,9 @@ func orderSel(a, b selPoint) (lo, hi selPoint) {
 	return a, b
 }
 
-// hitTestRune returns the rune index in runes nearest pixel x, binary-searching
-// prefix widths (measure(runes[:i]) is monotonic in i). measure is called
-// ~log2(len(runes)) times — only ever for the line under the cursor. The result
-// is in [0, len(runes)] and snaps to the nearer glyph edge so a click in the
-// middle of a character picks the closer boundary.
+// hitTestRune returns the rune index in runes nearest pixel x by binary-searching prefix widths (measure is
+// monotonic in i), so only the line under the cursor is measured. The result is in [0, len(runes)] and snaps to
+// the nearer glyph edge.
 func hitTestRune(runes []rune, x int32, measure func([]rune) int32) int {
 	n := len(runes)
 	if n == 0 || x <= 0 {
@@ -68,11 +56,9 @@ func hitTestRune(runes []rune, x int32, measure func([]rune) int32) int {
 	return lo
 }
 
-// selectedText extracts the highlighted substring across entries. entryText
-// returns a source entry's full text (so this works for both logs without
-// copying their backing stores); lo/hi must be ordered (orderSel). Multi-entry
-// selections join with '\n'. Offsets are clamped, so a stale offset (entry
-// shrank) can't panic.
+// selectedText extracts the highlighted substring across entries; entryText returns a source entry's full text.
+// lo/hi must be ordered (orderSel). Multi-entry selections join with '\n'. Offsets are clamped, so a stale offset
+// cannot panic.
 func selectedText(entryText func(entry int) string, lo, hi selPoint) string {
 	clampRunes := func(r []rune, off int) int {
 		if off < 0 {

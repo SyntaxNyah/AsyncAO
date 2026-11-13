@@ -1,46 +1,34 @@
 package ui
 
 import (
-	"os/exec"
+	"log"
 	"path/filepath"
-	"runtime"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
-// openInFileManager opens a folder in the OS file manager (Windows Explorer /
-// macOS Finder / Linux xdg-open), fire-and-forget so it never blocks the frame.
-func openInFileManager(path string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("explorer.exe", path)
-	case "darwin":
-		cmd = exec.Command("open", path)
-	default:
-		cmd = exec.Command("xdg-open", path)
+// openInFileManager opens a folder in the file manager, or a file in its default program.
+func (a *App) openInFileManager(path string) {
+	if err := a.d.Desktop.OpenPath(path); err != nil {
+		log.Printf("ui: opening %s: %v", path, err)
 	}
-	_ = cmd.Start()
 }
 
-// openConfigFolder opens the AsyncAO config directory — where asset_preferences.json
-// (every setting: layout, favourites, hotkeys, colours…), the per-server case
-// notebooks and the jukebox library live — in the OS file manager.
-func openConfigFolder() {
+// openConfigFolder opens the AsyncAO config directory (preferences, notebooks, jukebox library) in the file manager.
+func (a *App) openConfigFolder() {
 	if d := configDir(); d != "" {
-		openInFileManager(d)
+		a.openInFileManager(d)
 	}
 }
 
 // openSettingsFile opens asset_preferences.json itself with the OS default handler.
-func openSettingsFile() {
+func (a *App) openSettingsFile() {
 	if p, err := config.DefaultPath(); err == nil {
-		openInFileManager(p)
+		a.openInFileManager(p)
 	}
 }
 
-// configDir returns the AsyncAO config directory's path for display, or "" if it
-// can't be resolved.
+// configDir returns the config directory path for display, or "" if it can't be resolved.
 func configDir() string {
 	if p, err := config.DefaultPath(); err == nil {
 		return filepath.Dir(p)

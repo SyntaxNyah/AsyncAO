@@ -179,57 +179,6 @@ func TestPollLobbyFetchKeepsSelectionByIdentity(t *testing.T) {
 	}
 }
 
-// TestRefreshKeepsPingSortAndPrunes pins that ping state survives a refresh —
-// the on-open auto-refresh funnels through RefreshServers, and the old
-// wipe-at-fetch-start snapped a ping-sorted lobby back to player order with
-// zero user action — and that boundedness moved rather than vanished: a
-// successful landing prunes connect times for servers no longer on the list
-// (rule §17.4), while an error landing (favorites-only degraded list) keeps
-// them so a transient master hiccup can't throw the cache away.
-func TestRefreshKeepsPingSortAndPrunes(t *testing.T) {
-	a := testTabApp(t)
-	a.frameNow = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
-	a.lobbyResult = make(chan lobbyFetch, 1)
-	a.d.MasterURL = "://no-network"
-	alpha := network.ServerEntry{IP: "a.example", WSPort: 1001, Name: "Alpha", Players: 1}
-	gone := "ws://gone.example:9999"
-	a.pingMode = true
-	a.pings = map[string]time.Duration{
-		alpha.WebSocketURL(): 5 * time.Millisecond,
-		gone:                 8 * time.Millisecond,
-	}
-
-	a.RefreshServers()
-	if !a.pingMode {
-		t.Error("a refresh start must not exit ping-sort mode")
-	}
-	if len(a.pings) != 2 {
-		t.Errorf("a refresh start must not drop the connect-time cache, got %d entries", len(a.pings))
-	}
-	<-a.lobbyResult // reap the (instantly failed) real fetch so its goroutine is done
-	a.lobbyFetching = false
-
-	// Error landing: no prune (the merged list degraded to favorites-only).
-	a.lobbyResult <- lobbyFetch{err: errors.New("master down")}
-	a.pollLobbyFetch()
-	if len(a.pings) != 2 {
-		t.Errorf("an error landing must keep the connect-time cache, got %d entries", len(a.pings))
-	}
-
-	// Successful landing: live entries survive, vanished ones are pruned.
-	a.lobbyResult <- lobbyFetch{entries: []network.ServerEntry{alpha}}
-	a.pollLobbyFetch()
-	if !a.pingMode {
-		t.Error("a landing list must not exit ping-sort mode")
-	}
-	if _, ok := a.pings[alpha.WebSocketURL()]; !ok {
-		t.Error("a live server's connect time must survive the landing")
-	}
-	if _, ok := a.pings[gone]; ok {
-		t.Error("a vanished server's connect time must be pruned on a successful landing (boundedness, rule §17.4)")
-	}
-}
-
 // TestErrorLandingKeepsList pins that a FAILED fetch landing leaves the visible
 // list untouched: the on-open auto-refresh fires with zero user action, so a
 // transient master hiccup must not erase a stale-but-fully-joinable list (or
@@ -249,25 +198,5 @@ func TestErrorLandingKeepsList(t *testing.T) {
 	}
 	if a.selServer != 0 {
 		t.Errorf("an error landing must not touch the selection, got selServer=%d", a.selServer)
-	}
-}
-
-// TestLeaveLobbyClearsPingLatch pins the leave-edge heal for a wedged sweep:
-// the done sentinel is sent non-blocking (a full pingRes drops it) and pollPing
-// stops running off-lobby, so leaving with a.pinging latched must clear it AND
-// supersede the sweep (gen bump) — or the Ping button and the idle-skip census
-// stay dead for the session, and a late done sentinel could re-sort the list
-// out of nowhere on re-entry.
-func TestLeaveLobbyClearsPingLatch(t *testing.T) {
-	a := testTabApp(t)
-	a.pinging = true
-	gen := a.pingGen
-	a.screen, a.drawnScreen = ScreenSettings, ScreenLobby // leaving the lobby this frame
-	a.noteScreenTransition()
-	if a.pinging {
-		t.Error("leaving the lobby must clear the pinging latch (dropped-sentinel wedge)")
-	}
-	if a.pingGen == gen {
-		t.Error("leaving the lobby must supersede the in-flight sweep (gen bump)")
 	}
 }

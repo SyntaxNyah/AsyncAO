@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // TestEchoClearRecoverableViaHistory pins the mainline: the server echo

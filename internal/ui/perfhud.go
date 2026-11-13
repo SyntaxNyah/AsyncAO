@@ -1,16 +1,13 @@
 package ui
 
-// Perf HUD (F3, any screen): live frame-time graph plus the 1 Hz
-// profiler's numbers — heap vs the 256 MiB budget, GC pause p99, cache
-// hit rate, network probes, cached 404s. The sampler already existed
-// (internal/metrics, --debug logged it); this renders it. Diagnostics
-// path: per-frame allocations here are acceptable, same policy as the
-// debug overlay.
+// Perf HUD (F3, any screen): a live frame-time graph plus the 1 Hz sampler's numbers (heap, GC pause p99, cache hit
+// rate, network probes, cached 404s). It is diagnostics, so per-frame allocations here are acceptable.
 
 import (
 	"fmt"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 const (
@@ -18,13 +15,9 @@ const (
 	perfHUDFrames = 120
 	// perfHUDBarW is one frame's bar width in the graph.
 	perfHUDBarW = 2
-	// perfHUDGraphH is the graph height; perfHUDScaleMs is the dt that
-	// reaches the top (33 ms ≈ a 30 fps frame — anything taller clips).
+	// perfHUDGraphH is the graph height; perfHUDScaleMs is the dt that reaches the top, and anything taller clips.
 	perfHUDGraphH  = 48
 	perfHUDScaleMs = 33.0
-	// perfBudgetBytes mirrors main's GOMEMLIMIT budget (spec §13): the
-	// HUD shows heap pressure against it.
-	perfBudgetBytes = 700 << 20
 	// frameBudgetMs is the 60 fps line drawn across the graph.
 	frameBudgetMs = 16.7
 )
@@ -40,12 +33,11 @@ func (a *App) drawPerfHUD(w, h int32) {
 	c := a.ctx
 	const x0, y0 = 8, 30
 	graphW := int32(perfHUDFrames * perfHUDBarW)
-	panel := sdl.Rect{X: x0 - 4, Y: y0 - 4, W: graphW + 8, H: perfHUDGraphH + 96}
+	panel := sdl.Rect{X: x0 - 4, Y: y0 - 4, W: graphW + 8, H: perfHUDGraphH + 114}
 	c.Fill(panel, sdl.Color{R: 0, G: 0, B: 0, A: 200})
 	c.Border(panel, ColPanelHi)
 
-	// Frame-time graph: oldest → newest left to right; green under the
-	// 60 fps budget, amber to 33 ms, red above.
+	// Frame-time graph, oldest to newest left to right: green under the 60 fps budget, amber to 33 ms, red above.
 	var sum, worst float32
 	for i := 0; i < perfHUDFrames; i++ {
 		dt := a.frameDts[(a.frameDtIdx+i)%perfHUDFrames]
@@ -54,12 +46,7 @@ func (a *App) drawPerfHUD(w, h int32) {
 			worst = dt
 		}
 		hPx := int32(float32(perfHUDGraphH) * dt / perfHUDScaleMs)
-		if hPx > perfHUDGraphH {
-			hPx = perfHUDGraphH
-		}
-		if hPx < 1 {
-			hPx = 1
-		}
+		hPx = value.Clamp(hPx, 1, perfHUDGraphH)
 		col := ColTierGreen
 		switch {
 		case dt > perfHUDScaleMs:
@@ -82,20 +69,14 @@ func (a *App) drawPerfHUD(w, h int32) {
 	}
 	c.Label(x0, ty, fmt.Sprintf("frame %5.2fms avg (%4.0f fps)  worst %5.1fms", avg, fps, worst), ColText)
 	ty += 18
+	c.Label(x0, ty, a.d.GraphicsName, ColText)
+	ty += 18
 
 	// The 1 Hz sampler's numbers (nil before its first tick / in tests).
 	if a.d.Profiler != nil {
 		if s := a.d.Profiler.Latest(); s != nil {
 			heapMiB := float64(s.HeapBytes) / (1 << 20)
-			budMiB := float64(perfBudgetBytes) / (1 << 20)
-			heapCol := ColText
-			if s.HeapBytes > perfBudgetBytes*3/4 {
-				heapCol = ColTierYellow
-			}
-			if s.HeapBytes > perfBudgetBytes {
-				heapCol = ColDanger
-			}
-			c.Label(x0, ty, fmt.Sprintf("heap %5.1f / %.0f MiB   gc p99 %s", heapMiB, budMiB, s.GCPauseP99), heapCol)
+			c.Label(x0, ty, fmt.Sprintf("heap %5.1f MiB   gc p99 %s", heapMiB, s.GCPauseP99), ColText)
 			ty += 18
 			c.Label(x0, ty, fmt.Sprintf("cache hit %3.0f%%   probes %d   cached 404s %d",
 				s.CacheHitRate*100, s.Probes, s.Cached404s), ColText)

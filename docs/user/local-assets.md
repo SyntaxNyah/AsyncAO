@@ -1,19 +1,38 @@
 # Local assets — your own folders and .zip packs
 
-**Settings → Assets → Asset source** picks where AsyncAO reads art, sound and
-music from. There are three choices:
+**Settings → Assets → Asset source** is one list of everywhere AsyncAO looks
+for art, sound and music, searched top to bottom:
 
-| Mode | What it does |
+1. Your folders and `.zip` packs, in the order you set with ▲ ▼.
+2. Packages found in the `packages/` folder next to AsyncAO.
+3. The web: the server's own asset host, then any mirrors you added for it.
+
+Three independent switches decide what is searched:
+
+| Switch | What it does |
 |---|---|
-| **Stream everything from the server** *(default)* | Every asset comes from the server's asset URL. |
-| **Use my folders first, then stream the rest** | Your folders and `.zip` packs are read first; anything you don't have still streams. |
-| **Only use my folders — never stream** | Nothing is streamed. For legacy servers that provide no asset URL at all. |
+| **Use my folders and packs** | On: your folders and `.zip` packs are read first. Adding your first folder switches it on. |
+| **Use packages** | On *(default)*: the packages folder is read after your folders, whether or not they are on. |
+| **Stream from the web** | On *(default)*: anything your files don't have streams. Off: nothing streams, for legacy servers that provide no asset URL at all; turning it off switches your folders and packages on, and turning both of those off switches it back on. |
+
+Add a folder, a `.zip` or a mirror's `https://` address in the field under the
+list, pick folders with **Add folders…** or `.zip` packs with **Add packs…**, or
+drag a folder or `.zip` onto the Assets tab.
+
+Each folder is checked when it's added. The arrow on its **Folder** or **ZIP**
+tag shows what it contains (Characters, Backgrounds, Sounds, Evidence, Misc). A
+folder with none of those is marked **Not an AO base**, and if you picked the
+folder one level too high or too deep, a button offers the right one.
 
 ## Layering your own content over a server
 
-The middle mode is the one most people want. Add a folder (or a `.zip`), pick
-it, and your files are used **instead of the server's copies at the same
-paths** — while everything you *don't* have keeps streaming normally.
+Turn on **Use my folders and packs**, and your files are used **instead of the
+server's copies at the same paths**, while everything you *don't* have keeps
+streaming normally.
+
+One exception: a file AsyncAO already downloaded from the server and keeps in
+its cache wins over yours. Clear the cache (Settings → Cache) to make your copy
+show for a file the server has already sent you.
 
 That makes it useful for two different things:
 
@@ -41,22 +60,25 @@ over a `.webp` server — but the folder and file *name* must.
   `phoenix wright/(a)normal.png` are the same file to AsyncAO.
 - Up to 16 mounts.
 
-## Rescan
+## Adding and changing files
 
-Press **Rescan folders** after adding or changing files on disk. AsyncAO
-indexes your mounts once and then answers from memory, so it does not notice
-edits by itself.
+AsyncAO looks in a folder the first time it needs a file from it, and notices
+new, removed and renamed files by itself: it looks again when a file is missing
+and its last look is more than 30 seconds old, and every time you come back to
+the AsyncAO window.
 
-A rescan reloads the art your folders cover right away; everything else updates
-as it reloads normally. It also re-tries any file that failed to load last
-time.
+Edits show by themselves too: when you come back to the AsyncAO window, every
+file it already read from your folders is checked, and anything you changed
+reloads, including a character's `char.ini`. Nothing that didn't change is
+reloaded.
 
 ## When a file in your pack is damaged
 
 If a file in your folders can't be read or decoded, AsyncAO **uses the server's
 copy for that one asset instead** and tells you how many files that happened
 to. Your pack is not disabled, and the server's copy is not penalised for your
-file being broken. Fix the file and press Rescan.
+file being broken. Fix the file and switch back to AsyncAO: the fixed file is
+used.
 
 One exception: a damaged music or sound file is only re-tried the next time
 that track plays.
@@ -91,16 +113,15 @@ which is worse than no bundle.
 
 ## Performance
 
-If you have no folders configured, layering costs nothing at all — no index is
-built, no folder is scanned, and the asset pipeline is byte-for-byte the one
-that shipped before it. This is gated by a benchmark, not just asserted.
+With no folders configured, nothing is read and no folder is looked at.
 
-With folders configured, a lookup is an in-memory map hit against an index
-built once in the background. A file your pack provides costs **no network
-request at all**. There is no size limit on the index: every file in your
-folders is indexed (memory grows with the pack, roughly 180 bytes per file).
+With folders configured, AsyncAO lists a folder once, when a file in it is
+first needed, and answers from that listing after. A `.zip` pack is indexed the
+first time it is needed. A file your pack provides costs **no network request
+at all**.
 
 ## Legacy: never stream
 
-The third mode is the old behaviour, for servers that provide no asset URL.
-Everything must come from your folders; nothing falls back to the network.
+Turning **Stream from the web** off is the old behaviour, for servers that
+provide no asset URL. Everything must come from your folders; nothing falls back
+to the network.

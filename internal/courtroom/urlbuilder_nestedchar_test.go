@@ -181,6 +181,8 @@ func placeholderArg(t reflect.Type) reflect.Value {
 		return reflect.ValueOf("normal").Convert(t)
 	case reflect.Bool:
 		return reflect.ValueOf(false)
+	case reflect.Pointer:
+		return reflect.Zero(t)
 	default: // ints: emote number, EmoteKind
 		return reflect.ValueOf(1).Convert(t)
 	}

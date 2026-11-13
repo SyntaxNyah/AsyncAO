@@ -1,17 +1,13 @@
-// Package metrics implements the cold-load report and the 1 Hz runtime
-// sampler (spec §15): cache hit rates, heap size via runtime/metrics,
-// and GC pause p99 — feeding the debug HUD and --debug logging.
+// Package metrics implements the cold-load report and the 1 Hz runtime sampler for the debug HUD and --debug.
 package metrics
 
 import (
-	"fmt"
 	"runtime/metrics"
 	"sync/atomic"
 	"time"
 )
 
 const (
-	// SampleInterval is the sampler cadence.
 	SampleInterval = 1 * time.Second
 
 	heapBytesMetric  = "/memory/classes/heap/objects:bytes"
@@ -119,7 +115,6 @@ func (p *Profiler) loop() {
 	}
 }
 
-// histogramQuantile extracts a quantile from a runtime/metrics histogram.
 func histogramQuantile(h *metrics.Float64Histogram, q float64) time.Duration {
 	if h == nil || len(h.Counts) == 0 {
 		return 0
@@ -136,56 +131,10 @@ func histogramQuantile(h *metrics.Float64Histogram, q float64) time.Duration {
 	for i, c := range h.Counts {
 		cumulative += c
 		if cumulative >= target {
-			// Bucket i spans Buckets[i]..Buckets[i+1] (seconds).
+			// Bucket i spans Buckets[i]..Buckets[i+1] in seconds.
 			upper := h.Buckets[i+1]
 			return time.Duration(upper * float64(time.Second))
 		}
 	}
 	return time.Duration(h.Buckets[len(h.Buckets)-1] * float64(time.Second))
-}
-
-// ColdLoad tracks the first load burst after connect for the §15 report
-// line: "Cold load: 87 ms, 212 probes, 3 misses".
-type ColdLoad struct {
-	start   time.Time
-	probes  atomic.Int64
-	misses  atomic.Int64
-	stopped atomic.Bool
-	took    atomic.Int64 // nanoseconds
-}
-
-// NewColdLoad starts timing now.
-func NewColdLoad() *ColdLoad {
-	return &ColdLoad{start: time.Now()}
-}
-
-// AddProbe counts one network probe (call from fetch instrumentation).
-func (c *ColdLoad) AddProbe() {
-	if !c.stopped.Load() {
-		c.probes.Add(1)
-	}
-}
-
-// AddMiss counts one all-formats-missing asset.
-func (c *ColdLoad) AddMiss() {
-	if !c.stopped.Load() {
-		c.misses.Add(1)
-	}
-}
-
-// Finish freezes the measurement (first fully-loaded frame).
-func (c *ColdLoad) Finish() {
-	if c.stopped.CompareAndSwap(false, true) {
-		c.took.Store(int64(time.Since(c.start)))
-	}
-}
-
-// Report renders the §15 line.
-func (c *ColdLoad) Report() string {
-	took := time.Duration(c.took.Load())
-	if !c.stopped.Load() {
-		took = time.Since(c.start)
-	}
-	return fmt.Sprintf("Cold load: %d ms, %d probes, %d misses",
-		took.Milliseconds(), c.probes.Load(), c.misses.Load())
 }

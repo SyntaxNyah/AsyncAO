@@ -34,20 +34,38 @@ func newEffectsRig(t *testing.T) (*App, *config.AssetPreferences) {
 func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 	a, prefs := newEffectsRig(t)
 
-	prefs.SetRainbowSprites(true)
-	prefs.SetSpriteSolidTint(true)
-	prefs.SetRainbowSpriteGlow(true)
-	prefs.SetSpriteWobble(true)
-	prefs.SetSpriteSpin(true)
-	prefs.SetShoutPunch(true)
-	prefs.SetAnimateEntrances(true)
-	prefs.SetDepthOfField(true)
-	prefs.SetSpotlight(true)
-	prefs.SetReflection(true)
-	prefs.SetPostCRT(true)
-	prefs.SetPostVignette(true)
-	prefs.SetPostScanlines(true)
-	prefs.SetPostGrain(true)
+	prefs.Update(func(sn *config.Settings) { sn.RainbowSprites = true })
+	prefs.Update(func(sn *config.Settings) { sn.SpriteSolidTint = true })
+	prefs.Update(func(sn *config.Settings) { sn.RainbowSpriteGlow = true })
+	prefs.Update(func(sn *config.Settings) { sn.SpriteWobble = true })
+	prefs.Update(func(sn *config.Settings) { sn.SpriteSpin = true })
+	prefs.Update(func(sn *config.Settings) { sn.ShoutPunch = true })
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AnimateEntrances =
+
+			true
+
+	})
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DepthOfField =
+
+			true
+
+	})
+	prefs.Update(func(sn *config.Settings) { sn.Spotlight = true })
+	prefs.Update(func(sn *config.Settings) { sn.Reflection = true })
+	prefs.Update(func(sn *config.Settings) { sn.PostCRT = true })
+	prefs.Update(func(sn *config.Settings) { sn.PostVignette = true })
+	prefs.Update(func(sn *config.Settings) { sn.PostScanlines = true })
+	prefs.Update(func(sn *config.Settings) { sn.PostGrain = true })
 
 	// Sanity: without the master these really are on, so the assertions below
 	// prove suppression rather than an accidentally-empty struct.
@@ -58,7 +76,16 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 		t.Fatalf("rig failed to enable the post FX: %+v", got)
 	}
 
-	prefs.SetDisableEffects(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableEffects =
+
+			true
+
+	})
 
 	wantScaling := courtroom.ScalingMode(prefs.SpriteScalingMode())
 	if got, want := a.spriteFX(), (render.SpriteFX{UserScaling: wantScaling}); got != want {
@@ -70,7 +97,17 @@ func TestDisableEffectsSuppressesEveryLocalFX(t *testing.T) {
 
 	// Turning it back off restores the player's own choices untouched — the master
 	// overrules, it must never rewrite the individual preferences.
-	prefs.SetDisableEffects(false)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableEffects =
+
+			false
+
+	})
+
 	if got := a.spriteFX(); !got.Rainbow || !got.Spin || !got.Entrance {
 		t.Errorf("unticking the master didn't restore the user's FX: %+v", got)
 	}
@@ -92,12 +129,22 @@ func TestDisableEffectsSuppressesIncomingReactions(t *testing.T) {
 	}
 
 	a.reactionFloats = a.reactionFloats[:0]
-	prefs.SetDisableEffects(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableEffects =
+
+			true
+
+	})
+
 	a.onIncomingReaction(courtroom.WireReaction{Ref: 4242, Index: 2})
 	if len(a.reactionFloats) != 0 {
 		t.Error("the master off-switch didn't suppress an incoming reaction float")
 	}
-	if prefs.HideReactionsOn() {
+	if prefs.Load().HideReactions {
 		t.Error("the master off-switch rewrote HideReactions; it must only overrule it")
 	}
 }
@@ -110,10 +157,20 @@ func TestDisableEffectsRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prefs.EffectsDisabled() {
+	if prefs.Load().DisableEffects {
 		t.Error("the master off-switch must default to OFF (effects render)")
 	}
-	prefs.SetDisableEffects(true)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DisableEffects =
+
+			true
+
+	})
+
 	if err := prefs.SaveNow(); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +181,7 @@ func TestDisableEffectsRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = reloaded.Close() })
-	if !reloaded.EffectsDisabled() {
+	if !reloaded.Load().DisableEffects {
 		t.Error("the master off-switch did not survive a save/load round trip")
 	}
 }

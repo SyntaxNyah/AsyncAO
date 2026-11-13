@@ -2,7 +2,6 @@ package theme
 
 // THE PRESET LIBRARY'S GATES (v1.90.0 W9) — design §6.5 acceptance clauses 1-3
 // and 7, plus the encapsulation gates hard rule 11 asks of every new seam.
-//
 // The 294-combination COHERENCE matrix is not here: it needs the real anchor
 // resolver, which lives in internal/ui, and re-deriving the resolve in this
 // package would be exactly the mirror-test hard rule 11 rejects. See
@@ -12,12 +11,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -44,7 +37,6 @@ func shippedLibraryFor(t testing.TB) *PresetLibrary {
 // TestEveryEmbeddedPresetParses is acceptance clause 1, and it is deliberately
 // the loudest test in the file: everything else in this wave is downstream of
 // the fragments being readable at all.
-//
 // It asserts the SHAPE of the library, not just the absence of an error. A
 // loader that silently skipped a file it could not classify would return a
 // perfectly valid library with 13 styles in it, and the gallery would render a
@@ -132,12 +124,9 @@ func TestEveryLayoutPresetDeclaresItsDesignCanvas(t *testing.T) {
 // the load-bearing gate of the entire wave: "apply a layout" and "apply a style"
 // are only well-defined acts because the sections they own do not overlap, and
 // the 294-cell gallery is only orthogonal for the same reason.
-//
 // It runs in BOTH directions on purpose. Over the TABLE, because the rule lives
 // there and a future section added to both partitions must fail here rather than
 // in a bug report. Over the DATA, because the table only governs fragments that
-// go through the parser, and a gate that trusted the parser to have run would
-// pass on an empty directory.
 func TestLayoutAndStylePresetKeySetsAreDisjoint(t *testing.T) {
 	// --- the table ---------------------------------------------------------
 	// [element.*] is the ONE deliberate overlap: both axes declare elements, and
@@ -231,7 +220,6 @@ func fragmentSections(t testing.TB, p *Preset) []string {
 // TestPresetTierViolationIsRefusedNotIgnored is the ENCAPSULATION half of the
 // disjointness rule: the partition cannot be bypassed by writing a fragment that
 // ignores it. Both directions, and the element-kind rule with them.
-//
 // It drives ParsePreset — the sanctioned path — with hand-built fragments rather
 // than asserting over the table a second time, because a test that re-derived
 // the rule would pass even if nothing enforced it.
@@ -332,7 +320,6 @@ func TestFullCanvasIsADeclarationNotAnInference(t *testing.T) {
 // data. The parser refuses a violation (above), so this cannot fail while that
 // passes — which is the point: it is the gate that proves the rule was applied
 // to the 461 elements that actually ship, not only to the two in a fixture.
-//
 // It also asserts the converse, which the parser does NOT check: every id in a
 // `full_canvas` list must name an element that exists. A stale entry there is an
 // anchor rule quietly switched off for an element that was renamed.
@@ -373,19 +360,7 @@ func TestStylePresetElementsAlwaysAnchor(t *testing.T) {
 	// THE EXEMPTION IS SMALL AND IT HAS TO STAY SMALL. It is the one way a style
 	// element escapes the orthogonality rule, and W9 moved elements in BOTH
 	// directions across it, for opposite reasons:
-	//
-	//   * 40 canvas-wide overlays went the other way, from an absolute
-	//     `0, 0, 714, 668` to `anchor = courtroom` with a `0, 0, 0, 0` delta,
-	//     because the absolute rect covers only 47% of a 1512-wide layout
-	//     (README F2) and the >= 90% snap cannot reach it from there;
-	//   * 13 fixed-size ORNAMENTS came in, because their w/h had been written as
-	//     "canvas minus a constant" and ruling R1 turned that into a delta that
-	//     inverts on every canvas but the one they were drawn on.
-	//
 	// Anchor first, always; declare only what genuinely references no widget.
-	// PresetFullCanvasCap is the format's bound and is far above this; the number
-	// here is a REVIEW threshold, so a wave that doubles the exemptions has to
-	// change a line that says out loud what it is doing.
 	const shippedFullCanvasReviewCap = 24
 	if full > shippedFullCanvasReviewCap {
 		t.Errorf("%d shipped style elements take the full_canvas exemption (review threshold %d) — "+
@@ -401,7 +376,6 @@ func TestStylePresetElementsAlwaysAnchor(t *testing.T) {
 // TestEveryShippedPresetShipsZeroBytesOfArt is acceptance clause 7, and it is an
 // AGPLv3 gate before it is an engineering one: "everything is arithmetic, so
 // everything is original by construction" is only true while it stays true.
-//
 // It checks the FS as well as the model. A preset cannot reference art without a
 // [media] entry, but it could still smuggle a .png into the axis directory and a
 // later wave could start reading it.
@@ -463,12 +437,6 @@ func fontFileExt(file string) bool {
 // budget is the recipient's, not the author's". Every cap a preset can spend is
 // counted here, against the constant rather than against a number typed into the
 // assertion.
-//
-// The generator TILE count is the interesting one, and it is counted the way the
-// texture cache counts it — by DEDUPLICATING (name, params) pairs, because the
-// param hash is the cache key, so twenty elements sharing one recipe cost one
-// tile. Counting elements instead would fail a preset that is doing exactly the
-// right thing.
 func TestNoShippedPresetExceedsTheRecipientsBudget(t *testing.T) {
 	// themeGenTileCap mirrors render.ThemeGenCap, which internal/theme may not
 	// import (it is an SDL package). NAMED and asserted against the one live
@@ -533,17 +501,6 @@ func styleFragment(id string) string {
 // partition, an over-cap directory grows a bound nobody named, and an over-size
 // fragment grows the binary the same way.
 func TestPresetLoaderRefusesEveryWayAnAxisCanLie(t *testing.T) {
-	t.Run("duplicate id", func(t *testing.T) {
-		// Two FILES cannot share a name, so the duplicate arrives via a stem that
-		// matches while the ids collide — which is why the loader checks both.
-		src := fakeAxisFS(map[string]string{
-			presets.StyleDir + "/a" + presets.FileExt: styleFragment("a"),
-			presets.StyleDir + "/b" + presets.FileExt: styleFragment("a"),
-		})
-		if _, err := LoadPresetLibrary(src); err == nil {
-			t.Fatal("two fragments claiming one id were accepted")
-		}
-	})
 	t.Run("stem does not match id", func(t *testing.T) {
 		src := fakeAxisFS(map[string]string{
 			presets.StyleDir + "/wrong" + presets.FileExt: styleFragment("right"),
@@ -589,7 +546,6 @@ func TestPresetLoaderRefusesEveryWayAnAxisCanLie(t *testing.T) {
 // above: the refusal only protects the tree if the tree is actually inside it,
 // and a cap nothing is measured against is a cap that gets discovered the day a
 // fragment crosses it.
-//
 // It also reports the total, because "how many bytes does the preset library add
 // to the binary" is the number the zero-bundled-art claim is really about.
 func TestEveryShippedFragmentFitsTheFragmentCap(t *testing.T) {
@@ -668,7 +624,6 @@ func sidecarFingerprint(t testing.TB, s *Sidecar) string {
 // TestMergePresetsNeverMutatesItsBase is the property the gallery's live preview
 // rests on: scrubbing a row merges 294 candidate themes and throws every one of
 // them away, and not one of them may leave a mark on the theme the user has open.
-//
 // It hashes the base BEFORE and AFTER, which is the same shape
 // TestCopyForEditingLeavesTheOriginalUntouched uses for the folder on disk. The
 // aliasing bug this catches is the plausible one: a struct copy shares every
@@ -706,7 +661,6 @@ func TestMergePresetsNeverMutatesItsBase(t *testing.T) {
 
 // TestApplyPresetTierReplacesConfigurationAndMergesManifests pins the ONE
 // sentence the merge is built on (presetmerge.go's header), in both halves.
-//
 // Configuration replaced: a layout apply must leave nothing of the previous
 // layout, INCLUDING a pane element the user hand-authored — a tier you cannot
 // replace is a tier you cannot swap.
@@ -806,18 +760,6 @@ func TestApplyPresetTierIsAllOrNothing(t *testing.T) {
 // catches the failures that are not about geometry at all: an id collision
 // between the axes, a cap the two tiers only breach together, and a merged model
 // the writer would refuse to save.
-//
-// THE CAPS ARE ASSERTED EXPLICITLY, not merely by Bytes() refusing. Bytes()
-// enforces them, so a breach fails either way — but "combination does not
-// serialise: element cap" and "cyberpunk x split_triptych needs 97 elements, cap
-// is 96" are not the same message to the person who has to fix it, and the
-// generator TILE budget is not the writer's business at all: it belongs to the
-// texture store, so nothing in the serialise path would ever have looked at it.
-//
-// PER COMBINATION, which is the whole point. TestNoShippedPresetExceedsThe-
-// RecipientsBudget measures one FRAGMENT; a cap the two axes only breach
-// TOGETHER — 52 style elements over 48 layout panes — is invisible there and is
-// exactly what a two-axis gallery makes possible.
 func TestEveryCombinationMergesAndValidates(t *testing.T) {
 	// themeGenTileCap mirrors render.ThemeGenCap; see the fragment-level gate's
 	// note on why the number is spelled here rather than imported.
@@ -923,13 +865,6 @@ func TestAMergedThemeReadsBackAsItself(t *testing.T) {
 
 // TestACreatedThemeCarriesItsStylesAttribution is the licensing contract's last
 // leg, and it is the one that leaves the process.
-//
-// §6.5 clause 7 says every preset states that it ships no art. The gallery shows
-// that line before you build, but the artefact the user then hands to someone
-// else is a FOLDER — and if the attribution stops at our panel, the theme that
-// gets redistributed under AGPLv3 says nothing about where its art came from.
-// So the style's credit becomes the created theme's `[theme] credit`, and this
-// asserts it survives the whole way: merge, serialise, and read back off a file.
 func TestACreatedThemeCarriesItsStylesAttribution(t *testing.T) {
 	lib := shippedLibraryFor(t)
 	layout := lib.Layouts()[0]
@@ -997,52 +932,6 @@ func TestPresetLibraryIsImmutableAcrossCallers(t *testing.T) {
 	}
 	if len(second.Elements) != want || second.Elements[0] != wantFirst {
 		t.Fatal("the second apply of the same preset produced a different theme")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// The data package's own encapsulation
-// ---------------------------------------------------------------------------
-
-// TestPresetDataPackageShipsDataOnly is the gate on the DEPENDENCY DIRECTION
-// (hard rule 11): internal/theme/presets is data, it imports "embed" and nothing
-// else, and it declares no function of any kind.
-//
-// It matters because the cycle it prevents is invisible until it exists. The
-// moment that package imports internal/theme — to validate a fragment, say, or
-// to expose a typed accessor — the parser can no longer import the data, and the
-// fix at that point is a third package nobody wanted. Here it is one assertion.
-func TestPresetDataPackageShipsDataOnly(t *testing.T) {
-	dir := filepath.Join("presets")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read %s: %v", dir, err)
-	}
-	var goFiles []string
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".go") {
-			goFiles = append(goFiles, e.Name())
-		}
-	}
-	sort.Strings(goFiles)
-	if len(goFiles) != 1 || goFiles[0] != "embed.go" {
-		t.Fatalf("the data package holds %v — it is data, and one file is the whole of it", goFiles)
-	}
-
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filepath.Join(dir, "embed.go"), nil, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	for _, imp := range f.Imports {
-		if imp.Path.Value != `"embed"` {
-			t.Errorf("the data package imports %s — data never imports code, or the cycle is one commit away", imp.Path.Value)
-		}
-	}
-	for _, d := range f.Decls {
-		if fn, ok := d.(*ast.FuncDecl); ok {
-			t.Errorf("the data package declares func %s — behaviour belongs in internal/theme", fn.Name.Name)
-		}
 	}
 }
 

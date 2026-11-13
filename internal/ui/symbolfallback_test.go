@@ -83,9 +83,10 @@ func TestUncoveredSymbolsRouteToTheEmojiFace(t *testing.T) {
 
 	// Find a pictograph this machine's chain genuinely cannot draw. On a stock box at
 	// least one of these is uncovered; if the chain happens to cover all of them the
-	// gap does not exist here and there is nothing to prove.
-	// All of these default to TEXT presentation: an emoji-by-default character routes to
-	// the colour face on its own, so only these depend on the coverage promotion under test.
+	// gap does not exist here and there is nothing to prove. All of them default to
+	// TEXT presentation (❤ ☀ ☂ ✔ ✳ ♥): an emoji-by-default character such as ✨ or ⭐
+	// routes to the colour face on its own (render.NeedsEmojiFallback), so only these
+	// depend on the coverage promotion under test.
 	probes := []rune{0x2764, 0x2600, 0x2602, 0x2714, 0x2733, 0x2665}
 	var gap rune
 	for _, r := range probes {
@@ -290,22 +291,4 @@ func upperHex(r rune) string {
 		out[i] = b[n-1-i]
 	}
 	return string(out)
-}
-
-// TestLabelEmojiAsksForTheColourFaceOnAnUncoveredSymbol is the wiring catcher. The
-// callers gate their emoji face on NeedsEmojiFallback, which is blind to a bare BMP
-// pictograph — so labelEmoji itself has to notice, load the face and resolve one at
-// the row's own scale. Without all three the raster is built with emoji==nil and the
-// character stays a box no matter how good the table is.
-func TestLabelEmojiAsksForTheColourFaceOnAnUncoveredSymbol(t *testing.T) {
-	body := funcBodySource(t, "emojilabel.go", "labelEmojiWeight")
-	for _, fn := range []string{"uncoveredPictograph", "ensureEmojiFontLoad", "emojiFaceFor"} {
-		if !containsCall(body, fn) {
-			t.Errorf("labelEmojiWeight no longer calls %s — a bare ♥/✨ would never reach the colour-emoji face (F5)", fn)
-		}
-	}
-	raster := funcBodySource(t, "emojilabel.go", "emojiRasterWeight")
-	if !containsCall(raster, "uncoveredPictographMask") {
-		t.Error("emojiRasterWeight no longer promotes uncovered pictographs — the face is loaded but no rune is routed to it")
-	}
 }

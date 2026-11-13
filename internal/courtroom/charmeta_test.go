@@ -42,18 +42,18 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 		}
 	}
 	room, _, _, _ := newCourtroomRig(t)
-	room.BlipNameFor = func(char string) (string, bool) {
+	room.Blips = blipFake{name: func(char string) (string, bool) {
 		if char == "dorothy" {
 			return "deep", true
 		}
 		return "", true
-	}
-	room.ChatSkinFor = func(char string) string {
+	}}
+	room.Chars = charFake{skin: func(char string) string {
 		if char == "dorothy" {
 			return "dorothybox"
 		}
 		return ""
-	}
+	}}
 
 	msg := icMsg("hello")
 	msg.CharName = "dorothy"
@@ -83,7 +83,7 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 	// as an alt (MiscChatboxCandidates), never the scene key.
 	msgCase := icMsg("case test")
 	msgCase.CharName = "dorothy"
-	room.ChatSkinFor = func(string) string { return "VA-11 HallA/Jill Stingray" }
+	room.Chars = charFake{skin: func(string) string { return "VA-11 HallA/Jill Stingray" }}
 	room.HandleEvent(Event{Kind: EventMessage, Message: msgCase})
 	room.SkipToIdle()
 	if !strings.Contains(room.Scene.ChatSkinBase, "misc/va-11%20halla/jill%20stingray/chat") {
@@ -91,12 +91,12 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 	}
 
 	// A skinless speaker clears the scene's skin (no stale carry-over).
-	room.ChatSkinFor = func(char string) string {
+	room.Chars = charFake{skin: func(char string) string {
 		if char == "dorothy" {
 			return "dorothybox"
 		}
 		return ""
-	}
+	}}
 	msg3 := icMsg("yo")
 	msg3.CharName = "phoenix"
 	room.HandleEvent(Event{Kind: EventMessage, Message: msg3})
@@ -163,7 +163,7 @@ number = 2
 // correct set plays for that same message.
 func TestBlipHeldWhileCharINIPending(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.BlipNameFor = func(char string) (string, bool) { return "", false }
+	room.Blips = blipFake{name: func(char string) (string, bool) { return "", false }}
 	msg := &protocol.ChatMessage{
 		CharName: "ridelle", Emote: "normal", Message: "hello", Side: "wit",
 		EmoteMod: protocol.EmoteModIdle, // no preanim stall — begin → typewriter
@@ -177,7 +177,7 @@ func TestBlipHeldWhileCharINIPending(t *testing.T) {
 	}
 
 	// The fetch lands: the same speaker now answers "female", known=true.
-	room.BlipNameFor = func(char string) (string, bool) { return "female", true }
+	room.Blips = blipFake{name: func(char string) (string, bool) { return "female", true }}
 	room.SkipToIdle()
 	if room.blipPending {
 		t.Fatal("a landed char.ini must clear the pending flag")
@@ -186,4 +186,3 @@ func TestBlipHeldWhileCharINIPending(t *testing.T) {
 		t.Errorf("first message must blip with the landed set, got %q", room.blipRef.Base)
 	}
 }
-

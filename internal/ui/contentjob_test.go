@@ -15,7 +15,9 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -306,7 +308,7 @@ func TestContentProbeWindowBounded(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	// A big scene — far more refs than the window — so an unbounded probe would
 	// blow past contentProbeWorkers.
 	rec := &sceneRecording{Origin: srv.URL + "/", StartBg: "courtroom"}
@@ -359,7 +361,7 @@ func TestContentProbeFoundMissing(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin:  srv.URL + "/",
 		StartBg: "courtroom",
@@ -404,6 +406,7 @@ func TestContentProbeFoundMissing(t *testing.T) {
 // It also round-trips the sprite bytes to prove packaging reuses the probed
 // bytes verbatim.
 func TestPackageBundleLayout(t *testing.T) {
+	withExeDataRoot(t)
 	sprite := pngBytes()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Serve the sprite as .webp — the FIRST candidate in the diagnostic full
@@ -432,7 +435,7 @@ func TestPackageBundleLayout(t *testing.T) {
 	bundle := nextBundleDir(dir, "myscene")
 	t.Cleanup(func() { _ = os.RemoveAll(bundle) })
 
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin:  srv.URL + "/",
 		StartBg: "courtroom",
@@ -477,6 +480,79 @@ func TestPackageBundleLayout(t *testing.T) {
 	// The gap list.
 	if _, err := os.Stat(filepath.Join(bundle, contentReportFileName)); err != nil {
 		t.Errorf("missing-content text file not written: %v", err)
+	}
+}
+
+// TestWriteContentBundleCancelRemovesPartial pins the cancel contract directly: a
+// closed cancel channel leaves no folder at all and reports that nothing was kept.
+func TestWriteContentBundleCancelRemovesPartial(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "bundle")
+	cancel := make(chan struct{})
+	close(cancel)
+	res := writeContentBundleCancel(nil, dest, "scene", &sceneRecording{}, nil, nil, cancel)
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("cancelled write must leave no folder; Stat err=%v", err)
+	}
+	if !strings.Contains(res.msg, "cancelled") {
+		t.Errorf("result should say cancelled; got %q", res.msg)
+	}
+}
+
+// TestRemovePartialSparesUserFolder pins the created-only rule: a folder the writer
+// did not create survives a cancel with everything in it.
+func TestRemovePartialSparesUserFolder(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "bundle")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	user := filepath.Join(dest, "my-notes.txt")
+	if err := os.WriteFile(user, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	removePartial(dest, false) // we did not create it
+	if _, err := os.Stat(user); err != nil {
+		t.Errorf("pre-existing folder must survive: %v", err)
+	}
+	removePartial(dest, true) // we did create it
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("created folder must be removed; Stat err=%v", err)
+	}
+}
+
+// TestCancelContentJobStopsPackaging drives the whole path: the package goroutine
+// runs a stub writer that waits for the cancel channel, CancelContentJob closes it,
+// and the writer observes the cancel instead of finishing its work.
+func TestCancelContentJobStopsPackaging(t *testing.T) {
+	old := packageWriteBundle
+	started := make(chan struct{})
+	sawCancel := make(chan struct{})
+	packageWriteBundle = func(_ *assets.Manager, _, _ string, _ *sceneRecording, _, _ []string, cancel <-chan struct{}) contentPackageResult {
+		close(started)
+		<-cancel
+		close(sawCancel)
+		return contentPackageResult{msg: "Packaging cancelled."}
+	}
+	t.Cleanup(func() { packageWriteBundle = old })
+
+	dir := recordingsDir()
+	if dir == "" {
+		t.Skip("no recordings dir resolvable in this environment")
+	}
+	a := headlessProbeApp(t, assets.NewLocalFetcher([]string{t.TempDir()}), true)
+	rec := &sceneRecording{Version: recordingVersion, Origin: "http://example.invalid/", StartBg: "courtroom", Events: []recEvent{msgEvent("Phoenix", "normal", "", "", "")}}
+	if !a.StartContentReport(rec, "cancelslow") {
+		t.Fatal("report refused")
+	}
+	drainContentJob(t, a)
+	if !a.PackageContentBundle(rec) {
+		t.Fatal("package refused")
+	}
+	<-started
+	a.CancelContentJob()
+	select {
+	case <-sawCancel:
+	case <-time.After(5 * time.Second):
+		t.Fatal("CancelContentJob did not reach the package writer")
 	}
 }
 
@@ -584,7 +660,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{Origin: srv.URL + "/", StartBg: "courtroom"}
 	for i := 0; i < 40; i++ {
 		rec.Events = append(rec.Events, msgEvent(fmt.Sprintf("C%d", i), "normal", "", "", ""))
@@ -638,6 +714,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 // TestCancelMidPackageLeakFree pins that cancelling during packaging is safe:
 // the goroutine's result lands in the 1-slot buffer nobody polls and it dies.
 func TestCancelMidPackageLeakFree(t *testing.T) {
+	withExeDataRoot(t)
 	sprite := pngBytes()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".png") {
@@ -655,7 +732,7 @@ func TestCancelMidPackageLeakFree(t *testing.T) {
 	cancelBundle := filepath.Join(dir, "cancelpkg"+contentBundleSuffix)
 	_ = os.RemoveAll(cancelBundle)
 	t.Cleanup(func() { _ = os.RemoveAll(cancelBundle) })
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	rec := &sceneRecording{
 		Origin: srv.URL + "/", StartBg: "courtroom",
 		Events: []recEvent{msgEvent("Phoenix", "normal", "", "", "")},
@@ -680,6 +757,14 @@ func TestCancelMidPackageLeakFree(t *testing.T) {
 	const pkgSlack = 4
 	if !waitGoroutines(base+pkgSlack, 3*time.Second) {
 		t.Errorf("package goroutine leaked: base=%d now=%d", base, runtime.NumGoroutine())
+	}
+	// A cancel must not leave half a bundle behind. Either the writer finished before
+	// the cancel landed (a COMPLETE folder, .aorec present) or it removed what it had;
+	// a folder without its descriptor can never replay and must not exist.
+	if _, err := os.Stat(cancelBundle); err == nil {
+		if _, err := os.Stat(filepath.Join(cancelBundle, "cancelpkg"+recordingExt)); err != nil {
+			t.Errorf("cancel left a partial bundle without its .aorec: %v", err)
+		}
 	}
 }
 
@@ -788,14 +873,15 @@ func driveAutoBundleToDone(t *testing.T, a *App) {
 // the flat .aorec AND, beside it, a self-contained <stem>-bundle\ folder with the
 // found asset at its origin-relative path + the bundled .aorec + the gap list.
 func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
+	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
 	}
 	_, origin := autoBundleServer(t)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
-	if !a.d.Prefs.RecordingsKeepAssetsOn() {
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
+	if !a.d.Prefs.Load().RecordingsKeepAssets {
 		t.Fatal("pref must default ON for this test")
 	}
 
@@ -857,14 +943,15 @@ func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
 // still lands EXACTLY as before and NO bundle folder is created, and no content
 // job is started (zero behavior change for anyone who turns it off).
 func TestStopRecordingPrefOffNoBundle(t *testing.T) {
+	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
 	}
 	_, origin := autoBundleServer(t)
 
-	a := headlessProbeApp(t, network.NewClient(), false)
-	a.d.Prefs.SetRecordingsKeepAssets(false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.RecordingsKeepAssets = false })
 
 	before := existingAorecs(t)
 	armRecording(a, origin, []recEvent{msgEvent("Phoenix", "normal", "", "", "")})
@@ -893,11 +980,12 @@ func TestStopRecordingPrefOffNoBundle(t *testing.T) {
 // origin — nothing to package) auto-builds nothing and errors nothing: the flat
 // .aorec lands, no job starts, no toast is stomped.
 func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
+	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
 	}
-	a := headlessProbeApp(t, network.NewClient(), false) // pref default ON
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false) // pref default ON
 	before := existingAorecs(t)
 	armRecording(a, "", []recEvent{msgEvent("Phoenix", "normal", "", "", "")}) // no origin
 	a.stopRecording()
@@ -923,12 +1011,13 @@ func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
 // already running when a recording stops, the auto-build is skipped cleanly (no
 // second job, no queue) and the busy job is untouched.
 func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
+	withExeDataRoot(t)
 	dir := recordingsDir()
 	if dir == "" {
 		t.Skip("no recordings dir resolvable in this environment")
 	}
 	_, origin := autoBundleServer(t)
-	a := headlessProbeApp(t, network.NewClient(), false)
+	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
 	// Occupy the single content slot with an origin-missing report (it parks in
 	// phaseReport with contentBusy set — the simplest way to hold the slot).
@@ -942,7 +1031,7 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 
 	before := existingAorecs(t)
 	armRecording(a, origin, []recEvent{msgEvent("Phoenix", "normal", "", "", "")})
-	a.stopRecording()
+	done := a.stopRecording()
 
 	// The busy holder is untouched: no new job replaced it, contentBusy still set.
 	if a.content != held {
@@ -952,7 +1041,13 @@ func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
 		t.Error("the running job should still be the manual holder, not an auto-build")
 	}
 	// The flat .aorec still lands (auto-build skip is silent, recording save intact).
-	name := waitForNewAorec(t, before, 5*time.Second)
+	// Wait on the write's own signal, not the filesystem — polling races the
+	// goroutine under the race detector.
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+	}
+	name := newestAorec(t, before)
 	if name == "" {
 		t.Fatal("flat .aorec must still be written even when the auto-build is skipped")
 	}
@@ -1009,21 +1104,21 @@ func headlessProbeApp(t *testing.T, source assets.Fetcher, localMode bool) *App 
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	a.d.Resolver = resolver
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    source,
-		LocalMode: localMode,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   source,
+		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
+	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
+		a.d.Manager.SetFolders(lf.Mounts(), nil)
+	}
 	return a
 }
 
@@ -1043,21 +1138,20 @@ func localMgr(t *testing.T, mount string) (*assets.Manager, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(1)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(1)
 	t.Cleanup(decoder.Close)
 	local := assets.NewLocalFetcher([]string{mount})
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver:  resolver,
-		Prefs:     a.d.Prefs,
-		T2:        t2,
-		Disk:      disk,
-		Source:    local,
-		LocalMode: true,
-		Pool:      pool,
-		Decoder:   decoder,
+		Resolver: resolver,
+		Prefs:    a.d.Prefs,
+		T2:       t2,
+		Disk:     disk,
+		Source:   local,
+		Decoder:  decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	t.Cleanup(mgr.CloseMedia)
+	mgr.SetFolders(local.Mounts(), nil)
 	return mgr, local.BaseURL()
 }
 

@@ -2,9 +2,7 @@
 
 package assets
 
-// No pure-Go AVIF decoder exists worth shipping (the WASM-based ones drag
-// a runtime in); CGO-less builds surface a descriptive error so the
-// warning UI can say why instead of showing a silent black box.
+// No pure-Go AVIF decoder is worth shipping (WASM ones add a runtime), so CGO-less builds return an error.
 
 import "fmt"
 

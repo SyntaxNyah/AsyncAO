@@ -7,7 +7,11 @@ import (
 
 // TestInsertRunesAt pins the pure splice: at the caret, clamped, never mid-rune.
 func TestInsertRunesAt(t *testing.T) {
-	cases := []struct{ name, s, code string; at int; want string }{
+	cases := []struct {
+		name, s, code string
+		at            int
+		want          string
+	}{
 		{"middle", "hello", "X", 2, "heXllo"},
 		{"start", "hello", "X", 0, "Xhello"},
 		{"end", "hello", "X", 5, "helloX"},

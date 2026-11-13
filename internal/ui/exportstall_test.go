@@ -13,10 +13,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
-	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
 )
 
 // newExportStallHarness wires a headless App with the FULL export pipeline against
@@ -55,7 +55,7 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		t.Skipf("Ctx unavailable: %v", err)
 	}
 	a.ctx = ctx
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
@@ -73,8 +73,6 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(4)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
@@ -82,10 +80,10 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		Prefs:    a.d.Prefs,
 		T2:       t2,
 		Disk:     disk,
-		Source:   network.NewClient(), // stream over HTTP: every request 404s (the all-404 origin)
-		Pool:     pool,
+		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()), // stream over HTTP: every request 404s (the all-404 origin)
 		Decoder:  decoder,
 	})
+	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Pump = render.NewPump(store, a.d.Manager, nil)
 
 	// Channel ownership during the drive is split to avoid two consumers on one
@@ -210,7 +208,7 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 
 	// Speed the export up so the tick budget is small: a modest fps and the smallest
 	// preset keep frameDt large and the frame cap low, and the replay timing is fast.
-	a.d.Prefs.SetReplaySpeed(200)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReplayPlaybackSpeed = 200 })
 	// Smallest legal frame + slowest legal fps (SetExportOpts clamps to the
 	// mins): each captured frame advances the sim by the LARGEST legal dt and
 	// quantizes the FEWEST pixels, so the whole script fits the tick budget.
@@ -265,71 +263,4 @@ func TestExportAll404DrivesToCompletionGIF(t *testing.T) {
 		t.Fatalf("export file missing/empty at %q: err=%v", res.path, err)
 	}
 	t.Cleanup(func() { _ = os.Remove(res.path) })
-}
-
-// TestExportAll404DrivesToCompletionVideo mirrors the GIF armor for the video path,
-// gated on a system ffmpeg (videoenc.Available). Video streams frames straight to
-// ffmpeg under its own duration brake, so the same warm-stall would strand it just
-// the same — the conclusive-miss release must let it converge too.
-func TestExportAll404DrivesToCompletionVideo(t *testing.T) {
-	if !videoenc.Available() {
-		t.Skip("ffmpeg not on PATH — video export path unavailable")
-	}
-	a, origin := newExportStallHarness(t)
-
-	// Above warmInFlightWindow distinct characters — the discriminating scene size (see
-	// the GIF armor's rationale): fewer refs would let an unfixed warm latch and end.
-	rec := &sceneRecording{
-		Version: recordingVersion,
-		Origin:  origin,
-		StartBg: "courtroom",
-	}
-	// window+8 keeps the discriminating >window property (each char contributes
-	// two sprite refs) while capping the CAPTURE cost: every message must still
-	// play out in simulated time, and the first gate round proved window+40
-	// messages of full-size quantized frames blow the wall deadline on a
-	// software renderer under -p 1.
-	for i := 0; i < warmInFlightWindow+8; i++ {
-		side := "def"
-		if i%2 == 1 {
-			side = "pro"
-		}
-		rec.Events = append(rec.Events, recEvent{
-			Kind:    int(courtroom.EventMessage),
-			Message: &protocol.ChatMessage{CharName: charName(i), Emote: "normal", Side: side, Message: "Objection!"},
-		})
-	}
-	a.d.Prefs.SetReplaySpeed(200)
-	// Smallest legal frame + slowest legal fps (SetExportOpts clamps to the
-	// mins): each captured frame advances the sim by the LARGEST legal dt and
-	// quantizes the FEWEST pixels, so the whole script fits the tick budget.
-	// Without this the test captured full-size frames — ~64ms/tick — and ran
-	// out of wall clock while genuinely converging (the first gate round).
-	a.d.Prefs.SetExportOpts(config.ExportOptions{HeightPx: 1, FPS: 1, Quality: 1, TextScale: 100})
-
-	wallStart := time.Now()
-	a.startSceneExport(rec, "all404vid", exportVideo)
-	if a.gif == nil || !a.gifExporting {
-		t.Fatal("startSceneExport did not begin the video export")
-	}
-
-	const tickBudget = 4000
-	driveExportToCompletion(t, a, tickBudget)
-	if a.gif != nil {
-		t.Fatal("video " + describeExportStall(a, tickBudget))
-	}
-	if el := time.Since(wallStart); el > 90*time.Second {
-		t.Errorf("video export took %v — far beyond a healthy run; something held the pipeline", el)
-	}
-
-	select {
-	case res := <-a.gifResultCh:
-		if res.path != "" {
-			if _, err := os.Stat(res.path); err == nil {
-				t.Cleanup(func() { _ = os.Remove(res.path) })
-			}
-		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("video finish result never arrived — ffmpeg reap hung")
-	}
 }

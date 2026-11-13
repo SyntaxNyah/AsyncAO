@@ -1,25 +1,8 @@
 package ui
 
-// Per-field undo/redo for the kit's text fields (playtest: the fields did not
-// behave like native ones — no Ctrl+Z among other gaps).
-// Every field gets a bounded history keyed by its id. Two things feed it:
-//
-//   1. the field's own edits (typing, backspace, paste, selection replace),
-//      coalesced so one Ctrl+Z undoes a burst, not a keystroke;
-//   2. OUT-OF-BAND rewrites — the own-echo IC clear, a chat command clearing
-//      the box, a palette command template, a macro eating the draft — which
-//      textField detects as "the value changed since my last draw". That
-//      detection runs even while the field is unfocused (the next draw
-//      records whatever changed in between), which is what makes the eaten
-//      IC line recoverable: press Ctrl+Z and the send comes back.
-//
-// This replaces the old one-slot stashICUndo/stashOOCUndo swap: same
-// recovery, native semantics (a real history + redo), every field covered.
-//
-// Bounds (hard rule 4): fieldHistFieldsCap histories × fieldUndoDepth
-// snapshots each, LRU-evicted; histories are wiped on tab switch / fresh
-// session so a draft can never resurface across sessions (the multi-tab
-// isolation rule).
+// Per-field undo/redo for the kit's text fields, fed by the field's own edits and by out-of-band rewrites (own-echo
+// IC clear, a macro eating the draft), which textField detects even while unfocused, so a sent line is recoverable.
+// Histories are wiped on tab switch and fresh session so a draft never resurfaces across sessions.
 
 import (
 	"time"
@@ -29,24 +12,19 @@ import (
 const (
 	// fieldUndoDepth caps one field's undo (and redo) stack.
 	fieldUndoDepth = 64
-	// fieldHistFieldsCap caps how many distinct fields keep a history at once
-	// (LRU-evicted). A session touches far fewer editable fields than this.
+	// fieldHistFieldsCap caps how many fields keep a history at once (LRU-evicted).
 	fieldHistFieldsCap = 16
-	// fieldUndoCoalesce groups consecutive ±1-rune edits (a typing or
-	// backspacing burst) into ONE undo step, native-editor style. Bigger
-	// jumps — a paste, a selection replace, the echo clear — always get
-	// their own step, so a burst can never swallow a recoverable line.
+	// fieldUndoCoalesce groups ±1-rune edits into one undo step; bigger jumps always get their own, so a burst can
+	// never swallow a recoverable line.
 	fieldUndoCoalesce = 600 * time.Millisecond
 )
 
-// fieldSnap is one undo/redo snapshot: the value and where the caret was.
 type fieldSnap struct {
 	value string
 	caret int
 }
 
-// fieldHistory is one field's undo state. lastKnown is the value as of the
-// field's previous draw — the out-of-band change detector.
+// fieldHistory is one field's undo state; lastKnown is the value at the previous draw, to detect out-of-band changes.
 type fieldHistory struct {
 	lastKnown  string
 	lastCaret  int
@@ -54,9 +32,7 @@ type fieldHistory struct {
 	lastPush   time.Time
 }
 
-// record pushes the pre-change state onto the undo stack (and forks redo),
-// coalescing typing bursts: a ±1-rune change within fieldUndoCoalesce of the
-// previous push extends the current step instead of adding one.
+// record pushes the pre-change state and clears redo; a ±1-rune change within fieldUndoCoalesce extends the last step.
 func (h *fieldHistory) record(prevVal string, prevCaret int, nextVal string, now time.Time) {
 	if prevVal == nextVal {
 		return
@@ -75,9 +51,7 @@ func (h *fieldHistory) record(prevVal string, prevCaret int, nextVal string, now
 	h.lastPush = now
 }
 
-// step applies one undo (redo=false) or redo (redo=true) against the field's
-// CURRENT state, returning the snapshot to restore. ok=false when that stack
-// is empty (the chord is still consumed — it was aimed at this field).
+// step applies one undo or redo; ok is false when that stack is empty (the chord is still consumed).
 func (h *fieldHistory) step(cur string, curCaret int, redo bool) (fieldSnap, bool) {
 	from, to := &h.undo, &h.redo
 	if redo {
@@ -94,18 +68,13 @@ func (h *fieldHistory) step(cur string, curCaret int, redo bool) (fieldSnap, boo
 		copy(*to, (*to)[1:])
 		*to = (*to)[:fieldUndoDepth]
 	}
-	// A restore is a deliberate step, never part of a typing burst: stop the
-	// next edit from coalescing into a pre-undo push.
+	// A restore is a deliberate step: stop the next edit from coalescing into a pre-undo push.
 	h.lastPush = time.Time{}
 	return snap, true
 }
 
-// fieldTrack is textField's per-draw entry point: it fetches (creating if
-// needed, LRU-evicting past the cap) the field's history and records any
-// OUT-OF-BAND change — value != the value this field drew last. A field's
-// FIRST sighting only seeds the detector: a restored draft is a starting
-// state, not a change to undo out of. Cost on the steady no-change path:
-// one map hit + one string compare.
+// fieldTrack fetches the field's history and records any out-of-band change. A first sighting only seeds lastKnown:
+// a restored draft is a starting state, not a change to undo out of.
 func (c *Ctx) fieldTrack(id, value string) *fieldHistory {
 	if c.fieldHists == nil {
 		c.fieldHists = make(map[string]*fieldHistory, fieldHistFieldsCap)
@@ -117,9 +86,7 @@ func (c *Ctx) fieldTrack(id, value string) *fieldHistory {
 		return h
 	}
 	if len(c.fieldHists) >= fieldHistFieldsCap && len(c.fieldHistUse) > 0 {
-		// Evict the least-recently-CREATED history (the use list is append-
-		// order). Fields cycle far below the cap in practice; a history that
-		// does get evicted simply starts fresh on its next draw.
+		// Evict the least recently created history (the use list is in append order).
 		oldest := c.fieldHistUse[0]
 		c.fieldHistUse = c.fieldHistUse[1:]
 		delete(c.fieldHists, oldest)
@@ -130,19 +97,15 @@ func (c *Ctx) fieldTrack(id, value string) *fieldHistory {
 	return h
 }
 
-// ClearFieldHistories wipes every field's undo state — called on tab switch
-// and fresh sessions so a draft can't resurface across sessions (multi-tab
-// isolation), and the out-of-band detector can't see one tab's field values
-// as "changes" to another's.
+// ClearFieldHistories wipes undo state so a draft can't resurface across sessions and one tab's values don't read as
+// changes to another's.
 func (c *Ctx) ClearFieldHistories() {
 	c.fieldHists = nil
 	c.fieldHistUse = c.fieldHistUse[:0]
 	c.selAnchor = -1
 }
 
-// fieldSel returns the focused field's ordered selection [lo,hi) clamped to
-// rc runes — (0,0) when there is none. Selection state lives on the Ctx and
-// is only meaningful for the focused field (like the caret).
+// fieldSel returns the focused field's ordered selection [lo,hi) clamped to rc runes, (0,0) when there is none.
 func (c *Ctx) fieldSel(rc int) (int, int) {
 	if c.selAnchor < 0 {
 		return 0, 0
@@ -163,11 +126,8 @@ func (c *Ctx) fieldSel(rc int) (int, int) {
 	return lo, hi
 }
 
-// selectionFor returns the [lo,hi) rune selection of field id over value, but
-// ONLY when id is the currently focused field (selection state lives on the Ctx
-// and is meaningful only there, like the caret). ok is false when id isn't
-// focused or the selection is empty. Used by the IC select-and-colour swatches
-// so a colour cube wraps exactly the runes highlighted in the IC field.
+// selectionFor returns the [lo,hi) rune selection of field id; ok is false when id isn't focused or nothing is
+// selected.
 func (c *Ctx) selectionFor(id, value string) (lo, hi int, ok bool) {
 	if c.focusID != id {
 		return 0, 0, false
@@ -176,14 +136,8 @@ func (c *Ctx) selectionFor(id, value string) (lo, hi int, ok bool) {
 	return lo, hi, hi > lo
 }
 
-// wordBoundsAt returns the [lo,hi) rune range of the "word" containing idx —
-// a maximal run of non-space runes (or of spaces, only when idx sits inside a
-// RUN of them) — the native double-click rule. idx is a rune index OR the
-// caret-style boundary the hit tests produce: a boundary landing right after
-// a word (on the single space that follows it, or past the end) steps back
-// onto that word, so double-clicking the right half of a word's last letter
-// selects the word, never the gap. Shared by the text fields, the IC/OOC
-// logs, and the chatbox. idx clamps into the text.
+// wordBoundsAt returns the [lo,hi) rune range of the word at idx, a rune index or a caret boundary. A boundary just
+// after a word steps back onto it, so double-clicking the right half of its last letter selects the word, not the gap.
 func wordBoundsAt(runes []rune, idx int) (int, int) {
 	n := len(runes)
 	if n == 0 {

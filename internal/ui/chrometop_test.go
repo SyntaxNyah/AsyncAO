@@ -3,9 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -31,8 +30,8 @@ func TestTopChromeHIsTheSumOfTheTwoStrips(t *testing.T) {
 // export, replay, the scene maker and theater mode all PREEMPT the screen dispatch
 // and take the whole window, so the menu bar neither paints nor reserves space
 // there. The tab strip does still paint over them (app.go draws it after the
-// dispatch), so its band survives — which is why the scene maker's content top, the
-// download chip and the update chip all read this accessor rather than menuBarH.
+// dispatch), so its band survives — which is why the scene maker's content top and the
+// download chip both read this accessor rather than menuBarH.
 func TestTopChromeHDropsTheMenuBarOnFullWindowOverlays(t *testing.T) {
 	cases := []struct {
 		name string
@@ -223,18 +222,6 @@ func TestMenuBarIsAMouseLifeline(t *testing.T) {
 	}
 }
 
-// TestFloatingChipsClearTheChromeBand pins the two chips that used to be anchored at
-// a bare tabBarH+4 and would otherwise be buried under the relocated strip.
-func TestFloatingChipsClearTheChromeBand(t *testing.T) {
-	a := testTabApp(t)
-	a.tabs = []*courtTab{{}}
-	a.activeTab = 0
-	a.updateChipLabel = "Update available"
-	if got := a.updateChipRect(1280).Y; got < a.topChromeH() {
-		t.Errorf("update chip Y = %d, want it at or below the chrome band %d", got, a.topChromeH())
-	}
-}
-
 // TestThemedCanvasSitsUnderTheChromeBand is the courtroom half of the fix: the
 // theme's design canvas is laid out inside the height LEFT under the band and
 // offset down by it, so it can never slide beneath the strips.
@@ -419,7 +406,7 @@ func TestThemedWidgetsStayClearOfTheBandInEveryFitMode(t *testing.T) {
 			}
 			a.d.Prefs.SetThemeFit(tc.mode)
 			if tc.mode == config.ThemeFitCustom {
-				a.d.Prefs.SetThemeFitZoom(200) // zoom past the window …
+				a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeFitZoom = 200 }) // zoom past the window …
 				a.d.Prefs.SetThemeFitPan(0, -40)
 			}
 			const w, h = 1152, 864
@@ -523,7 +510,7 @@ func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
 	const themeName = "authored-tabbar"
 	a := testTabApp(t)
 	a.d.Prefs.SetTheme(themeName, "")
-	a.d.Prefs.SetThemeLayout(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
 	a.room = newRoomForTest(t)
@@ -555,7 +542,7 @@ func TestThemeAuthorCanPlaceTheTabStripFromTheSidecar(t *testing.T) {
 	// client seed, still reports it, and still docks.
 	b := testTabApp(t)
 	b.d.Prefs.SetTheme(themeName+"-bare", "")
-	b.d.Prefs.SetThemeLayout(true)
+	b.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	b.tabs = []*courtTab{{}}
 	b.activeTab = 0
 	b.room = newRoomForTest(t)
@@ -574,7 +561,7 @@ func stageTabbarlessCourtroom(t *testing.T, themeName string) *App {
 	t.Helper()
 	a := testTabApp(t)
 	a.d.Prefs.SetTheme(themeName, "")
-	a.d.Prefs.SetThemeLayout(true) // default-ON today; pinned so a default flip can't silently un-gate these
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true }) // default-ON today; pinned so a default flip can't silently un-gate these
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
 	a.room = newRoomForTest(t)
@@ -737,7 +724,7 @@ func TestThemedEditorDragMovesAndPersistsTheTabStrip(t *testing.T) {
 	}
 
 	want := a.themeRects[themeTabBarKey]
-	ov := a.d.Prefs.ThemeRectOverrides(themeName)
+	ov := a.d.Prefs.Load().ThemeRectOverrides(themeName)
 	if got, ok := ov[themeTabBarKey]; !ok || got != [4]int{want.X, want.Y, want.W, want.H} {
 		t.Fatalf("the release must persist the override, got %v (present=%v)", got, ok)
 	}

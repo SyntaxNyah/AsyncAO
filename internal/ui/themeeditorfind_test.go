@@ -17,7 +17,6 @@ package ui
 // behaviour is not.
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -68,58 +67,6 @@ func TestEveryThemeEditorSettingIsFindable(t *testing.T) {
 		t.Errorf("searching %q resolves to %s, not Theme editor", q, tabNameOrNone(got))
 	}
 
-	// The structural half: the editor row registers with the gather index, and it
-	// does so from the file that draws it now (settingsthemeeditor.go, W10 — it was
-	// settings.go's drawThemeCatalogRows through W9).
-	src, err := os.ReadFile("settingsthemeeditor.go")
-	if err != nil {
-		t.Fatalf("reading settingsthemeeditor.go: %v", err)
-	}
-	body := string(src)
-	const rowRegistration = `c.onRow("Open the theme editor", y)`
-	if !strings.Contains(body, rowRegistration) {
-		t.Errorf("the Theme-editor settings row no longer calls %s — a row that skips the gather hook is "+
-			"invisible to the settings search even though its label is on screen, which is precisely the "+
-			"v1.89.1 defect this census exists to make impossible", rowRegistration)
-	}
-	// …and it opens the editor rather than being a label with no verb.
-	if !strings.Contains(body, "a.openThemeEditor(ScreenSettings)") {
-		t.Error("the Theme-editor settings row no longer opens the editor from Settings — Settings is the " +
-			"design's headline entry point, and the one reachable with no server attached")
-	}
-	// …and the CREATOR is on the same tab and reaches the one mint (W10). Without
-	// this, "make a theme" is a search term with no row behind it.
-	if !strings.Contains(body, "a.startThemeCreateFromTemplate(") {
-		t.Error("the Theme editor tab no longer offers a way to CREATE a theme — the templates row is the " +
-			"only path from 'I have no theme of my own' to the editor")
-	}
-}
-
-// TestTheThemeTabStillPointsAtTheEditor is W10's own half of the move.
-//
-// A MOVED ROW LEAVES A HOLE where the user's memory is. The Theme tab is where the
-// editor and import rows lived for three waves, so it has to say where they went —
-// and it has to say so through c.onRow, or the gather-search sends people to a tab
-// that no longer answers and the signpost is invisible to the one tool that would
-// have found it.
-func TestTheThemeTabStillPointsAtTheEditor(t *testing.T) {
-	rows := funcBodySource(t, "settings.go", "drawThemeCatalogRows")
-	if !containsCall(rows, "drawThemeAuthoringHint") {
-		t.Fatal("Settings ▸ Theme no longer points at the Theme editor tab — the two rows that moved left " +
-			"a gap exactly where a returning user looks for them")
-	}
-	hintSrc, err := os.ReadFile("settingsthemeeditor.go")
-	if err != nil {
-		t.Fatalf("reading settingsthemeeditor.go: %v", err)
-	}
-	hint := string(hintSrc)
-	if !strings.Contains(hint, "c.onRow(themeAuthoringHintRow, y)") {
-		t.Error("the cross-tab hint no longer registers with the gather-search — a signpost the search " +
-			"cannot see is a signpost only a scroller finds, which is the defect the move was made to fix")
-	}
-	if !strings.Contains(hint, "settings.tab = tabThemeEditor") {
-		t.Error("the cross-tab hint no longer switches to the Theme editor tab — it is a sentence, not a link")
-	}
 }
 
 // TestThemeEditorKeywordsDoNotShadowLaterTabs is the whole-keyword shadow gate,

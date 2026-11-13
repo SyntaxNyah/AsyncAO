@@ -3,22 +3,22 @@
 # Build a self-contained AppImage for AsyncAO (Linux x86_64).
 #
 # Output: dist/AsyncAO-x86_64.AppImage — a single executable that bundles the
-# SDL2 / SDL2_ttf / SDL2_mixer / libwebp / libavif runtime (resolved from the
+# SDL3 / SDL3_ttf / SDL3_mixer / libwebp / libavif runtime (resolved from the
 # binary's NEEDED libraries by linuxdeploy), so it runs on any reasonably modern
-# x86_64 desktop with no install step. Mirrors the CI "AppImage (Linux x86_64)"
-# job; run it locally after installing the dev deps (scripts/setup-deps.sh).
+# x86_64 desktop with no install step. CI calls this through scripts/package.sh;
+# run it locally after installing the dev deps (scripts/setup-deps.sh).
 #
 # Usage:
 #   scripts/build-appimage.sh                  # build the release binary, then package
 #   scripts/build-appimage.sh path/to/asyncao  # package an already-built binary
 #
 # Env: APPIMAGE_OUTPUT overrides the output filename (default
-# AsyncAO-x86_64.AppImage) — used by CI to name the Discord-free variant.
+# AsyncAO-x86_64.AppImage) — used by scripts/package.sh to name the release asset.
 #
-# Note: SDL2_mixer codec back-ends that are dlopen()ed at runtime (rather than
-# linked) are not visible to ldd and so are not bundled; the host's SDL2_mixer
-# codecs fill in. Music/SFX of the common formats (Opus/OGG/MP3/WAV) work on
-# desktops that ship SDL2_mixer, which is the overwhelming majority.
+# Note: codec back-ends SDL3_mixer dlopen()s at runtime are not visible to ldd
+# and so are not bundled. scripts/build-sdl3.sh and the CI setup build the mixer
+# with Opus linked in (SDLMIXER_DEPS_SHARED=OFF) and Vorbis/MP3/FLAC/WAV built
+# in, so every format AO uses is covered by what ldd sees.
 set -euo pipefail
 
 # --- locate the repo root (this script lives in scripts/) --------------------
@@ -33,9 +33,11 @@ APPDIR="$ROOT/AppDir"
 DESKTOP="$ROOT/packaging/linux/asyncao.desktop"
 ICON="$ROOT/internal/ui/assets/mayo.png"    # the Mayo mascot is the app icon
 
-# linuxdeploy only publishes a rolling "continuous" release.
-LD_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
-LD_PLUGIN_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage"
+# Dated releases, not the rolling "continuous" one, so a commit always packages the same way.
+LD_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage"
+LD_SHA256=c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+LD_PLUGIN_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage"
+LD_PLUGIN_SHA256=992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3
 
 # CI runners (and many containers) have no FUSE; run the tool AppImages by
 # self-extraction instead of mounting them.
@@ -62,16 +64,19 @@ BIN="$STAGE/asyncao"
 
 # --- 2. fetch linuxdeploy + the appimage plugin (cached) ---------------------
 mkdir -p "$TOOLS"
-fetch() {  # fetch <url> <dest>
-	local url="$1" dest="$2"
+fetch() {  # fetch <url> <sha256> <dest>
+	local url="$1" sha256="$2" dest="$3"
 	if [[ ! -f "$dest" ]]; then
 		echo ">> downloading $(basename "$dest")"
-		curl -fsSL "$url" -o "$dest"
+		# GitHub's release downloads answer 504 for minutes at a time; the checksum below still guards the file.
+		curl -fsSL --retry 6 --retry-delay 15 --retry-all-errors "$url" -o "$dest.download"
+		echo "$sha256  $dest.download" | sha256sum -c -
+		mv "$dest.download" "$dest"
 		chmod +x "$dest"
 	fi
 }
-fetch "$LD_URL"        "$TOOLS/linuxdeploy"
-fetch "$LD_PLUGIN_URL" "$TOOLS/linuxdeploy-plugin-appimage"
+fetch "$LD_URL"        "$LD_SHA256"        "$TOOLS/linuxdeploy"
+fetch "$LD_PLUGIN_URL" "$LD_PLUGIN_SHA256" "$TOOLS/linuxdeploy-plugin-appimage"
 export PATH="$TOOLS:$PATH"
 
 # --- 3. assemble the AppDir + package ----------------------------------------

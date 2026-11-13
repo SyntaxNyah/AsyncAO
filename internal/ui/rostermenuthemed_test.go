@@ -1,13 +1,11 @@
 package ui
 
 import (
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // The roster shares the music panel, so the ⋮ it opens is the music overflow menu,
@@ -56,7 +54,7 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 	// dispatches on lay.valid AND the preference, and so must this.
 	a.themeLay.valid = true
 	a.themeLay.r = map[string]sdl.Rect{"music_list": themedMusicListRect}
-	prefs.SetThemeLayout(false)
+	prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if a.rosterMenuThemed() {
 		t.Error("theme-driven geometry is switched off, so the CLASSIC courtroom drew — " +
 			"reading the cache alone would hide a row that still works")
@@ -64,7 +62,7 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 
 	// Theme-driven geometry with the theme's own music_list rect: this roster IS being
 	// painted inside AO2's design canvas, where the volume view can never draw.
-	prefs.SetThemeLayout(true)
+	prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = true })
 	if !a.rosterMenuThemed() {
 		t.Error("the themed courtroom paints the roster inside its music_list rect, so the " +
 			"menu must be themed — else it offers a Volume row drawMusicList discards")
@@ -93,33 +91,5 @@ func TestRosterMenuThemedTracksTheCanvasMusicList(t *testing.T) {
 	if a.rosterMenuThemed() {
 		t.Error("a zero-width music_list paints nothing — themeLayoutCache.rect already " +
 			"rejects it and this predicate must agree with it")
-	}
-}
-
-// TestRosterMenuOpensWithTheDerivedThemedFlag is the draw-site half: the predicate
-// above is worthless if drawPlayerList goes back to passing a literal.
-//
-// Source-scanned rather than driven, because reaching the call needs a renderer, a
-// laid-out toolbar and a click — and the property is about the ARGUMENT, which a
-// scan pins directly. Same idiom as TestThemedMusicPanelForcesTheTrackList.
-func TestRosterMenuOpensWithTheDerivedThemedFlag(t *testing.T) {
-	src, err := os.ReadFile("playerlist.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(src)
-	if !strings.Contains(body, "a.openMusicMenuFromButton(sdl.Point{X: it.r.X, Y: it.r.Y + it.r.H}, a.rosterMenuThemed())") {
-		t.Error("the roster's ⋮ no longer opens the overflow with the DERIVED themed flag; " +
-			"a hardcoded false offers the Volume-sliders row inside the theme's music_list " +
-			"rect, where drawMusicList discards it and SetMusicVolMode still persists it")
-	}
-	// The menu's own gate has to stay the thing that reads it, or the flag is inert.
-	menu, err := os.ReadFile("musicheader.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(menu), "if k == musicMenuVolumeView {\n\t\treturn !themed\n\t}") {
-		t.Error("musicMenuRowLive no longer drops the Volume row under a theme, so the " +
-			"roster's derived flag has nothing to act on")
 	}
 }

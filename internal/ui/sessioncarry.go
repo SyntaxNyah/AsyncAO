@@ -1,19 +1,7 @@
 package ui
 
-// sessionCarry is the one-shot "we are coming back" snapshot of exactly the
-// log-content fields a resumed session should see again: the IC/OOC
-// scrollback and the per-area log the user was reading when the link
-// dropped. Every OTHER sessionState field (conn, sess, room, roster,
-// pairing, evidence, voice flags, the ban dashboard...) is connection-scoped
-// and must come back fresh on a redial — resetSessionState (tabs.go) still
-// wipes those unconditionally and is unchanged by this file.
-//
-// This is the ONE place the "what survives a same-server resume" field list
-// is allowed to appear: snapshotSessionCarry is the only writer,
-// applySessionCarryIfPending the only reader, and both live here so a future
-// change to either side can't drift from the other. See
-// TestReconnectToADifferentServerNeverCarriesTheLog for the seam this buys —
-// nothing outside this file can make a carry apply to a mismatched key.
+// sessionCarry is the one-shot snapshot of the logs a resumed session should see again; every other sessionState
+// field is connection-scoped and comes back fresh. This file is the only place that field list may appear.
 type sessionCarry struct {
 	icLog        []icEntry
 	icLogSeq     uint64
@@ -25,23 +13,9 @@ type sessionCarry struct {
 	areaLogOrder []string
 }
 
-// snapshotSessionCarry copies the current session's log-content fields into
-// the one-shot carry slot, stamped with the server it came from
-// (a.serverKey — the dialled address, matching the v1.91.0 per-server-
-// identity convention, not the display name).
-//
-// Called ONLY at the two teardown points that mean "we are coming back": the
-// disconnect dialog's Reconnect click (disconnectdialog.go) and an
-// involuntary drop about to auto-retry (disconnectdialog.go,
-// handleInvoluntaryDrop's plain-teardown branch, gated on
-// shouldAutoReconnect). Every deliberate leave — the Disconnect button, Back
-// to lobby, a tab close, quit — never calls this, so those keep today's
-// clean-slate behavior exactly (TestDeliberateLeavePathsNeverCarryTheLog).
-//
-// A second call before the first is consumed simply overwrites the slot —
-// never accumulates — so this is a single named slot, not an unbounded
-// history (rule 4). Its contents are already bounded by icLogCap/oocLineCap
-// before the copy (app.go), so carrying adds no new growth path.
+// snapshotSessionCarry copies the log fields into the carry, keyed by a.serverKey (the dialled address, not the name).
+// Called only when coming back: the disconnect dialog's Reconnect and an involuntary drop about to retry.
+// A second call overwrites; the contents are already capped by icLogCap/oocLineCap.
 func (a *App) snapshotSessionCarry() {
 	a.pendingSessionCarry = &sessionCarry{
 		icLog:        a.icLog,
@@ -56,17 +30,8 @@ func (a *App) snapshotSessionCarry() {
 	a.pendingSessionCarryKey = a.serverKey
 }
 
-// applySessionCarryIfPending consumes the pending carry onto the just-dialed
-// session if, and only if, wsURL matches the server it was captured from —
-// the encapsulation guarantee that a carried log can never resurrect one
-// server's content under a different one. ALWAYS clears the slot (one-shot):
-// a mismatch discards the stale carry rather than leaving it to leak onto a
-// later same-server redial that never asked for it.
-//
-// Called from connectWith AFTER a successful dial (a.conn = conn), never
-// right after resetSessionState — so a FAILED auto-reconnect attempt never
-// burns the one-shot slot; the next retry still has it
-// (TestAutoReconnectCarriesLogAcrossAFailedThenSuccessfulRetry).
+// applySessionCarryIfPending applies the carry only if wsURL matches its server, so one server's log can never appear
+// under another, and always clears it. Called after a successful dial, so a failed retry does not use up the carry.
 func (a *App) applySessionCarryIfPending(wsURL string) {
 	carry, key := a.pendingSessionCarry, a.pendingSessionCarryKey
 	a.pendingSessionCarry, a.pendingSessionCarryKey = nil, "" // one-shot: consumed either way

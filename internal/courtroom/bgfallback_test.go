@@ -13,7 +13,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -42,8 +41,6 @@ func newBGRig(t *testing.T) *bgRig {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 
@@ -51,8 +48,10 @@ func newBGRig(t *testing.T) *bgRig {
 	local := assets.NewLocalFetcher([]string{mount})
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: assets.NewResolver(prefs), Prefs: prefs, T2: t2, Disk: disk,
-		Source: local, LocalMode: true, Pool: pool, Decoder: decoder,
+		Source: local, Decoder: decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	mgr.SetFolders(local.Mounts(), nil)
 	sess := NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "court"
 	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr, sess, nil)
@@ -174,73 +173,60 @@ func TestLegacyWitBackgroundAnswersTheWitnessPosition(t *testing.T) {
 		EmoteMod: protocol.EmoteModIdle,
 	}})
 
-	want := r.room.urls.Background("court", defaultPosBackground)
+	want := r.room.urls.PositionScenery("court", "wit", nil).Background
 	got := awaitDelivery(t, r.mgr, want)
 	if wantURL := r.room.urls.Background("court", legacyPosBackground) + ".webp"; got != wantURL {
 		t.Fatalf("the witness position served %q, want the legacy %q", got, wantURL)
 	}
 }
 
-// TestBackgroundFallbacksNeverProbeThePrimaryTwice is the encapsulation guard on
-// the ladder itself: a position whose own stem IS one of the fallback stems must
-// not list it again. resolveChain skips exact duplicates, but a chain that
-// carries them lies about the probe budget in every candidate log and in the
-// missing-asset warning's "tried" list.
-func TestBackgroundFallbacksNeverProbeThePrimaryTwice(t *testing.T) {
-	for _, stem := range []string{defaultPosBackground, legacyPosBackground, "night"} {
-		for _, alt := range BackgroundFallbacks(stem) {
-			if alt == stem {
-				t.Fatalf("BackgroundFallbacks(%q) repeats the primary", stem)
+func TestPositionSceneryAsksAO2sNamesInOrderOnce(t *testing.T) {
+	urls := NewURLBuilder("https://cdn/base/")
+	for pos, want := range map[string][]string{
+		"def":   {"def", "defenseempty", defaultPosBackground, legacyPosBackground},
+		"wit":   {"wit", defaultPosBackground},
+		"night": {"night", defaultPosBackground, legacyPosBackground},
+		"":      {defaultPosBackground, legacyPosBackground},
+	} {
+		s := urls.PositionScenery("court", pos, nil)
+		got := append([]string{s.Background}, s.Alts...)
+		if len(got) != len(want) {
+			t.Fatalf("%q: names %q, want %q", pos, got, want)
+		}
+		for i, name := range want {
+			if got[i] != urls.Background("court", name) {
+				t.Fatalf("%q: name %d is %q, want %q", pos, i, got[i], name)
 			}
 		}
 	}
-	if got := len(BackgroundFallbacks("night")); got != 2 {
-		t.Fatalf("a custom position must walk both witness spellings, got %d", got)
-	}
 }
 
-// TestSceneAssetsCarriesTheBackgroundLadder pins the ladder onto the OTHER
-// consumer inside this package: the archive/replay enumerator. SceneAssets used
-// to list the position's primary stem alone, so a scene staged at a position
-// whose art only resolves through the witness fallback resolved to nothing,
-// bundled nothing, and replayed black exactly where the live client had shown
-// the witness view. The desk must stay ladder-free (BackgroundFallbacks' own
-// contract, pinned by TestTheDeskKeepsItsNoFallbackContract).
-func TestSceneAssetsCarriesTheBackgroundLadder(t *testing.T) {
+func TestSceneAssetsCarriesEveryNameAndEachNamesDesk(t *testing.T) {
 	urls := NewURLBuilder("https://cdn/base/")
-	const pos = "night" // a custom position: both witness spellings stay in the chain
+	const pos = "night"
 	refs := SceneAssets(urls, "court", []Event{{
 		Kind:    EventMessage,
 		Message: &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Side: pos},
 	}})
-
-	bgPart, deskPart := PositionScene(pos)
-	var sawBG, sawDesk bool
+	s := urls.PositionScenery("court", pos, nil)
+	desks := map[string]bool{}
 	for _, r := range refs {
 		switch r.Type {
 		case assets.AssetTypeBackground:
-			sawBG = true
-			if r.Base != urls.Background("court", bgPart) {
-				t.Fatalf("background ref base = %q, want the position's own stem", r.Base)
-			}
-			want := BackgroundFallbacks(bgPart)
-			if len(r.Alts) != len(want) {
-				t.Fatalf("background ref carries %d alts %q, want the whole ladder %q", len(r.Alts), r.Alts, want)
-			}
-			for i, stem := range want {
-				if r.Alts[i] != urls.Background("court", stem) {
-					t.Fatalf("alt %d = %q, want %q", i, r.Alts[i], urls.Background("court", stem))
-				}
+			if r.Base != s.Background || len(r.Alts) != len(s.Alts) {
+				t.Fatalf("background ref %q with %q, want %q with %q", r.Base, r.Alts, s.Background, s.Alts)
 			}
 		case assets.AssetTypeDeskOverlay:
-			sawDesk = true
-			if r.Base != urls.Background("court", deskPart) || len(r.Alts) != 0 {
-				t.Fatalf("desk ref = %+v, want the bare overlay stem with no fallback", r)
+			if len(r.Alts) != 0 {
+				t.Fatalf("desk ref %+v must not fall back", r)
 			}
+			desks[r.Base] = true
 		}
 	}
-	if !sawBG || !sawDesk {
-		t.Fatalf("SceneAssets enumerated bg=%v desk=%v, want both", sawBG, sawDesk)
+	for _, desk := range []string{"night_overlay", "stand", "wit_overlay"} {
+		if !desks[urls.Background("court", desk)] {
+			t.Errorf("no desk ref for %s in %v", desk, desks)
+		}
 	}
 }
 
@@ -257,6 +243,8 @@ func TestTheDeskKeepsItsNoFallbackContract(t *testing.T) {
 	r.seedBG(t, "court", "stand") // the DEFAULT desk exists — and must not be borrowed
 	r.seedBG(t, "court", defaultPosBackground)
 
+	night := r.room.urls.Background("court", "night")
+	r.room.Assets = assetFake{files: map[string]string{night: night + config.ExtPNG}}
 	r.room.HandleEvent(Event{Kind: EventMessage, Message: &protocol.ChatMessage{
 		CharName: "Phoenix", Emote: "normal", Side: "night", Message: "hi",
 		EmoteMod: protocol.EmoteModIdle, DeskMod: 1,

@@ -210,7 +210,7 @@ func TestWipedPairDoesNotResurrectOnDeskMiss(t *testing.T) {
 // just left. That would be a NEW visible bug in exactly the scenario #23 is about.
 func TestBackgroundWipeReScenesAtOurOwnSideWhenBNCarriesNone(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.LocalSide = func() string { return "def" }
+	room.Env = envFake{side: func() string { return "def" }}
 	room.Scene.Position = "wit" // the previous area's last speaker
 
 	room.setBackground("newarea", "", true) // akashi's default: wipe, no pos
@@ -218,12 +218,11 @@ func TestBackgroundWipeReScenesAtOurOwnSideWhenBNCarriesNone(t *testing.T) {
 	if room.Scene.Position != "def" {
 		t.Fatalf("re-scened at %q, want our own side def", room.Scene.Position)
 	}
-	wantBG, wantDesk := PositionScene("def")
-	if room.Scene.BackgroundBase != room.urls.Background("newarea", wantBG) {
-		t.Errorf("background base = %q, want the def cut", room.Scene.BackgroundBase)
+	if want := room.urls.PositionScenery("newarea", "def", nil).Background; room.Scene.BackgroundBase != want {
+		t.Errorf("background base = %q, want the def cut %q", room.Scene.BackgroundBase, want)
 	}
-	if room.Scene.DeskBase != room.urls.Background("newarea", wantDesk) {
-		t.Errorf("desk base = %q, want the def cut", room.Scene.DeskBase)
+	if want := room.urls.Background("newarea", "defensedesk"); room.Scene.DeskBase != want {
+		t.Errorf("desk base = %q, want the def cut's %q", room.Scene.DeskBase, want)
 	}
 }
 
@@ -231,7 +230,7 @@ func TestBackgroundWipeReScenesAtOurOwnSideWhenBNCarriesNone(t *testing.T) {
 // carry a pos moves us there, and it beats the LocalSide fallback.
 func TestBackgroundWipeReScenesAtTheNewPos(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.LocalSide = func() string { return "def" }
+	room.Env = envFake{side: func() string { return "def" }}
 	room.Scene.Position = "wit"
 
 	room.setBackground("newarea", "pro", true)
@@ -246,7 +245,7 @@ func TestBackgroundWipeReScenesAtTheNewPos(t *testing.T) {
 // behaviour rather than panicking or blanking the position.
 func TestBackgroundWipeWithNoLocalSideHookIsSafe(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
-	room.LocalSide = nil
+	room.Env = nil
 	room.Scene.Position = "wit"
 	room.setBackground("newarea", "", true) // must not panic
 	if room.Scene.Position != "wit" {

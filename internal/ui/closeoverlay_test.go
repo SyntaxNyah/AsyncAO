@@ -13,9 +13,9 @@ func TestCloseTopOverlay(t *testing.T) {
 	}
 
 	// A floating panel closes and reports true.
-	a.showVoice = true
-	if !a.closeTopOverlay() || a.showVoice {
-		t.Errorf("showVoice should close (closed=%v)", !a.showVoice)
+	a.showMessages = true
+	if !a.closeTopOverlay() || a.showMessages {
+		t.Errorf("showMessages should close (closed=%v)", !a.showMessages)
 	}
 
 	// Priority: a confirm modal closes before a floating panel.
@@ -35,13 +35,13 @@ func TestCloseTopOverlay(t *testing.T) {
 	}
 
 	// A dropdown wins over everything.
-	a.showVoice = true
+	a.showMessages = true
 	a.ctx.ddOpen = "swatch"
 	a.closeTopOverlay()
 	if a.ctx.ddOpen != "" {
 		t.Error("an open dropdown should close first")
 	}
-	if !a.showVoice {
+	if !a.showMessages {
 		t.Error("the panel must survive while a dropdown was open")
 	}
 }
@@ -54,11 +54,11 @@ func TestCapturingKey(t *testing.T) {
 	if a.capturingKey() {
 		t.Fatal("fresh app should not be capturing a key (macroBind must default to -1)")
 	}
-	a.bindingFor = "modcall"
+	a.shownameBindFor = "Judge"
 	if !a.capturingKey() {
 		t.Error("an armed hotkey capture should report capturingKey")
 	}
-	a.bindingFor = ""
+	a.shownameBindFor = ""
 	a.macroBind = 0 // 0 = armed (slot 0)
 	if !a.capturingKey() {
 		t.Error("an armed macro capture should report capturingKey")

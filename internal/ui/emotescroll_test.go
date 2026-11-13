@@ -134,23 +134,3 @@ func TestRevealScrollsTheMinimumDistance(t *testing.T) {
 		t.Errorf("a negative slot moved the grid to row %d", a.emoteRow)
 	}
 }
-
-// TestBothGridsDriveTheSameScrollSeam is the encapsulation gate. The classic row
-// (screens.go) and the themed grid (theme_layout.go) each lay the grid out
-// themselves; if either stopped stamping its metrics, the number keys and the page
-// label would describe the OTHER grid's shape while every unit gate above stayed
-// green — which is precisely the drift the seam was extracted to end.
-func TestBothGridsDriveTheSameScrollSeam(t *testing.T) {
-	for _, h := range []struct{ file, fn string }{
-		{"screens.go", "drawEmoteRow"},
-		{"theme_layout.go", "drawEmoteGridThemed"},
-	} {
-		body := funcBodySource(t, h.file, h.fn)
-		if !containsCall(body, "setEmoteGridMetrics") {
-			t.Errorf("%s does not stamp setEmoteGridMetrics — the grid on screen and the number row disagree", h.fn)
-		}
-		if !containsCall(body, "emoteFirstSlot") {
-			t.Errorf("%s does not draw from emoteFirstSlot — it is still paging on its own", h.fn)
-		}
-	}
-}

@@ -6,9 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -165,7 +164,7 @@ func TestThemeDesignResizeDeliversOneToOne(t *testing.T) {
 	if !a.applyThemeDesignWindowSize() {
 		t.Fatal("applyThemeDesignWindowSize reported no design size")
 	}
-	w, h := a.d.Prefs.WindowSize()
+	w, h := a.d.Prefs.Load().WindowSize()
 	if w != 714 || h != 579+int(themeDesignWindowInset) {
 		t.Fatalf("persisted window = %dx%d, want the theme's 714x579 plus the %d px chrome band",
 			w, h, themeDesignWindowInset)
@@ -199,7 +198,7 @@ func TestThemeDesignResizeClampsToTheMinimumWindow(t *testing.T) {
 	if !a.applyThemeDesignWindowSize() {
 		t.Fatal("applyThemeDesignWindowSize reported no design size")
 	}
-	if w, h := a.d.Prefs.WindowSize(); w != config.MinWindowW || h != config.MinWindowH {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != config.MinWindowW || h != config.MinWindowH {
 		t.Errorf("persisted window = %dx%d, want the %dx%d floor", w, h, config.MinWindowW, config.MinWindowH)
 	}
 }
@@ -220,13 +219,13 @@ func TestThemeResizeOneShotFiresOnceThenClears(t *testing.T) {
 	// The target is the canvas PLUS the chrome band above it (themeDesignWindowInset,
 	// #14) — that is what leaves the canvas itself at 1:1.
 	wantH := 579 + int(themeDesignWindowInset)
-	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != wantH {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 714 || h != wantH {
 		t.Fatalf("armed landing gave window %dx%d, want 714x%d", w, h, wantH)
 	}
 	// A second theme lands DISARMED — a server binding a theme, a heal, a
 	// filter-purge recovery. The window must not follow it.
 	landThemeApply(a, designCanvas(1280, 720))
-	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != wantH {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 714 || h != wantH {
 		t.Errorf("an unarmed landing resized to %dx%d — boot/heal/server binds must never move the window", w, h)
 	}
 }
@@ -252,7 +251,7 @@ func TestThemeResizeArmingIsNotSpentByAnOlderApply(t *testing.T) {
 
 	// The stale apply wins the race and lands first.
 	landThemeApplyGen(a, stale, designCanvas(1280, 720))
-	if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("a stale apply resized to %dx%d — that is the PREVIOUS theme's canvas", w, h)
 	}
 	if a.themeResizeArmGen != picked {
@@ -263,7 +262,7 @@ func TestThemeResizeArmingIsNotSpentByAnOlderApply(t *testing.T) {
 	// band above it — themeDesignWindowInset, #14).
 	landThemeApplyGen(a, picked, designCanvas(714, 579))
 	wantH := 579 + int(themeDesignWindowInset)
-	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != wantH {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 714 || h != wantH {
 		t.Errorf("the armed apply gave window %dx%d, want the picked theme's 714x%d", w, h, wantH)
 	}
 	if a.themeResizeArmGen != 0 {
@@ -283,7 +282,7 @@ func TestThemeResizeArmingIgnoresANewerApply(t *testing.T) {
 	newer := startThemeApply(a)
 
 	landThemeApplyGen(a, newer, designCanvas(1280, 720))
-	if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("a newer (unarmed) apply resized to %dx%d", w, h)
 	}
 	// It is now unreachable — pollThemeApply's stale guard drops `picked` — but it
@@ -291,7 +290,7 @@ func TestThemeResizeArmingIgnoresANewerApply(t *testing.T) {
 	// increase, so a stranded arming can never match again; prove that by landing
 	// another apply and checking the window still has not moved.
 	landThemeApply(a, designCanvas(800, 600))
-	if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("a stranded arming leaked onto a later landing (%dx%d)", w, h)
 	}
 }
@@ -304,7 +303,7 @@ func TestThemeResizeArmingIgnoresANewerApply(t *testing.T) {
 func TestThemeResizeNeverFiresUnarmed(t *testing.T) {
 	a := testTabApp(t)
 	landThemeApply(a, designCanvas(714, 579))
-	if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("boot apply persisted window %dx%d, want it untouched (0x0 = never set)", w, h)
 	}
 	if a.themeAppliedName != "fixture" {
@@ -324,12 +323,12 @@ func TestThemeResizeGuardsStillConsumeTheOneShot(t *testing.T) {
 	}
 	t.Run("fullscreen", func(t *testing.T) {
 		a := testTabApp(t)
-		a.d.Prefs.SetWindowFullscreen(true)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.WindowFull = true })
 		armAndLand(a, designCanvas(714, 579))
 		if a.themeResizeArmGen != 0 {
 			t.Error("the one-shot survived the fullscreen guard")
 		}
-		if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+		if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 			t.Errorf("resized to %dx%d while fullscreen — never fight the user", w, h)
 		}
 	})
@@ -338,12 +337,12 @@ func TestThemeResizeGuardsStillConsumeTheOneShot(t *testing.T) {
 		// screen, so the theme's canvas is not what is being drawn and snapping the
 		// window to it would just make the classic layout cramped.
 		a := testTabApp(t)
-		a.d.Prefs.SetThemeLayout(false)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 		armAndLand(a, designCanvas(714, 579))
 		if a.themeResizeArmGen != 0 {
 			t.Error("the one-shot survived the themed-layout guard")
 		}
-		if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+		if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 			t.Errorf("resized to %dx%d with the theme layout off", w, h)
 		}
 	})
@@ -353,7 +352,7 @@ func TestThemeResizeGuardsStillConsumeTheOneShot(t *testing.T) {
 		if a.themeResizeArmGen != 0 {
 			t.Error("the one-shot survived a theme with no courtroom rect")
 		}
-		if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+		if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 			t.Errorf("resized to %dx%d for a theme that declares no canvas", w, h)
 		}
 	})
@@ -561,7 +560,7 @@ func TestThemeResizeArmingDisarmsWhenOutraced(t *testing.T) {
 	newer := startThemeApply(a) // a heal, a purge recovery, or a server bind
 
 	landThemeApplyGen(a, newer, designCanvas(1280, 720))
-	if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("a newer (unarmed) apply resized to %dx%d", w, h)
 	}
 	if a.themeResizeArmGen != 0 {
@@ -571,7 +570,7 @@ func TestThemeResizeArmingDisarmsWhenOutraced(t *testing.T) {
 	// The outraced apply publishing late changes nothing: pollThemeApply's
 	// consume-side guard drops it before it can reach the resize at all.
 	landThemeApplyGen(a, picked, designCanvas(714, 579))
-	if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("the outraced apply still resized to %dx%d", w, h)
 	}
 }
@@ -603,7 +602,7 @@ func TestThemeDesignSizeNeedsAViewportToo(t *testing.T) {
 	if a.themeResizeArmGen != 0 {
 		t.Error("the one-shot survived a theme with no viewport")
 	}
-	if w, h := a.d.Prefs.WindowSize(); w != 0 || h != 0 {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 0 || h != 0 {
 		t.Errorf("resized to %dx%d for a theme the classic layout draws", w, h)
 	}
 }
@@ -642,7 +641,7 @@ func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {
 	landThemeApplyGen(a, gen, designCanvas(714, 579))
 	// Canvas + the chrome band above it (themeDesignWindowInset, #14).
 	wantH := 579 + int(themeDesignWindowInset)
-	if w, h := a.d.Prefs.WindowSize(); w != 714 || h != wantH {
+	if w, h := a.d.Prefs.Load().WindowSize(); w != 714 || h != wantH {
 		t.Errorf("the upgrade snap gave window %dx%d, want the theme's 714x%d", w, h, wantH)
 	}
 
@@ -661,7 +660,7 @@ func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {
 	}
 	b := testTabApp(t)
 	b.d.Prefs = relaunched
-	if w, h := b.d.Prefs.WindowSize(); w != 714 || h != wantH {
+	if w, h := b.d.Prefs.Load().WindowSize(); w != 714 || h != wantH {
 		t.Fatalf("the snapped window did not persist: reloaded %dx%d", w, h)
 	}
 	b.armBootThemeResize(startThemeApply(b))
@@ -671,7 +670,7 @@ func TestThemeFitUpgradeSnapIsArmedOnceAtBoot(t *testing.T) {
 	// The user has since switched to a theme with a different canvas. Nothing may
 	// follow it: the upgrade snap is spent, and this is an ordinary boot apply.
 	landThemeApply(b, designCanvas(1280, 720))
-	if w, h := b.d.Prefs.WindowSize(); w != 714 || h != wantH {
+	if w, h := b.d.Prefs.Load().WindowSize(); w != 714 || h != wantH {
 		t.Errorf("a second launch resized to %dx%d — it must fire once and only once", w, h)
 	}
 }
@@ -690,7 +689,7 @@ func TestThemeFitUpgradeSnapSkipsPreservedPicks(t *testing.T) {
 		t.Fatalf("load prefs: %v", err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	if got := prefs.ThemeFitMode(); got != config.ThemeFitCustom {
+	if got := prefs.Load().ThemeFit; got != config.ThemeFitCustom {
 		t.Fatalf("ThemeFitMode = %d, want the preserved Custom(%d)", got, config.ThemeFitCustom)
 	}
 	if prefs.ThemeFitDefaultJustMoved() {
@@ -717,7 +716,7 @@ func TestThemeDesignSizeRowFollowsTheThemedLayout(t *testing.T) {
 		t.Error("offered a design size with no theme loaded")
 	}
 	stageThemeCanvas(a, 714, 579)
-	if !a.d.Prefs.ThemeLayoutEnabled() {
+	if !a.d.Prefs.Load().ThemeLayoutOn {
 		t.Fatal("the themed layout is the shipped default; this test needs it on to start")
 	}
 	w, h, ok := a.themeDesignSizeOffer()
@@ -725,7 +724,7 @@ func TestThemeDesignSizeRowFollowsTheThemedLayout(t *testing.T) {
 		t.Fatalf("offer = (%d,%d,%v), want the theme's 714x579 while the themed layout is on", w, h, ok)
 	}
 
-	a.d.Prefs.SetThemeLayout(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ThemeLayoutOn = false })
 	if _, _, ok := a.themeDesignSizeOffer(); ok {
 		t.Error("the row is still offered with the themed courtroom layout off — its hint would be false")
 	}
@@ -733,7 +732,7 @@ func TestThemeDesignSizeRowFollowsTheThemedLayout(t *testing.T) {
 	gen := startThemeApply(a)
 	a.themeResizeArmGen = gen
 	landThemeApplyGen(a, gen, designCanvas(714, 579))
-	if pw, ph := a.d.Prefs.WindowSize(); pw != 0 || ph != 0 {
+	if pw, ph := a.d.Prefs.Load().WindowSize(); pw != 0 || ph != 0 {
 		t.Errorf("the automatic half resized to %dx%d with the themed layout off", pw, ph)
 	}
 }

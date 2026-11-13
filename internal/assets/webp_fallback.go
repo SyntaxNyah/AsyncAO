@@ -2,9 +2,7 @@
 
 package assets
 
-// Pure-Go WebP fallback for CGO-less builds (spec §2):
-// golang.org/x/image/webp decodes static payloads only. Animated WebP needs
-// libwebpdemux — surface a descriptive error so the warning UI can say why.
+// Pure-Go WebP fallback for CGO-less builds: animated WebP needs libwebpdemux, so return a descriptive error.
 
 import (
 	"bytes"

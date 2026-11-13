@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -195,7 +195,7 @@ func TestEveryFXTermReachesThePixel(t *testing.T) {
 // sheet over the stage.
 func TestReduceMotionPaintsTheAuthoredFormNotTheFrozenPeak(t *testing.T) {
 	a, prefs := newEffectsRig(t)
-	prefs.SetReduceMotion(true)
+	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
 	lay := &themeLayoutCache{condGen: 12}
 
 	free := fxTestElement(theme.FXDrift)

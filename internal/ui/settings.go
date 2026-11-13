@@ -1,86 +1,60 @@
 package ui
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"sort"
+	"math"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
-	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
+	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
-	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
-	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
-// settingsState lives on App lazily (kept here for file cohesion).
 type settingsState struct {
 	mountInput string
 	loaded     bool
 	statusLine string
-	// fpsBufs backs the three frame-rate rows' exact-number entries (active,
-	// idle, unfocused) — reseeded from the pref while unfocused, applied on
-	// Enter (fpsSettingRow).
+	// fpsBufs backs the active, idle and unfocused rows' number entries; reseeded while unfocused, applied on Enter.
 	fpsBufs [3]string
-	// memBufs backs the exact-number fields of the memory/scale slider rows
-	// (downscale %, animated height cap, animated budget, decode concurrency,
-	// texture budget) - reseeded while unfocused, applied on Enter.
+	// memBufs backs the number fields of the memory and scale slider rows; reseeded while unfocused, applied on Enter.
 	memBufs [5]string
-	// logDepthBuf backs the "IC log depth" exact-number entry in the Chat tab's
-	// Chat log section — reseeded while unfocused, applied on Enter.
+	// logDepthBuf backs the "IC log depth" number entry; reseeded while unfocused, applied on Enter.
 	logDepthBuf string
 	tab         int                    // active settings tab (index into settingsTabNames)
 	tabScroll   [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
 	search      string                 // settings search query (jumps to the matching tab)
-	// scrollToSection holds a lowercased query for one frame after a search jump: the
-	// first section card whose title contains it scrolls itself to the top, so search
-	// lands on the SECTION (e.g. "scene maker"), not just the tab. Cleared each frame.
+	// scrollToSection is a lowercased query held one frame after a search jump, for the first matching section card.
 	scrollToSection string
-	// #26 gather-search: the collected all-tabs row index (label + tab + the row's
-	// offset within its tab at zero scroll), built once per search session by a
-	// fenced, clipped-away draw of every tab. flash* highlight the landed row.
+	// index is the all-tabs row list for search, built once per search session by a clipped-away, input-blocked draw.
 	index      []settingsIndexRow
 	indexBuilt bool
 	flashTab   int
 	flashY     int32
 	flashUntil time.Time
 
-	// callword manager add-field buffer: a fresh empty field (NOT preloaded with
-	// the word list — the words render as ×-removable rows below it).
+	// callAddInput is an empty field, not preloaded: the words render as removable rows below it.
 	callAddInput string
 
-	// friends edit buffer — reloaded when the server (friendKey) changes,
-	// since the friend list is per server.
+	// friendInput is reloaded when friendKey changes, since the friend list is per server.
 	friendInput string
 	friendKey   string
 
-	// ignore edit buffer — same per-server reload, so you can un-ignore a
-	// player who's left (the player-row button is gone once they're offline).
+	// ignoreInput is reloaded per server likewise, so you can un-ignore a player who has left.
 	ignoreInput string
 	ignoreKey   string
 
-	// font override edit buffer (semicolon-separated chain).
+	// fontInput is the font override chain, semicolon-separated.
 	fontInput  string
 	fontLoaded bool
 
-	// custom missing-sprite (missingno) image path edit buffer, seeded once from
-	// the pref. errorSpriteLoaded gates the one-time seed like fontLoaded.
-	errorSpriteInput  string
-	errorSpriteLoaded bool
+	// errorSpriteFocused is whether the custom missing-sprite field had focus last frame; losing it loads the image.
+	errorSpriteFocused bool
 
-	// custom window-size edit buffers (W, H), seeded from the live size and
-	// re-seeded after a preset/fit so they track the window.
+	// winWInput and winHInput are seeded from the live size and again after a preset or fit.
 	winWInput, winHInput string
 	winLoaded            bool
 
@@ -89,18 +63,19 @@ type settingsState struct {
 	// presetName is the "Save as preset" name buffer (setting presets).
 	presetName string
 
-	// macro editor buffers (name, captured key, |-separated lines).
+	// Macro editor buffers: name, captured key, |-separated lines.
 	macroName  string
 	macroKey   string
 	macroLines string
-	// IC quick-phrase editor buffer (the line to bind a key to).
+	// icPhrase is the IC quick-phrase line to bind a key to.
 	icPhrase string
 
-	// theme-binding picker (shares the login section's server list cache).
+	// themeBindKey is the theme-binding picker, sharing the login section's server list cache.
 	themeBindKey string
+	// assetHostKey is the server whose mirrors the Asset source list shows.
+	assetHostKey string
 
-	// login section: the picked server + its credential edit buffers
-	// (configurable for ANY known server, connected or not).
+	// Login section: the picked server and its credential buffers, for any known server, connected or not.
 	loginKey      string
 	loginUser     string
 	loginPass     string
@@ -111,148 +86,129 @@ type settingsState struct {
 	loginSrvCount int
 	loginSrvFor   string
 
-	// theme picker state: list scanning runs on a goroutine (directory
-	// I/O stays off the render thread — §17.2) and lands on themeRes.
+	// Theme picker: scanning runs on a goroutine, landing on themeRes (hard rule 2).
 	themeName string
 	themeDir  string
 	themeList []string
 	themeRes  chan themeScan
 	themeBusy bool
-	// themeScanUserWant latches "a user asked for a rescan" across a scan that was
-	// already in flight. scanThemes single-flights on themeBusy, and it used to
-	// drop the whole request — including the fromUser bit — so clicking "Apply &
-	// rescan" (or picking a folder) while the Settings screen's automatic first-open
-	// scan was still running silently lost the #35 auto-snap for that action. The
-	// latch is OR'd on every user-initiated call and cleared only by the landing
-	// that actually acts on it, so neither a stale result nor a landing that
-	// resolved nothing can swallow the intent. Render thread only, like the rest of
-	// this struct: the scan goroutine never touches it (hard rules 1 and 8).
+	// themeScanUserWant remembers a user-asked rescan across a scan in flight, which scanThemes would drop.
+	// Set on every user call, cleared only by the landing that acts on it. Render thread only (hard rules 1 and 8).
 	themeScanUserWant bool
-	// themeDDWasOpen edge-detects the theme dropdown so the catalog is rescanned
-	// once per OPEN rather than once per themeScanMinInterval for as long as the
-	// list is held open. The floor alone made a held-open picker poll the disk
-	// every 5 s, which is exactly what the no-watcher decision (themecatalog.go's
-	// header) exists to avoid; the floor stays on top of this edge, so opening the
-	// picker twice in a second is still one scan. Render thread only.
+	// themeDDWasOpen detects the dropdown opening, so the catalog rescans once per open, not while it stays open.
 	themeDDWasOpen bool
-	// themeCountText memoizes the "(N found)" line beside the picker on the count
-	// it was built from — see themeFoundText.
+	// themeCountText memoizes the "(N found)" line on its count; see themeFoundText.
 	themeCountText string
 	themeCountFor  int
-	// themeRows memoizes every string drawThemeCatalogRows draws. See themeRowText.
+	// themeRows memoizes the strings drawThemeCatalogRows draws.
 	themeRows themeRowText
-	// themeArt memoizes the theme-art budget bar's label. See themeArtBarText.
+	// themeArt memoizes the theme-art budget bar's label.
 	themeArt themeArtBarText
 
-	// --- Settings ▸ Theme editor, the authoring tab (v1.90.0 W10) ------------
+	// Theme editor tab state, read once by the act (settingsthemeeditor.go). Render thread only.
 	//
-	// The CREATOR's four pieces of UI state. On settingsState rather than on App
-	// because they are exactly that — what the tab's controls are showing — and they
-	// die with nothing: the act reads them once and hands values to the funnel
-	// (settingsthemeeditor.go). Render thread only, like the rest of this struct.
-	//
-	// newThemeName is the name field's live text (empty = use the placeholder).
+	// newThemeName is the name field's live text; empty uses the placeholder.
 	newThemeName string
-	// newThemeTemplate is the picked starting point. The zero value is templateBlank,
-	// which is the right default: it is the one template with no prerequisite.
+	// newThemeTemplate is the picked starting point; the zero value, templateBlank, has no prerequisite.
 	newThemeTemplate themeCreateTemplate
-	// presetLayout / presetStyle index the two shipped preset axes, in the library's
-	// own order — the same order the editor's gallery lists them in, so a pair picked
-	// here and then opened in the gallery is the pair the gallery shows.
+	// presetLayout and presetStyle index the two preset axes, in the same order as the editor's gallery.
 	presetLayout, presetStyle int
-	// presetAxisNames memoizes the two label slices those dropdowns draw from, keyed
-	// on the library pointer. Without it the tab would rebuild two 20-odd-entry
-	// string slices every frame.
+	// presetAxisNames memoizes the dropdowns' two label slices on the library pointer, not rebuilt per frame.
 	presetAxisNames presetAxisNameCache
 
-	// folder picking: native dialog output / resolved drag-drops land
-	// here from goroutines (never block or stat on the render thread). Still used
-	// by the THEME folder picker (browseForFolder) — the .demo picker moved fully
-	// in-app (demobrowser.go) after the native dialog failed foreground twice.
+	// Theme folder picker: dialog output and resolved drops land here from goroutines, never stat on the render thread.
 	folderRes  chan string
 	browseBusy bool
+	// mountPickRes carries the Asset source folder dialog's outcome; mountPickBusy keeps it to one dialog (hard rule 4).
+	mountPickRes  chan dialogPick
+	mountPickBusy bool
+	// errorSpritePickRes carries the custom missing-sprite file dialog's outcome; errorSpritePickBusy keeps it to one.
+	errorSpritePickRes  chan dialogPick
+	errorSpritePickBusy bool
+	// wardHex is the Wardrobe highlight colour's hex field while it is being typed in.
+	wardHex string
+	// folderScans holds each listed folder's report; checkFolders keeps it to the listed folders (hard rule 4).
+	folderScans map[string]baseScan
+	// folderOpen is which listed folders show what they contain; checkFolders prunes it with folderScans.
+	folderOpen map[string]bool
+	// packagesOpen shows each package under the packages row.
+	packagesOpen      bool
+	folderScanRunning bool
+	folderScanGen     int
+	folderScanRes     chan baseScan
+	// mountDropRes carries a folder dropped on the Assets tab, resolved off-thread.
+	mountDropRes chan string
 
-	// ioRes carries one-line results of off-thread file ops (learned
-	// format export/import) back to the status line.
+	// The Cache card: which rows show their settings, and the disk counts with when they were taken.
+	cacheOpen       [cacheRowCount]bool
+	cacheSizes      cacheSizes
+	cacheMeasuredAt time.Time
+	cacheMeasuring  bool
+	// The disk cache's folder: a pick in flight, a picked folder (or the default) awaiting the move question, a
+	// move under way, and the last result.
+	cachePickBusy  bool
+	cachePickRes   chan dialogPick
+	cacheNewDir    string
+	cacheToDefault bool
+	cacheMoving    bool
+	cacheMoveRes   chan cacheMoveResult
+	cacheStatus    string
+	cacheStatusBad bool
+	cacheSizeRes   chan cacheSizes
+	// learnedKeys is the learned-formats map size learnedServers was counted for.
+	learnedKeys, learnedServers int
+
+	// ioRes carries one-line results of off-thread file ops back to the status line.
 	ioRes chan string
 
-	// Formats tab: fmtOrderText caches each asset type's EFFECTIVE probe list as
-	// ready-to-draw text, parallel to config.TypeNames (whose order matches the
-	// assets.AssetType enum). It is rebuilt only when the preferences' format
-	// generation moves — one atomic load per frame — so drawing the tab joins no
-	// strings and clones no slices per frame. That matters here because the
-	// settings screen has no allocation gate: a per-frame regression on this page
-	// would not be caught by the benchmark suite, so the cache is the guard.
-	// fmtOrderOK distinguishes "never built" from "built at generation 0".
+	// fmtOrderText caches each asset type's probe list, parallel to config.TypeNames (assets.AssetType order).
+	// Rebuilt only when the format generation moves; fmtOrderOK separates never built from generation 0.
 	fmtOrderText []string
 	fmtOrderGen  uint64
 	fmtOrderOK   bool
 }
 
-// themeScan is one scan result: the theme names found, the NORMALIZED
-// root (users paste the themes folder itself, or a single theme inside
-// it — both resolve to the root theme.Load expects), and an optional
-// auto-pick when the pasted path WAS a single theme.
+// themeScan is one result: theme names found, the normalized root, and an auto-pick when the path was a single theme.
 type themeScan struct {
 	names    []string
 	root     string
 	pickName string
-	// in is the theme folder this scan was ISSUED for — settings.themeDir as it
-	// read at scanThemes time, before normalizeThemeRoot touched it. It is what
-	// makes a STALE result recognisable: the folder can change (a picker landing,
-	// a drop, a typed path) while a scan is in flight, and this result then
-	// answers a question nobody is asking any more. Comparing `in` against the
-	// current folder is the only sound test — comparing res.root would fire on
-	// every normalized path too, because normalizing is exactly when root and the
-	// configured folder legitimately differ. See pollThemeScan.
+	// in is the folder this scan was issued for, before normalizing, so pollThemeScan can recognise a stale result.
+	// Comparing res.root would misfire: root and the configured folder legitimately differ after normalizing.
 	in string
-	// fromUser marks a scan the user actually asked for (Apply & rescan, the
-	// folder picker, a dropped folder) as opposed to the automatic one the
-	// Settings screen fires the first time it opens. Only the former may arm the
-	// #35 auto-resize: the automatic scan re-applies the theme for anyone who has
-	// a custom theme folder saved, so treating it as a pick would resize the
-	// window merely for opening Settings.
+	// fromUser marks a scan the user asked for; only it may auto-resize, or opening Settings would resize the window.
 	fromUser bool
 }
 
 var settings = settingsState{
-	themeRes:  make(chan themeScan, 1),
-	folderRes: make(chan string, 1),
-	ioRes:     make(chan string, 1),
-}
+	themeRes:     make(chan themeScan, 1),
+	folderRes:    make(chan string, 1),
+	mountPickRes: make(chan dialogPick, 1),
 
-// Settings tabs: the screen is split into these categories so it's
-// navigable instead of one long scroll. numSettingsTabs sizes the per-tab
-// scroll array (keep it == len(settingsTabNames)).
-const numSettingsTabs = 14
+	errorSpritePickRes: make(chan dialogPick, 1),
+	folderScans:        map[string]baseScan{},
+	folderOpen:         map[string]bool{},
+	folderScanRes:      make(chan baseScan, folderScanResCap),
+	mountDropRes:       make(chan string, mountDropResCap),
+	cacheSizeRes:       make(chan cacheSizes, cacheSizeResCap),
+	cachePickRes:       make(chan dialogPick, 1),
+	cacheMoveRes:       make(chan cacheMoveResult, 1),
+	ioRes:              make(chan string, 1),
+}
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Power user", "Reset",
+	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Power user", "Updates", "Reset",
 }
 
-// Tab indices (order matches settingsTabNames).
+// Tab indices, in settingsTabNames order.
 const (
 	tabGeneral = iota
 	tabTheme
-	// tabThemeEditor owns AUTHORING: making a theme, opening the editor over one,
-	// and taking a bundle somebody sent you. It exists because the editor — the
-	// flagship of v1.90.0 — was ONE row two thirds of the way down the Theme tab,
-	// between "Get themes" and "Your themes folder", and a feature you have to
-	// scroll past a subtheme dropdown to discover is a feature nobody discovers.
-	//
-	// IMMEDIATELY AFTER Theme, not at the end: the two are read as a pair ("pick
-	// one" / "make one"), and the sidebar is scanned top to bottom, so the
-	// authoring tab has to be where the eye already is when it fails to find the
-	// editor on Theme. The Theme tab keeps SELECTION — the catalog, the badge, the
-	// subtheme variant, the write root — and points here (drawThemeAuthoringHint).
+	// tabThemeEditor owns authoring: making a theme, opening the editor, taking a bundle.
+	// It sits right after Theme, which keeps selection, because the two read as a pair in the sidebar.
 	tabThemeEditor
 	tabAssets
-	// tabFormats owns EVERY control that decides which image/audio file type is
-	// asked for. They used to be split across Assets (server profile, audio
-	// fallbacks, learned-format tools) and Power user (probe order, per-type
-	// fallbacks, autodetect, desk policy) — three places, none of them where a
-	// player looks when art doesn't render. It sits next to Assets because that's
-	// the neighbourhood people browse when something didn't load.
+	// tabFormats owns every control that decides which file type is asked for; beside Assets, where people look.
 	tabFormats
 	tabAudio
 	tabChat
@@ -260,114 +216,62 @@ const (
 	tabHotkeys
 	tabStudio
 	tabData
-	tabVoice
 	tabPowerUser
+	tabUpdates
 	tabReset
+	// numSettingsTabs is the tab count, so every per-tab table is sized by the list itself.
+	numSettingsTabs
 )
 
-// settingsSearchKeywords maps each tab to terms the search box matches. It folds
-// in every SECTION TITLE on the tab (so "friends", "cache", "callwords", "window"
-// etc. all resolve) plus the individual setting terms, since the old curated list
-// missed most sections — the "search doesn't work that much" report (#102). Keep
-// terms lowercase; when adding a settings section, add its title here.
+// settingsSearchKeywords maps each tab to terms the search box matches, including every section title.
+// Keep terms lowercase; when adding a settings section, add its title here.
 var settingsSearchKeywords = [numSettingsTabs][]string{
 	tabGeneral: {
-		// sections: Identity, Display & behaviour, Application, Log colours, Stage,
-		// Scale & text size, Window, Extras box, Fonts.
+		// Identity, Display & behaviour, Application, Log colours, Stage, Scale & text size, Window, Extras box, Wardrobe,
+		// Fonts.
 		"identity", "showname", "ooc name", "default showname", "force char names", "anti-impersonation",
 		"your profile", "profile", "character profile", "pronouns", "bio", "tagline", "theme song", "card",
 		"display", "behaviour", "behavior", "animation", "reduce motion", "accessibility",
 		"sprite style", "recolour", "recolor", "tint", "glow", "opacity", "hide sprite styles", "hide other",
 		"emote button", "favourite emotes", "favorite emotes", "fav emotes",
-		// The sprite hover-preview cluster had NO keyword on this tab at all. The
-		// bare "preview" is listed DELIBERATELY: the table is scanned in tab order
-		// with substring matching, so any phrase here would swallow that query
-		// anyway (it is a substring of "sprite preview"), and a silent theft is
-		// exactly what the shadow test forbids. This tab owns four preview settings
-		// to Theme's one section, so it takes the bare word and Theme keeps the
-		// qualified "theme preview".
+		// The table is scanned in tab order with substring matching, so this tab, with four preview settings,
+		// takes bare "preview"; Theme keeps the qualified "theme preview".
 		"preview", "sprite preview", "hover preview", "preview box", "pin preview", "pinned preview", "preview pin",
 		"application", "streamer mode", "debug", "performance", "perf hud", "fps", "notify ooc", "unread badge",
 		"log colours", "log colors", "selection highlight", "highlight colour", "name colour", "name colours",
 		"stage", "desk", "hide desk", "scale", "text size", "ui scale", "dpi", "zoom",
 		"window", "fullscreen", "window size", "resolution", "extras box", "extras", "tear off",
+		"wardrobe", "icon size", "wardrobe font", "wardrobe text",
 		"fonts", "font", "cjk", "dyslexia", "dyslexic", "emoji", "smooth scaling", "tabs", "server tabs", "max tabs",
-		// The system-font toggle's written path was wrong too ("Interface"); it is
-		// on this tab, under Fonts.
+		// The system-font toggle is on this tab, under Fonts.
 		"system fonts", "installed fonts", "use fonts installed",
 	},
 	tabTheme: {
-		// sections: Theme, Layout & fit, Layout presets, Lobby, Preview & binding.
-		// Emote-grid spacing had NO keyword at all and its only written path named
-		// a tab that does not exist, so it was effectively unreachable. Every word
-		// someone would actually type for it lives here, on the tab that owns it.
+		// Theme, Layout & fit, Layout presets, Lobby, Preview & binding.
 		"emote icon spacing", "emote spacing", "icon spacing", "emote gap", "spacing", "gap",
 		"emote grid", "emote icons",
 		"theme", "theme picker", "chatbox", "skin", "default theme",
-		// "theme preview", not a bare "preview": General's sprite-preview cluster
-		// takes that word (see its block above). "bind"/"binding" still reach this
-		// section, and the gather-search matches its ROW LABELS first regardless.
+		// "theme preview", not bare "preview", which General takes above.
 		"layout", "fit", "courtroom design", "lobby", "theme preview", "bind", "binding",
 		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
-		// v1.90.0 W2: the themes folder, its badges and AO2 subthemes. Terms are
-		// picked to avoid the shadow trap (the table is scanned in TAB ORDER and
-		// matches forward, so a term here swallows every later tab's query hidden
-		// inside it): NOT "rescan" (Assets owns it), NOT anything containing
-		// "import"/"portable" (Data), hence "reload themes" and "themes folder".
+		// The table matches forward in tab order, so a term here takes every later tab's query inside it: not "rescan"
+		// (Assets) nor anything containing "import" or "portable" (Data).
 		"subtheme", "subthemes", "theme variant", "variant",
 		"themes folder", "my themes", "where are my themes", "open themes folder",
 		"reload themes", "find themes", "theme badge",
-		// The "Get themes" discovery row. Same shadow discipline as the block above
-		// (the table is scanned in TAB ORDER and matches forward, so a term here
-		// swallows every later tab's query hidden inside it): every entry is anchored
-		// on "themes" or on a word no later tab claims. Note the trap the shadow test
-		// CANNOT see: TestSettingsSearchKeywordsDoNotShadowLaterTabs compares WHOLE
-		// keywords, so a long term here that merely CONTAINS a later tab's short query
-		// passes the gate while stealing that query for real. Hence three exclusions,
-		// each a word a later tab owns outright:
-		//   - anything containing "download" — Assets owns "download"/"downloader".
-		//   - "source repository" — the bare "source" belongs to Assets' "asset
-		//     source", the only other "source" term and the owner of the real
-		//     "Asset source" section.
-		//   - "new themes" — the bare "new" belongs to Chat's "jump to newest".
-		// "github" and "theme repository" stay: no later tab claims either word.
+		// Anchored on "themes" or a word no later tab claims. A long term containing a later tab's short query
+		// steals it: nothing with "download" (Assets), "source repository" ("source" is Assets') or
+		// "new themes" ("new" is Chat's).
 		"get themes", "more themes", "free themes", "extra themes",
 		"where to get themes", "drop-in themes", "franchise themes",
 		"github", "theme repository",
-		// The theme EDITOR's terms USED TO LIVE HERE (v1.90.0 W7) and moved to
-		// tabThemeEditor below — the row moved, so its search terms had to move with
-		// it or the search would land people on the tab the feature just left.
+		// The theme editor's terms are on tabThemeEditor below.
 	},
 	tabThemeEditor: {
-		// sections: New theme, The editor, Bring a theme in.
-		//
-		// THE SHADOW DISCIPLINE IS UNCHANGED and it still governs every line here.
-		// The table is scanned in TAB ORDER and matches FORWARD (the query must be a
-		// substring of a term), so a term on this tab swallows every later tab's
-		// query hidden inside it. This tab is index 2, so "later" is Assets onwards —
-		// the same set the W7 block was vetted against at index 1, minus Theme
-		// itself, which sits BEFORE us and therefore still wins its own words.
-		//
-		// Each exclusion below is a word a later tab owns outright:
-		//   - nothing containing "export" or "import" (tabData, tabStudio) — hence
-		//     no "export theme" and no "import theme" either. "aotheme" and "theme
-		//     bundle" carry the transport rows instead; they contain neither word.
-		//   - nothing containing "layer" (tabAssets owns "layer"/"layered", the
-		//     v1.89.0 layered assets). THIS is why the editor's noun is "element".
-		//   - nothing containing "custom" (tabAudio's "custom music", tabAssets'
-		//     "custom error sprite"). This is why the brief's suggested "customize
-		//     layout" is NOT here: it would steal the bare "custom" from both. The
-		//     feature is not lost — "edit the layout" and "move things around" below
-		//     answer the same question with words nobody else claims, and the
-		//     gather-search matches ROW LABELS first regardless.
-		//   - not "maker" on its own and nothing containing it (tabStudio's "scene
-		//     maker"): "theme maker" would steal the bare "maker". "theme builder"
-		//     and "theme creator" say the same thing and collide with nothing.
-		//   - nothing containing "scan" ("scanlines" → tabAssets' "rescan"),
-		//     "order"/"list" (tabFormats' "probe order", tabAccount's "master
-		//     list"), "new" (tabChat's "jump to newest"), "download" (tabAssets),
-		//     "source" (tabAssets' "asset source") or "grid"/"glow" (tabGeneral).
-		//     Hence "start a theme from scratch", never "new theme".
+		// New theme, The editor, Bring a theme in. Excluded because a later tab owns the word:
+		// "export" and "import" (Data, Studio), "layer" (Assets; hence the noun "element"), "custom" (Audio, Assets),
+		// "maker" (Studio), "scan" (Assets' "rescan"), "order" and "list" (Formats, Account), "new" (Chat),
+		// "download" and "source" (Assets), "grid" and "glow" (General).
 		"theme editor", "editor", "make a theme", "build a theme", "create a theme",
 		"theme builder", "theme creator", "edit theme", "edit a theme", "edit my theme",
 		"start a theme", "from scratch", "blank theme", "template", "templates",
@@ -376,78 +280,51 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"decorate", "decoration", "element", "elements", "stacking", "inspector",
 		"undo", "shapes", "masks", "animated background", "background art",
 		"split screen", "procedural", "halftone", "generator",
-		// The image/animated-webp intake (this wave). "upload" is the word a person
-		// actually types for it even though nothing is uploaded anywhere.
-		// NOT "webp" and NOT anything containing it ("animated webp"): tabFormats'
-		// own note reserves "webp"/"gif" for tabStudio's video export, and this tab
-		// sits ahead of both. "animated image" carries the same question.
+		// "upload" is what people type. Not "webp" or anything containing it: reserved for Studio's video export.
 		"add an image", "upload an image", "upload image", "add art", "picture",
 		"animated image", "theme art", "theme image",
-		// Live preview, the editor rail's own toggle.
 		"live preview", "live", "freeze the preview", "preview while editing",
-		// The transport rows that moved here with the editor: taking in what a friend
-		// sent, and (in the editor's header) handing one back.
+		// Taking in what a friend sent, and handing one back from the editor's header.
 		"aotheme", "theme bundle", "share a theme", "send a theme", "give a theme",
 	},
 	tabAssets: {
-		// sections: Predictive prefetch, Missing sprites, Asset source, Downloader,
-		// Cache. (Everything format-related lives on the Formats tab.)
-		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
-		"local assets", "local", "mount", "downloader", "download",
-		// The v1.89.0 layered source. Terms stay specific — the table is scanned in
-		// tab order with substring matching, so a broad word would hijack the query.
-		// NB: NOT a bare "stream" — the table is scanned in tab order with substring
-		// matching, and General's "streamer mode" already owns that prefix.
+		// Asset source (folders, packs, mirrors), Cache (memory, disk, missing, learned), Missing sprites.
+		"extra asset hosts", "asset host", "mirror", "webhost",
+		"local assets", "local", "mount",
+		// Keep terms specific, since a broad word would take the query; not bare "stream" (General's "streamer mode").
 		"asset source", "layered", "layer", "pack", "content pack", "zip", "override",
 		"rescan", "folders", "my folders",
-		"cache", "disk cache", "disk", "zstd", "clear cache",
-		"loop preanim", "preanimation", "preanim loop", "loop preanimations",
+		"cache", "disk cache", "disk", "clear cache", "texture memory",
+		"learned format", "learned formats", "learned", "clear learned", "retry missing",
 		"placeholder", "missing sprite", "missingno", "missing character", "error sprite", "custom error sprite", "404",
 	},
 	tabFormats: {
-		// sections: How formats work, This server, Automatic detection, Formats per
-		// asset type, Fallbacks, Learned formats.
-		// NOTE the table is scanned in TAB ORDER and matches forward (the query is a
-		// SUBSTRING of a term), so a term here silently steals every query a LATER
-		// tab answers better — including queries hidden inside a longer term. Absent
-		// on purpose, each because a later tab owns the word: "blip"/"volume"
-		// (Audio); "ignore"/"callword" (Chat); "password" (Account); "webp"/"gif"
-		// (Studio's video export — so no "webp format" either, which would still
-		// contain "webp"); "export"/"import" (Studio, Data); "extensions.json"
-		// (its ".json" tail would swallow Data's "json").
-		// None of those are lost: the gather-search matches ROW LABELS first, and
-		// this tab's rows literally read ".webp", "extensions.json", "Export
-		// learned". This table is only the concept-level fallback. Bare
-		// "audio"/"format" need no entry at all — they match a TAB NAME, and the
-		// name pass runs before this one.
+		// How formats work, This server, Automatic detection, Formats per asset type, Fallbacks.
+		// Absent because a later tab owns the word: "blip", "volume" (Audio); "ignore", "callword" (Chat);
+		// "password" (Account); "webp", "gif" (Studio); "export", "import" (Studio, Data);
+		// "extensions.json" (its ".json" would take Data's "json").
 		"image format", "file type", "file types", "extension", "extensions", "manifest",
 		"format profile", "server format profile", "per-server format", "pin format",
 		"probe", "probing", "one probe", "probe order", "format order", "which format",
 		"fallback", "fallbacks", "legacy format", "legacy audio", "audio format", "sound format",
 		"autodetect", "auto-detect", "detect formats", "desk format",
 		"png", "apng", "avif", "jpg", "jpeg", "opus", "ogg", "mp3", "wav",
-		"learned format", "learned formats", "learned", "clear learned",
 		"emotes not loading", "assets not loading", "images not loading", "art not loading",
 		"stuck images", "repeated images", "same image", "nothing loads",
 	},
 	tabAudio: {
-		// sections: Volume (master / music / SFX / blip / alert), music ducking,
-		// custom music streaming.
+		// Volume, music ducking, custom music streaming.
 		"audio", "volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
 		"alert volume", "music ducking", "duck",
 		"stream music", "disable music", "stop fetching music", "custom music",
 		"music across tabs", "tab music", "keep music playing", "music continuity", "keep music",
 	},
 	tabChat: {
-		// sections: Text & typing, Chat log, Case alerts, Callwords, Do Not Disturb,
-		// Messages & connection, Sound effects, Music history, Friends, Ignored
-		// players, Mod tools.
+		// Text & typing, Chat log, Case alerts, Callwords, Do Not Disturb, Messages & connection, Sound effects,
+		// Music history, Friends, Ignored players, Mod tools.
 		"text", "typing", "text crawl", "text stay", "text speed", "chat limit", "catch up",
 		"chat log", "ic log", "timestamps", "log", "song url", "song link", "full link", "music url",
-		// The follow-jump toggle. NOT a bare "smooth" — the table is scanned in TAB
-		// ORDER and matches forward, and General's "smooth scaling" already owns that
-		// prefix. Also NOT the "-ing" forms: "scrolling" literally CONTAINS "rolling",
-		// which would hand Studio's rolling-buffer queries to this tab.
+		// Not bare "smooth", which General's "smooth scaling" owns, nor "scrolling", which contains Studio's "rolling".
 		"log scroll", "smooth log scroll", "scroll", "jump to newest", "auto scroll", "autoscroll",
 		"case alerts", "casing", "case", "callword", "callwords", "ping", "alert",
 		"do not disturb", "dnd", "messages", "connection", "auto reconnect", "reconnect", "disconnect confirm",
@@ -456,77 +333,62 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"mod tools", "moderator", "modcall", "ipid",
 	},
 	tabAccount: {
-		// sections: Login, Master list, Discord. (TLS / Asset Origin moved to Power user.)
+		// Login, Master list, Discord; TLS and Asset Origin are on Power user.
 		"login", "password", "username", "credential", "auto login",
 		"master list", "server list", "discord", "presence", "rich presence",
 	},
 	tabHotkeys: {
-		// sections: Hotkeys, Macros, IC quick-phrases.
+		// Hotkeys, Macros, IC quick-phrases.
 		"hotkey", "hotkeys", "keybind", "keybinding", "shortcut",
 		"macro", "macros", "ic quick", "quick phrase", "phrase",
 	},
 	tabData: {
-		// sections: Your settings file, Back up / move, Other data.
+		// Your settings file, Back up / move, Other data.
 		"data", "settings file", "config folder", "config location", "open config", "open settings file",
 		"asset_preferences", "where are my settings", "appdata", "export", "import", "backup", "portable", "usb", "move to another pc", "json",
 	},
-	tabVoice: {
-		// sections: Microphone, Test microphone, Output, Push-to-talk.
-		"voice", "voice chat", "microphone", "mic", "input device", "recording device", "capture",
-		"test microphone", "mic test", "sidetone", "hear myself", "level meter", "meter",
-		"output volume", "speaker", "nyathena", "vc", "ptt", "talk", "push-to-talk", "push to talk",
-	},
 	tabStudio: {
-		// sections: Scene recording, Instant replay, Scene maker, Recordings, Replay
-		// playback, Export to GIF / WebP.
+		// Scene recording, Instant replay, Scene maker, Recordings, Replay playback, Export to GIF / WebP.
 		"studio", "scene recording", "record", "recording", "instant replay", "clip", "rolling buffer",
 		"scene maker", "maker", "aorec", "recordings", "replay", "replay playback", "playback speed",
 		"export", "gif", "webp", "video", "mp4", "webm", "movie", "frame rate", "quality", "scene", "capture", "archive",
 	},
 	tabReset: {
-		// sections: Reset / clear data.
+		// Reset / clear data.
 		"reset", "factory reset", "reset to defaults", "restore defaults", "wipe", "fresh install",
 		"clear settings", "clear data", "defaults",
 	},
 	tabPowerUser: {
-		// sections: TLS, Asset Origin, character-folder casing, Proxy, and the
-		// render/GPU knobs. (Image formats moved to the Formats tab — see tabFormats.)
+		// TLS, Asset Origin, character-folder casing, Proxy, and the render and GPU knobs.
 		"power user", "advanced", "expert",
 		"tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify", "security",
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 		"casing", "capital", "capitalize", "capitalise", "uppercase", "lowercase", "character folder", "folder case",
-		// Someone looking for this is usually looking for it because nothing will
-		// connect, so the terms they might actually type all belong here.
-		"proxy", "socks", "socks5", "vpn", "tunnel", "corporate network", "work network",
-		"wpad", "proxy script", "pac file", "system proxy", "no proxy", "bypass",
-		// NOT the bare "pac": the search matches forward, so it is a substring of
-		// General's "opacity" and would silently steal the query for that tab.
+		// Someone looking for this usually cannot connect, so include the terms they might type.
+		"proxy", "vpn", "tunnel", "corporate network", "work network",
+		"system proxy", "no proxy", "bypass",
+	},
+	tabUpdates: {
+		// Version, Updates, Options.
+		"updates", "updater", "check for updates", "version", "about this build", "commit", "compiled", "build date",
+		"release", "prerelease", "pre-release", "beta", "stable", "patch notes", "changelog",
 	},
 }
 
-// settingsSearchMatch returns the first tab whose name or keywords contain the
-// (lowercased, trimmed) query, or -1 for none/empty. Matching is forward only
-// (the query is a substring of a setting term) — the comprehensive keyword list
-// above is what makes the search actually find things; a reverse match would let
-// a longer query like "keybind" wrongly hit the short "bind" (Theme preview).
+// settingsSearchMatch returns the first tab whose name or keywords contain the query, or -1.
+// Forward only: a reverse match would let "keybind" hit the short "bind".
 func settingsSearchMatch(query string) int {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return -1
 	}
-	// A tab-name match wins (you typed the destination directly).
+	// A tab-name match wins.
 	for i, name := range settingsTabNames {
-		if !voiceBuilt && i == tabVoice {
-			continue // no Voice tab in the -tags novoice build
-		}
 		if strings.Contains(strings.ToLower(name), q) {
 			return i
 		}
 	}
 	for i, kws := range settingsSearchKeywords {
-		if !voiceBuilt && i == tabVoice {
-			continue
-		}
 		for _, kw := range kws {
 			if strings.Contains(kw, q) {
 				return i
@@ -536,26 +398,20 @@ func settingsSearchMatch(query string) int {
 	return -1
 }
 
-// settingsIndexRow is one collected settings row for the gather-search (#26):
-// its (trimmed) label, the tab it lives on, and its y offset within that tab's
-// content at zero scroll — enough to list it and to jump straight to it.
+// settingsIndexRow is one collected row for search: its trimmed label, tab, and y offset at zero scroll.
 type settingsIndexRow struct {
 	label string
 	tab   int
 	y     int32
 }
 
-// settingsIndexCap bounds the collected index (hard rule §17.4) — ~600 rows is
-// several times the real settings count; past it the collector just stops.
+// settingsIndexCap bounds the collected index (hard rule 4); past it the collector stops.
 const settingsIndexCap = 600
 
-// diskCacheBudgetStepMiB snaps the #34 disk-cache-limit slider to a round grid
-// (128 MiB): the cap covers 128 MiB … 64 GiB, where exact bytes don't matter,
-// so a coarse grid keeps the displayed value clean.
+// diskCacheBudgetStepMiB snaps the disk-cache-limit slider to a grid; exact bytes do not matter at this range.
 const diskCacheBudgetStepMiB = 128
 
-// diskCacheBudgetLabel formats a positive T3 cap in MiB as "N MiB" below 1 GiB
-// and "N.N GiB" at or above it (0 = unlimited is handled by the caller).
+// diskCacheBudgetLabel formats a positive cap in MiB as "N MiB" below 1 GiB and "N.N GiB" above; 0 is the caller's.
 func diskCacheBudgetLabel(mib int) string {
 	if mib >= 1024 {
 		return fmt.Sprintf("%.1f GiB", float64(mib)/1024)
@@ -572,80 +428,49 @@ func (a *App) drawSettings(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 
 	if !settings.loaded {
-		settings.themeName, settings.themeDir = a.d.Prefs.Theme()
+		settings.themeName, settings.themeDir = a.d.Prefs.Load().Theme()
 		if settings.themeName == "" {
 			settings.themeName = theme.DefaultThemeName
 		}
 		settings.loaded = true
 		a.scanThemes(false) // automatic: opening Settings is not a theme pick (#35)
-		// Trigger 1 of four (§Q6): opening the screen asks for a catalog. Floored
-		// by themeScanMinInterval, so bouncing in and out of Settings does not
-		// walk the disk each time.
+		// Opening the screen asks for a catalog, floored by themeScanMinInterval so bouncing does not rescan.
 		a.requestThemeCatalog(themeScanOnOpen)
 	}
-	// Trigger 3: the window regained focus while this screen is up — the
-	// "I dropped a theme into the folder in Explorer and came back" story. Costs
-	// exactly one os.Stat of the write root, off-thread, and only rescans if the
-	// directory's mtime actually moved.
+	// The window regained focus: one off-thread os.Stat of the write root, rescanning only if its mtime moved.
 	if a.consumeThemeFocusStat() {
 		a.requestThemeCatalog(themeScanOnFocus)
 	}
 
-	// In-app .demo browser fence: while it's open the WHOLE settings screen behind
-	// it must go click-dead (header Back/search, tab strip, tab body), so a click on
-	// the modal can't also fire a widget beneath it. Recomputed fresh each frame from
-	// the open flag — no cross-frame persist-and-release bug (unlike emojiPickerFence).
-	// It's set HERE (before the header widgets draw) and RELEASED at the very end,
-	// right before the browser itself draws, so the browser's own c.Button/VScrollbar
-	// (which read hovering()) work while everything behind stays fenced. Mirrors the
-	// app.go toolbox release-and-restore idiom. The Studio content-report panel
-	// (contentpanel.go) is the SAME kind of blocking modal and rides the same fence —
-	// the two are mutually exclusive (picking in the browser closes it and opens the
-	// panel), so one flag OR the other is set, never contended.
-	//
-	// The base-folder wizard (basewizard.go) is the same kind of blocking modal and
-	// joins the same fence. It is NOT exclusive with the browser — its step 1 opens
-	// one on top of itself — so the wizard fences ITSELF while the browser is up;
-	// see drawBaseWizard.
-	if demoBrowser.open || contentPanel.open || baseWizard.open {
+	// While a blocking modal is open the whole screen behind it takes no clicks. Set before the header widgets draw and
+	// released right before the modals draw, so their own widgets work.
+	if demoBrowser.open || contentPanel.open {
 		c.modalOn = true
 	}
 
-	// These run regardless of the active tab, so async results land and
-	// dropped files are honored from any tab (theme scan, folder pick,
-	// drag-drop, and the off-thread IO status line).
+	// These run regardless of the active tab, so async results land and drops are honored from any tab.
 	a.pollThemeScan()
 	a.pollFolderPick()
-	// baseWizardTakesDrop CONSUMES the drop when it returns true: the OPEN
-	// base-folder wizard gets first refusal, because it says "or drag the folder
-	// onto this window" and has to mean it. Without that arm the drop falls through
-	// to the default below, which points the user's THEME ROOT at the folder they
-	// were setting up as an asset base — the silent-wrong-action class dropclaim.go
-	// exists to end, arriving through a different door. It refuses anything a
-	// global owner already claimed, so it cannot resurrect that bug from the other
-	// side either. Pinned by TestOpenBaseWizardTakesTheDropBeforeTheThemeRoot.
-	if c.dropped != "" && !a.baseWizardTakesDrop(c.dropped) {
-		// Drag-and-drop anywhere on this screen. The classification is shared
-		// with HandleFileDrop (dropclaim.go) precisely because this arm and that
-		// one used to disagree: a recording, or a theme BUNDLE, must not fall
-		// through to the default here, or the same drop would ALSO repoint the
-		// theme folder at the file's parent directory — silently, since the
-		// global handler was meanwhile warning about the very same file.
-		// Anything unclaimed still points the theme folder, which is the
-		// documented folder-import path (#21).
-		// The routing itself is settingsDropAction (dropclaim.go) — a named
-		// function with a table test on it, because this switch used to live
-		// inline in a draw function no test calls, and the arm that stops a .ttf
-		// or a .aotheme from repointing the theme root could be deleted green.
-		switch settingsDropAction(claimDroppedFile(c.dropped, settings.importArmed)) {
-		case settingsDropImportSettings:
-			settings.importArmed = false
-			importSettingsAsync(a, c.dropped)
-		case settingsDropIgnore:
-			// HandleFileDrop is the single owner of dropped recordings, theme
-			// bundles and theme FONTS.
-		case settingsDropRepointThemeRoot:
-			resolveDroppedFolder(c.dropped)
+	a.pollMountPick()
+	a.pollErrorSpritePick()
+	a.pollMountDrop()
+	if c.dropped != "" {
+		// The classification is shared with HandleFileDrop (dropclaim.go): a recording or bundle must not also repoint
+		// the theme folder at its parent. Anything unclaimed adds a folder on the Assets tab, else points the theme
+		// folder.
+		claim := claimDroppedFile(c.dropped, settings.importArmed)
+		if settings.tab == tabAssets && claim == dropClaimNone {
+			resolveDroppedMount(c.dropped)
+		} else {
+			switch settingsDropAction(claim) {
+			case settingsDropImportSettings:
+				settings.importArmed = false
+				importSettingsAsync(a.d, c.dropped)
+			case settingsDropIgnore:
+				// HandleFileDrop is the single owner of dropped recordings, theme bundles and theme fonts.
+			case settingsDropRepointThemeRoot:
+				resolveDroppedFolder(c.dropped)
+			}
 		}
 	}
 	select {
@@ -654,13 +479,10 @@ func (a *App) drawSettings(w, h int32) {
 	default:
 	}
 
-	// --- header band: title, search, Back -----------------------------------
-	// Content starts below the app-chrome band (#14, chrometop.go).
+	// Header band: content starts below the app-chrome band (chrometop.go).
 	hdrY := a.topChromeH() + pad
 	c.Heading(pad, hdrY, "Settings", ColText)
-	// Search (#26 gather): type a term and the page becomes a live list of EVERY
-	// matching setting across every tab — click (or Enter for the top hit) jumps
-	// straight to that row. The old jump-to-tab hint is superseded.
+	// With a term typed, the page lists every matching setting across tabs; click or Enter jumps to that row.
 	q, committed := c.TextField("settsearch", sdl.Rect{X: pad + 130, Y: hdrY + 2, W: 240, H: fieldH}, settings.search, "Search settings…")
 	settings.search = q
 	if strings.TrimSpace(q) != "" {
@@ -675,12 +497,9 @@ func (a *App) drawSettings(w, h int32) {
 	contentTop := hdrY + settContentTop
 	c.Fill(sdl.Rect{X: 0, Y: contentTop - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
 
-	// --- left sidebar: a vertical category list (replaces the old chip row) --
+	// Left sidebar.
 	navY := contentTop + 4
 	for i, name := range settingsTabNames {
-		if !voiceBuilt && i == tabVoice {
-			continue // voice chat is compiled out (-tags novoice): no Voice tab
-		}
 		r := sdl.Rect{X: pad, Y: navY, W: settSidebarW, H: settNavItemH}
 		active := i == settings.tab
 		switch {
@@ -701,60 +520,27 @@ func (a *App) drawSettings(w, h int32) {
 		navY += settNavItemH + 2
 	}
 
-	// --- content card region (right of the sidebar) -------------------------
-	// formX/formW define where the section + row helpers draw; they rebase their
-	// pad-relative layout onto formX so every box lands inside this card.
+	// formX and formW define where the section and row helpers draw, so every box lands inside this card.
 	cardX := pad + settSidebarW + settSidebarGap
 	cardW := (w - scrollBarW - pad) - cardX
-	if cardW > settMaxCardW {
-		cardW = settMaxCardW
-	}
-	if cardW < settMinCardW {
-		cardW = settMinCardW
-	}
+	cardW = value.Clamp(cardW, settMinCardW, settMaxCardW)
 	a.formX = cardX + settCardPadX
 	a.formW = cardW - 2*settCardPadX
-	// F2: no chrome label may draw past the card. The settings rows carry sentence-
-	// long help text and the form draws it two ways, both of which overflowed:
-	//
-	//   - Checkbox grew its hit box and its label to whatever the string measured,
-	//     with nothing bounding it, so on a narrow window the row ran off the card
-	//     and out of the WINDOW entirely. That is the FONTS section's system-fonts
-	//     line and about forty siblings.
-	//   - The bare help lines under the rows — roughly a hundred c.Label calls, some
-	//     190 characters, plus the FONTS chain line's c.LabelClipped, whose own maxW
-	//     is the window and not the card — stayed inside the window but were cut dead
-	//     at the card's clip edge, with no ellipsis to say the sentence continued.
-	//     A hard cut reads as a rendering fault; that is the "cut off at the right
-	//     border" half of the report.
-	//
-	// One bracket answers both: Ctx.Label / LabelClipped / Checkbox all consult it,
-	// the card knows its own right edge and the rows do not need to be told. Popped
-	// with defer so the several early returns below cannot strand the limit on the
-	// shared Ctx and truncate the courtroom's labels on the next screen — and popped
-	// AGAIN, explicitly, the moment the card's clip closes, because the chrome after
-	// it (the full-window warn banner, the .demo browser, the content panel) is not
-	// inside the card and must keep its own width. Popping twice with the same saved
-	// value is idempotent.
+	// No chrome label may draw past the card: Label, LabelClipped and Checkbox all consult this limit.
+	// Popped by defer so early returns cannot truncate the next screen's labels, and again when the card's clip closes.
+	// Popping twice with the same saved value is idempotent.
 	cardLabelLimit := c.pushRowLabelLimit(a.formX + a.formW)
 	defer c.popRowLabelLimit(cardLabelLimit)
 
 	viewH := h - contentTop - pad
 	scroll := &settings.tabScroll[settings.tab]
 
-	// Clip everything below the header; fill the card surface (a step between the
-	// page background and panels) so each section reads as a card, separated by
-	// page-coloured gap bands punched in by settingsSection.
+	// Clip below the header and fill the card surface; settingsSection punches page-coloured gaps between cards.
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: cardX, Y: contentTop, W: cardW, H: viewH})
 	c.Fill(sdl.Rect{X: cardX, Y: contentTop, W: cardW, H: viewH}, cardColor())
 
-	// #26 gather-search: with a query typed, the card region becomes a RESULTS
-	// list of every matching setting across every tab (click → jump + flash).
-	// Skipped while the .demo browser is open (!demoBrowser.open): this branch
-	// returns EARLY, which would jump over the end-of-function fence release +
-	// browser draw — stranding c.modalOn=true and freezing the whole UI (the
-	// un-released-fence failure the emoji picker documents). Falling through draws
-	// the fenced (click-dead, covered) tab body instead, so the release always runs.
+	// With a query, the card becomes a list of matching settings. Skipped while the .demo browser is open: this branch
+	// returns early, past the modal release at the end, which would leave c.modalOn set and freeze the UI.
 	if q := strings.ToLower(strings.TrimSpace(settings.search)); q != "" && !demoBrowser.open {
 		if !settings.indexBuilt {
 			a.buildSettingsIndex(w, contentTop)
@@ -768,8 +554,7 @@ func (a *App) drawSettings(w, h int32) {
 
 	y := contentTop - *scroll
 	y = a.drawSettingsTabBody(settings.tab, y, w, h)
-	// Landed-row flash: after a search jump, pulse a band around the row so the
-	// eye finds it (the scroll already put it near the top).
+	// Pulse a band around the landed row after a search jump.
 	if settings.flashUntil.After(time.Now()) && settings.flashTab == settings.tab {
 		fy := contentTop - *scroll + settings.flashY
 		c.Border(sdl.Rect{X: cardX + 4, Y: fy - 5, W: cardW - 8, H: 30}, ColAccent)
@@ -779,7 +564,6 @@ func (a *App) drawSettings(w, h int32) {
 		c.Label(a.formX, y+6, settings.statusLine, ColAccent)
 		y += 28
 	}
-	// Page-coloured fill below the last card so the surface base doesn't run on.
 	if y < contentTop+viewH {
 		fy := y
 		if fy < contentTop {
@@ -788,50 +572,32 @@ func (a *App) drawSettings(w, h int32) {
 		c.Fill(sdl.Rect{X: cardX, Y: fy, W: cardW, H: contentTop + viewH - fy}, ColBackground)
 	}
 	c.popClip(clipPrev, clipHad)
-	// The card is drawn: everything below is full-window chrome (the warn banner
-	// spans w-2*pad, the .demo browser and content panel are their own overlays), so
-	// release the card's right edge here rather than letting it shorten their labels.
+	// Everything below is full-window chrome, so release the card's right edge rather than shorten their labels.
 	c.popRowLabelLimit(cardLabelLimit)
 
 	contentH := (y + *scroll) - contentTop + pad
-	// !c.modalOn: with the in-app .demo browser open the page must not scroll behind
-	// it (this wheel consume is unconditional — the VScrollbar drag below already
-	// self-gates on hovering(), which reads false under modalOn). The browser reads
-	// the wheel for its own list after the fence is released.
+	// !c.modalOn: this wheel consume is unconditional, so the page must not scroll behind the .demo browser.
 	if !c.ctrlHeld && !c.wheelTaken && !c.modalOn {
 		*scroll -= c.wheelY * scrollStepPx
 	}
 	track := sdl.Rect{X: w - scrollBarW - 2, Y: contentTop, W: scrollBarW, H: viewH}
 	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, viewH)
 	settings.scrollToSection = "" // one-shot: consumed by the matching section this frame, else dropped
-	// Warn banner, mirroring the lobby/char-select/courtroom draw sites: Settings
-	// was the ONE screen without it, so every Studio-picker message (import
-	// confirmation, extension rejection, picker failure) went invisible exactly
-	// where the user stood (v1.72.0 hotfix review find). Fixed position, outside
-	// the scrolled clip, so it can't scroll away.
+	// Fixed position outside the scrolled clip, so it cannot scroll away.
 	if a.warnActive() {
 		c.LabelClipped(pad, h-24, w-2*pad, a.warnLine, ColDanger)
 	}
 
-	// The in-app .demo browser and the Studio content-report panel draw LAST
-	// (topmost) with the page fence RELEASED, so their own widgets work while
-	// everything behind stayed click-dead all frame. Both no-op when closed; they're
-	// mutually exclusive, so releasing once for either is correct. The content panel
-	// draws after the browser (a pick closes the browser and opens the panel in the
-	// same click — the panel must own this frame's release).
-	if demoBrowser.open || contentPanel.open || baseWizard.open {
+	// These draw last with input released, so their widgets work; the content panel follows the browser,
+	// because a pick closes the browser and opens the panel in the same click.
+	if demoBrowser.open || contentPanel.open {
 		c.modalOn = false
 	}
-	// The wizard draws BEFORE the browser: its step 1 opens one on top of itself,
-	// and the topmost panel has to be the one drawn last. drawBaseWizard re-fences
-	// itself for exactly that overlap.
-	a.drawBaseWizard(w, h)
 	a.drawDemoBrowser(w, h)
 	a.drawContentPanel(w, h)
 }
 
-// drawSettingsTabBody dispatches one tab's rows starting at y — shared by the
-// normal page draw and the search collector's fenced all-tabs pass (#26).
+// drawSettingsTabBody dispatches one tab's rows, for the page draw and the search collector.
 func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 	switch tab {
 	case tabGeneral:
@@ -856,20 +622,17 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 		y = a.drawSettingsStudio(y, w)
 	case tabData:
 		y = a.drawSettingsData(y, w)
-	case tabVoice:
-		y = a.drawSettingsVoice(y, w)
 	case tabPowerUser:
 		y = a.drawSettingsPowerUser(y, w)
 	case tabReset:
 		y = a.drawSettingsReset(y, w)
+	case tabUpdates:
+		y = a.drawSettingsUpdates(y, w)
 	}
 	return y
 }
 
-// buildSettingsIndex runs every tab's draw once with the input FENCED and all
-// drawing CLIPPED AWAY, purely to collect each row's label/tab/offset through
-// the Ctx.onRow hook (checkboxes; sections + slider rows record directly).
-// A few milliseconds, once per search session — never on a normal frame.
+// buildSettingsIndex draws every tab once, input blocked and clipped away, to collect rows through Ctx.onRow.
 func (a *App) buildSettingsIndex(w, contentTop int32) {
 	c := a.ctx
 	settings.index = settings.index[:0]
@@ -886,8 +649,8 @@ func (a *App) buildSettingsIndex(w, contentTop int32) {
 		settings.index = append(settings.index, settingsIndexRow{label: label, tab: curTab, y: y - contentTop})
 	}
 	for t := 0; t < numSettingsTabs; t++ {
-		if (!voiceBuilt && t == tabVoice) || t == tabReset {
-			continue // no Voice tab in lean builds; the Reset tab is all danger buttons — don't index it
+		if t == tabReset {
+			continue // the Reset tab is all danger buttons — don't index it
 		}
 		curTab = t
 		a.drawSettingsTabBody(t, contentTop, w, contentTop) // h only matters for the Theme grid's own scroll — harmless here
@@ -898,9 +661,7 @@ func (a *App) buildSettingsIndex(w, contentTop int32) {
 	c.keyPressed, c.wheelY, c.modalOn = savedKey, savedWheel, savedModal
 }
 
-// drawSettingsSearchResults lists every collected row matching q (substring,
-// case-blind) in the card region; clicking one — or Enter for the first —
-// switches to its tab, scrolls the row to the top, and arms the flash band.
+// drawSettingsSearchResults lists rows matching q; a click, or Enter for the first, jumps there and arms the flash.
 func (a *App) drawSettingsSearchResults(q string, enter bool, cardX, cardW, contentTop, viewH int32) {
 	c := a.ctx
 	const rowH = int32(26)
@@ -949,8 +710,7 @@ func (a *App) drawSettingsSearchResults(q string, enter bool, cardX, cardW, cont
 	}
 	switch {
 	case total == 0:
-		// Keyword fallback: no row label matched, but the per-tab keyword table
-		// (settingsSearchMatch) may still know the CONCEPT ("volume" → Audio).
+		// No row label matched, but the keyword table may know the concept.
 		if mt := settingsSearchMatch(q); mt >= 0 {
 			r := sdl.Rect{X: cardX + 6, Y: y, W: cardW - 12, H: rowH - 2}
 			if c.hovering(r) {
@@ -972,8 +732,6 @@ func (a *App) drawSettingsSearchResults(q string, enter bool, cardX, cardW, cont
 	}
 }
 
-// --- modernized settings layout: sidebar nav + content cards -----------------
-
 const (
 	settContentTop = 44   // header band height (title + search row)
 	settSidebarW   = 140  // left category-nav width (slim: the labels are short)
@@ -987,35 +745,20 @@ const (
 	settCardTopPad = 14  // padding above a card title
 	settSectionMid = 22  // title baseline → hairline
 	settSectionBot = 12  // hairline → the section's first row
-	// labelBtnPadX is the horizontal padding a label-measured button adds around
-	// its text (half each side). Buttons whose width is measured from the label
-	// rather than fixed — the Window section's size presets and the "Theme's
-	// design size (W×H)" row, which both size themselves because their labels
-	// carry live numbers — share it so a wider label can never look tighter than
-	// a narrow one in the same column.
+	// labelBtnPadX is the horizontal padding a label-measured button adds around its text, half each side.
 	labelBtnPadX = 14
-	// designSizeHintGap separates the "Theme's design size (W×H)" button from its
-	// explanatory hint. Its own constant because that button's width is measured
-	// from the label (the size is in it), so the hint's x AND its clip width are
-	// both derived from this one number — they must not drift apart.
+	// designSizeHintGap separates the design-size button from its hint; the hint's x and clip width derive from it.
 	designSizeHintGap = 10
 )
 
-// settingsSection delimits one card: it punches a page-coloured gap above the
-// card (separating it from the previous one over the cardColor surface base),
-// then draws the card's uppercase accent title and a hairline, returning the y
-// of the card's first row. Pure draw (no widget ids), so it never disturbs
-// hit-testing, per-tab scroll, or search. The w param is unused (the region is
-// taken from a.formX/a.formW) but kept so existing call sites need no change.
+// settingsSection punches a gap above the card and draws its title and hairline, returning the first row's y.
+// The w param is unused; the region comes from a.formX and a.formW.
 func (a *App) settingsSection(y, w int32, title string) int32 {
 	c := a.ctx
 	if c.onRow != nil {
 		c.onRow("§ "+title, y+settCardTopPad+2) // gather-search: sections are jumpable headers
 	}
-	// Search jump (#26): the FIRST section card whose title contains the pending query
-	// scrolls itself to the top, so a search lands on the SECTION (e.g. "scene maker"),
-	// not just the tab. One-shot; takes effect next frame and is clamped by the page
-	// scrollbar (so a bottom section just sits as low as it can).
+	// Search jump: the first section titled with the query scrolls to the top, one-shot, clamped next frame.
 	if settings.scrollToSection != "" && strings.Contains(strings.ToLower(title), settings.scrollToSection) {
 		settings.tabScroll[settings.tab] += y - (pad + settContentTop)
 		if settings.tabScroll[settings.tab] < 0 {
@@ -1034,34 +777,23 @@ func (a *App) settingsSection(y, w int32, title string) int32 {
 	return y
 }
 
-// formW2 returns the shadow value for a section/helper's `w` parameter so its
-// existing `w - pad - K - scrollBarW` width math and `w - scrollBarW` right edge
-// resolve inside the content card. Paired with `pad := a.formX` at the top of
-// every settings draw helper. (See drawSettingsGeneral for the pattern.)
+// formW2 returns the value for a helper's w parameter, so its width math resolves inside the content card.
 func (a *App) formW2() int32 { return a.formX + a.formW + scrollBarW }
 
-// fpsSettingRow draws one frame-rate row: the slider, an exact-number entry
-// (Enter applies), and the ∞ no-limit toggle. get/set wrap the pref — the
-// setters are sentinel-aware (config.FPSUnlimited / config.FPSOff) and clamp
-// typed values to [min, max]. zeroValue is what the slider bottom or a typed 0
-// stores: config.FPSOff for the Idle/Background rows (0 = never redraw in that
-// state), or the min cap for Active (which has no "off"). buf backs the number
-// field (settingsState), reseeded from the pref while unfocused so live typing
-// never fights the stored value. Returns the y past the row.
+// fpsSettingRow draws a frame-rate row: slider, exact-number entry (Enter applies) and no-limit toggle.
+// zeroValue is what a slider bottom or typed 0 stores: config.FPSOff for Idle and Background, the min cap for Active.
 func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue int, get func() int, set func(int), buf *string, tip string) int32 {
 	c := a.ctx
 	pad := a.formX // settings helpers must shadow the form origin (drawSettings rebase)
 	c.Label(pad, y+4, label, ColText)
 	cur := get()
-	// Slider: compare against the value we PASSED (unlimited shows as the
-	// bottom position), so merely displaying an unlimited pref can't write a
-	// concrete value back — only a real drag/wheel move does.
+	// Compare against the value passed, so displaying an unlimited pref cannot write a concrete value back.
 	passed := 0
 	if cur > 0 {
 		passed = cur
 	}
 	track := sdl.Rect{X: pad + 210, Y: y + 2, W: 170, H: 16}
-	raw := int(clampI32(c.Slider(id, track, int32(passed), int32(max)), 0, int32(max)))
+	raw := int(value.Clamp(c.Slider(id, track, int32(passed), int32(max)), 0, int32(max)))
 	nv := raw
 	if raw == 0 {
 		nv = zeroValue // bottom of the track: off (Idle/Background) or the min cap (Active)
@@ -1071,12 +803,9 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue 
 		set(nv)
 		cur = get()
 	}
-	// Exact-number entry (the power-user ask): type any value, Enter applies.
 	fieldID := id + "-num"
 	fr := sdl.Rect{X: track.X + track.W + 8, Y: y, W: 52, H: btnH}
-	// The getter maps 0 to the shipped default, so cur is FPSUnlimited, FPSOff,
-	// or a concrete rate here. "off" shows as 0 in the field (the sentinel is
-	// internal); ∞ shows blank.
+	// The getter maps 0 to the default, so cur is FPSUnlimited, FPSOff or a rate; "off" shows as 0, unlimited as blank.
 	if c.focusID != fieldID {
 		switch cur {
 		case config.FPSUnlimited:
@@ -1100,7 +829,7 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue 
 		}
 		c.focusID = "" // commit releases the field so it reseeds from the pref
 	}
-	// ∞ toggle: no limit on / off (off returns to the default).
+	// No limit on or off; off returns to the default.
 	ub := sdl.Rect{X: fr.X + fr.W + 6, Y: y, W: 28, H: btnH}
 	if cur == config.FPSUnlimited {
 		c.Fill(sdl.Rect{X: ub.X - 2, Y: ub.Y - 2, W: ub.W + 4, H: ub.H + 4}, ColAccent)
@@ -1129,11 +858,7 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def, zeroValue 
 	return y + 26
 }
 
-// numSliderRow renders a labelled slider with -/+ nudge buttons and an
-// exact-value entry field (the power-user ask: nudge with arrows or type a
-// value). 0 is the off/default sentinel (the bottom of the track); the getter
-// maps it to the shipped default. buf backs the number field (settingsState),
-// reseeded from the pref while unfocused. Returns y past the row.
+// numSliderRow renders a slider with -/+ nudges and an exact-value field; 0 is the off or default sentinel.
 func (a *App) numSliderRow(y int32, id, label string, min, max, step, def int, get func() int, set func(int), buf *string, suffix, tip string) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -1141,7 +866,7 @@ func (a *App) numSliderRow(y int32, id, label string, min, max, step, def int, g
 
 	cur := get()
 	track := sdl.Rect{X: pad + 210, Y: y + 2, W: 110, H: 16}
-	raw := int(clampI32(c.Slider(id, track, int32(cur), int32(max)), 0, int32(max)))
+	raw := int(value.Clamp(c.Slider(id, track, int32(cur), int32(max)), 0, int32(max)))
 	nv := raw
 	if nv != 0 && nv < min {
 		nv = 0 // below the floor -> the off/default sentinel
@@ -1212,9 +937,7 @@ func (a *App) numSliderRow(y int32, id, label string, min, max, step, def int, g
 	return y + 26
 }
 
-// settingsDesc draws a WORD-WRAPPED description block at (pad, y) inside the settings card and
-// returns the y past it. Plain c.Label doesn't wrap, so long help text ran off the card; route it
-// through here (wraps to the card content width, 16 px per line — matching the hand-rolled blocks).
+// settingsDesc draws a word-wrapped description at (pad, y) inside the card and returns the y past it.
 func (a *App) settingsDesc(pad, y int32, text string, col sdl.Color) int32 {
 	for _, ln := range a.ctx.WrapText(text, a.formW-8, 0) {
 		a.ctx.Label(pad, y, ln, col)
@@ -1223,36 +946,30 @@ func (a *App) settingsDesc(pad, y int32, text string, col sdl.Color) int32 {
 	return y
 }
 
-// drawSettingsGeneral: identity + display toggles + UI scale + font chain.
 func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase every pad-relative box into the content card
 	w := a.formW2()
 	y = a.settingsSection(y, w, "Identity")
-	// Showname: write-through to prefs. A stale once-per-session copy here
-	// used to overwrite names typed in the courtroom on Back.
+	// Write through to prefs, so a stale copy cannot overwrite names typed in the courtroom.
 	c.Label(pad, y+4, "Showname:", ColText)
-	shown := a.d.Prefs.SavedShowname()
-	// CJK / non-Latin shownames must render as real glyphs while typed here too
-	// (a saved Japanese showname); plain ASCII keeps the single-font fast path.
+	shown := a.d.Prefs.Load().Showname
+	// A non-Latin showname must render as real glyphs while typed; plain ASCII keeps the single-font path.
 	snPrimary, snEmoji := a.icFieldFonts(shown)
 	if next, _ := c.TextFieldEmoji("showname", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, shown, "your saved showname", snPrimary, snEmoji); next != shown {
-		a.d.Prefs.SetShowname(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.Showname = next })
 	}
-	// Default OOC name: write-through to prefs like the showname; it seeds
-	// every NEW tab (blank sends a sticky AsyncAO<n>). The courtroom OOC-name
-	// fields are tab-local and never write this back.
+	// Seeds every new tab (blank sends a sticky AsyncAO<n>); the courtroom's OOC-name fields are tab-local.
 	c.Label(pad+390, y+4, "OOC name:", ColText)
-	savedOOC := a.d.Prefs.SavedOOCName()
+	savedOOC := a.d.Prefs.Load().OOCName
 	onPrimary, onEmoji := a.icFieldFonts(savedOOC) // CJK-safe OOC name (ASCII stays fast path)
 	if next, _ := c.TextFieldEmoji("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, savedOOC, "blank = AsyncAO<n>", onPrimary, onEmoji); next != savedOOC {
-		a.d.Prefs.SetOOCName(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.OOCName = next })
 		a.oocName = next // the ACTIVE tab adopts the new default right away
 	}
 	y += 38
 
-	// Showname presets (M6): a saved, global list — quick-swap them in-game with
-	// keybinds (random or a specific one). Cleared only by a factory reset.
+	// A saved, global list, swapped in-game with keybinds; cleared only by a factory reset.
 	c.Label(pad, y+4, "Presets:", ColText)
 	var addNow bool
 	saP, saE := a.icFieldFonts(a.shownameAdd) // CJK-safe preset entry (ASCII stays fast path)
@@ -1267,7 +984,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	c.Label(pad+564, y+4, "global · Ctrl+H random · Ctrl+B cycle · bind a key per preset · resets on a factory wipe", ColTextDim)
 	y += 32
-	if presets := a.d.Prefs.ShownameList(); len(presets) == 0 {
+	if presets := a.d.Prefs.Load().ShownameList(); len(presets) == 0 {
 		c.Label(pad+12, y+2, "(none yet — Save a name above; bind keys to swap them)", ColTextDim)
 		y += 24
 	} else {
@@ -1280,16 +997,12 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			if c.Button(sdl.Rect{X: pad + 38, Y: y, W: 46, H: 18}, "Use") {
 				a.shownameOverride = name // apply now (the in-courtroom override)
 			}
-			// Per-preset keybind: arm a capture (pollShownameBind binds the next
-			// key to this showname); right-click the button clears the bind.
+			// Arm a capture (pollShownameBind binds the next key); right-click clears the bind.
 			bound := a.shownameKeyFor(name)
-			// bindChipLabel, not "Key: "+bound: this namespace fires on Alt+<key>
-			// (bareBindKey, qol.go) and a row printing the bare letter advertises
-			// a press that no longer does anything.
+			// bindChipLabel, not "Key: "+bound: this namespace fires on Alt+<key> (bareBindKey, qol.go).
 			keyLbl := bindChipLabel(bound, a.shownameBindFor == name, "press a key…", "Bind key")
 			kr := sdl.Rect{X: pad + 90, Y: y, W: 96, H: 18}
 			if c.Button(kr, keyLbl) {
-				a.bindingFor = "" // don't also arm a character keybind
 				a.shownameBindFor = name
 				c.focusID = "" // the capture owns the next keypress
 			}
@@ -1319,112 +1032,213 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "AsyncAO appearance")
 	y = a.drawChromeSettings(y, w)
 	y = a.drawShapeSettings(y)     // A5 chrome SHAPE presets (sharp/rounded/pill)
-	y = a.drawPartColorSettings(y) // per-part layout tints (v1.52.0, Tifera)
+	y = a.drawPartColorSettings(y) // per-part layout tints
 	y += 8
 
 	y = a.settingsSection(y, w, "Display & behaviour")
-	// Streamer mode leads the section (playtest: it's the one people need to
-	// find FAST, right before going live).
-	streamer := a.d.Prefs.StreamerMode()
+	// Streamer mode leads the section, because people need it fast before going live.
+	streamer := a.d.Prefs.Load().StreamerModeOn
 	if next := c.Checkbox(pad, y, "Streamer mode (masks OOC names + IPs in the log display, silences callword pings)", streamer); next != streamer {
-		a.d.Prefs.SetStreamerMode(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.StreamerModeOn = next })
 	}
 	y += 26
-	anims := a.d.Prefs.AnimationsEnabled()
+	anims := a.d.Prefs.Load().PreferAnimated
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
-		a.d.Prefs.SetAnimationsEnabled(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				PreferAnimated =
+
+				next
+
+		})
+
 	}
 	y += 26
-	reduce := a.d.Prefs.ReduceMotion()
+	reduce := a.d.Prefs.Load().ReduceMotionOn
 	if next := c.Checkbox(pad, y, "Reduce motion (accessibility): stop the screen shake / realization flash (effect sounds still play)", reduce); next != reduce {
-		a.d.Prefs.SetReduceMotion(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = next })
 		a.applyTimingToRoom() // push the flag to the live room
 	}
 	y += 26
-	// #103: viewer opt-out of OTHER players' transmitted sprite styles (your own
-	// is set in the Extras → Sprite Style picker). Reduce-motion already drops a
-	// received style's wobble/spin; this hides the whole thing.
-	hideStyles := a.d.Prefs.HideSpriteStylesOn()
+	// Viewer opt-out of other players' sprite styles; reduce-motion only drops a received style's wobble and spin.
+	hideStyles := a.d.Prefs.Load().HideSpriteStyles
 	if next := c.Checkbox(pad, y, "Hide other players' sprite styles: show every character normally (ignore transmitted recolour, glow, spinning, wobble, motion paths and glitch)", hideStyles); next != hideStyles {
-		a.d.Prefs.SetHideSpriteStyles(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HideSpriteStyles =
+
+				next
+
+		})
+
 		if a.room != nil {
 			a.room.HideSpriteStyles = next
 		}
 	}
 	y += 26
-	// #2: viewer opt-out of OTHER players' emoji reactions (the floating emoji over the
-	// stage). Sending your own reactions is unaffected — this only hides incoming floats.
-	hideReact := a.d.Prefs.HideReactionsOn()
+	// Viewer opt-out of incoming reaction floats; sending your own is unaffected.
+	hideReact := a.d.Prefs.Load().HideReactions
 	if next := c.Checkbox(pad, y, "Hide other players' emoji reactions: don't float their reaction emoji over the stage (#2)", hideReact); next != hideReact {
-		a.d.Prefs.SetHideReactions(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HideReactions =
+
+				next
+
+		})
+
 	}
 	y += 26
-	emoteImgs := a.d.Prefs.EmoteButtonImagesEnabled()
+	emoteImgs := a.d.Prefs.Load().EmoteButtonImages
 	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats in Assets)", emoteImgs); next != emoteImgs {
-		a.d.Prefs.SetEmoteButtonImages(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteButtonImages =
+
+				next
+
+		})
+
 	}
 	y += 26
-	emoteCaps := a.d.Prefs.EmoteCaptionsOn()
+	emoteCaps := a.d.Prefs.Load().EmoteCaptions
 	if next := c.Checkbox(pad, y, "Emote-name captions (OFF by default): when a character has no button art, overlay the emote name on the fallback icon. Off keeps the buttons clean (just icons); on helps tell identical fallback icons apart.", emoteCaps); next != emoteCaps {
-		a.d.Prefs.SetEmoteCaptions(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteCaptions =
+
+				next
+
+		})
+
 	}
 	y += 26
-	favStars := a.d.Prefs.EmoteFavStarsOn()
+	favStars := a.d.Prefs.Load().EmoteFavStars
 	if next := c.Checkbox(pad, y, "Emote favourites (OFF by default): show a ★ on every emote button so you can star the ones you use, plus the ★ Favs filter. Off keeps the grid clean if you don't use it.", favStars); next != favStars {
-		a.d.Prefs.SetEmoteFavStars(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteFavStars =
+
+				next
+
+		})
+
 		a.emoteFavRev++ // rebuild the view for the new state
 	}
 	y += 26
-	favOnly := a.d.Prefs.EmoteFavOnlyOn()
+	favOnly := a.d.Prefs.Load().EmoteFavOnly
 	if next := c.Checkbox(pad, y, "Show favourite emotes only (OFF by default): hides everything but the emotes you've starred. Click the ★ on an emote button to favourite it (per character). The classic grid also has a ★ Favs button.", favOnly); next != favOnly {
-		a.d.Prefs.SetEmoteFavOnly(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteFavOnly =
+
+				next
+
+		})
+
 		a.emoteFavRev++ // rebuild the visible list for the new filter state
 	}
 	y += 26
-	favBox := a.d.Prefs.FavEmoteBoxOn()
+	favBox := a.d.Prefs.Load().FavEmoteBox
 	if next := c.Checkbox(pad, y, "Favourite-emotes box (OFF by default): a small movable box of just your starred emotes as clickable buttons — press one to use that emote. Also opens with Ctrl+A (rebindable in the Controls tab).", favBox); next != favBox {
-		a.d.Prefs.SetFavEmoteBox(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FavEmoteBox =
+
+				next
+
+		})
+
 	}
 	y += 30
-	dbg := a.d.Prefs.DebugOverlayEnabled()
+	dbg := a.d.Prefs.Load().DebugOverlay
 	if next := c.Checkbox(pad, y, "Debug overlay (live log of failures: missing assets, theme problems, unhandled server packets)", dbg); next != dbg {
-		a.d.Prefs.SetDebugOverlay(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DebugOverlay =
+
+				next
+
+		})
+
 	}
 	y += 26
-	notifOOC := a.d.Prefs.NotifyOnOOCOn()
+	notifOOC := a.d.Prefs.Load().NotifyOnOOC
 	if next := c.Checkbox(pad, y, "Count OOC in the unread tab badge (OFF by default): otherwise only IC chat lights up a background tab's \"(N)\" — so server auto-messages (hourly reminders, etc.) don't ping you", notifOOC); next != notifOOC {
-		a.d.Prefs.SetNotifyOnOOC(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				NotifyOnOOC =
+
+				next
+
+		})
+
 	}
 	y += 26
-	fcn := a.d.Prefs.ForceCharNamesOn()
+	fcn := a.d.Prefs.Load().ForceCharNames
 	if next := c.Checkbox(pad, y, "Force character names (OFF by default): show everyone's CHARACTER name, not custom shownames — true-roleplay / anti-impersonation (casing)", fcn); next != fcn {
-		a.d.Prefs.SetForceCharNames(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ForceCharNames =
+
+				next
+
+		})
+
 		if a.room != nil {
 			a.room.ForceCharNames = next // apply to the running session immediately
 		}
 	}
 	y += 26
-	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
-	// full-size preview. ON by default; the dwell before it shows is tunable.
-	// Gates ONLY the hover dwell — right-click previews always work.
-	prev := a.d.Prefs.SpritePreviewsOn()
+	// Hover preview of a character or emote button; this controls only the dwell, right-click previews always work.
+	prev := a.d.Prefs.Load().SpritePreviewOn
 	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite. Off only disables the hover pop-up — right-click still previews", prev); next != prev {
-		a.d.Prefs.SetSpritePreviews(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpritePreviewOn = next })
 	}
 	y += 26
 	if prev {
-		ms := a.d.Prefs.PreviewHoverMillis()
+		ms := a.d.Prefs.Load().PreviewHoverMillis()
 		if next := a.previewDelayRow(y, ms); next != ms {
-			a.d.Prefs.SetPreviewHoverMs(next)
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewHoverMs = next })
 		}
 		c.Label(pad+340, y+4, "how long to hover before the preview pops (default 5 s)", ColTextDim)
 		y += 30
 	}
-	// Preview box default height: the pop-up's size before any corner-drag
-	// (playtest: the old 192 px default read tiny and re-dragging it every
-	// session got old). Applies to hover AND right-click previews, so it
-	// shows regardless of the toggle above.
-	ph := a.d.Prefs.PreviewHeightPx()
+	// Applies to hover and right-click previews, so it shows regardless of the toggle above.
+	ph := a.d.Prefs.Load().PreviewHeightPx()
 	c.Label(pad, y+4, "Preview box height:", ColText)
 	phTrack := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
 	nph := config.MinPreviewHeightPx + int(c.Slider("previewheight", phTrack,
@@ -1433,63 +1247,73 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
 		nph += int(c.wheelY) * 16
 	}
-	if nph < config.MinPreviewHeightPx {
-		nph = config.MinPreviewHeightPx
-	}
-	if nph > config.MaxPreviewHeightPx {
-		nph = config.MaxPreviewHeightPx
-	}
+	nph = value.Clamp(nph, config.MinPreviewHeightPx, config.MaxPreviewHeightPx)
 	c.Label(pad+298, y+4, strconv.Itoa(nph)+" px", ColTextDim)
 	c.Label(pad+360, y+4, "default size of the sprite preview pop-up (384 px default; the corner grip still resizes per session)", ColTextDim)
 	if nph != ph {
 		a.d.Prefs.SetPreviewHeightPx(nph)
 	}
 	y += 30
-	// Keep the preview pinned: the box's own pin button writes this same preference,
-	// so a player who pins one box discovers the setting and vice versa. A pinned
-	// ANIMATED preview holds the frame pacer at the active cap for as long as it is
-	// up — true of the right-click pin already, but a sticky default makes it the
-	// steady state, hence the note in the label.
-	//
-	// The row says "pin button", never a 📌. This label is drawn through
-	// chromeFaceFor like every other settings string, and U+1F4CC is outside the
-	// chrome face's coverage on plenty of installs — a tofu box in the one sentence
-	// whose whole job is to point at a control. It would also be a lie: the box
-	// draws a VECTOR pin (drawToolIcon/iconPin), not that glyph.
-	pinned := a.d.Prefs.PreviewPinnedOn()
+	// The box's pin button writes this same pref. A pinned animated preview holds the pacer at the active cap,
+	// hence the note. The label says "pin button", not the emoji, which many chrome faces lack (U+1F4CC).
+	pinned := a.d.Prefs.Load().PreviewPinned
 	if next := c.Checkbox(pad, y, "Keep the sprite preview pinned: it stays open until you close it (the pin button on the box toggles this too; an animated preview keeps the client at full frame rate while it is up)", pinned); next != pinned {
-		a.d.Prefs.SetPreviewPinned(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.PreviewPinned = next })
 	}
 	y += 26
-	// Emote-name hover tooltips: rest the cursor on an emote button to see its
-	// name (independent of the sprite pop-up above). ON by default; the dwell is
-	// tunable. Lightweight — a name-only tooltip, not the full-size art.
-	names := a.d.Prefs.EmoteHoverNamesEnabled()
+	// Name-only tooltip on an emote button, independent of the sprite pop-up above.
+	names := a.d.Prefs.Load().EmoteHoverNamesOn
 	if next := c.Checkbox(pad, y, "Emote name tooltips (ON by default): hovering an emote button shows its name after a short delay", names); next != names {
-		a.d.Prefs.SetEmoteHoverNames(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				EmoteHoverNamesOn =
+
+				next
+
+		})
+
 	}
 	y += 26
-	altRow := a.d.Prefs.DisableAltEmoteRowOn()
+	altRow := a.d.Prefs.Load().DisableAltEmoteRow
 	if next := c.Checkbox(pad, y, "Disable the Alt+1..9 emote number row (OFF by default): the digits pick the emote shown on the current page. Disable to make Alt+1..9 type digits instead.", altRow); next != altRow {
-		a.d.Prefs.SetDisableAltEmoteRow(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DisableAltEmoteRow =
+
+				next
+
+		})
+
 	}
 	y += 26
 	if names {
-		ems := a.d.Prefs.EmoteHoverNamesMillis()
+		ems := a.d.Prefs.Load().EmoteHoverNamesMillis()
 		if next := a.emoteNameDelayRow(y, ems); next != ems {
-			a.d.Prefs.SetEmoteHoverNamesMs(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					EmoteHoverNamesMs =
+
+					next
+
+			})
+
 		}
 		c.Label(pad+340, y+4, "how long to hover before the name shows (default 5 s)", ColTextDim)
 		y += 30
 	}
-	// (Emote-grid icon spacing moved to Theme > Layout & fit — it is a layout
-	// measurement and AO2 themes override it, which is where people look for it.)
-	// Sprite repositioning: drag a character in the viewport to move them (the
-	// override sticks per character until reset). OFF by default so a stray click
-	// can't nudge a sprite; right-clicking a sprite resets just that one.
-	move := a.d.Prefs.SpriteMoveEnabled()
+	// Drag a character to move them, sticking per character until reset; off by default so a stray click cannot nudge.
+	move := a.d.Prefs.Load().SpriteMoveOn
 	if next := c.Checkbox(pad, y, "Let me drag character sprites to reposition them (OFF by default; right-click a sprite to reset it)", move); next != move {
-		a.d.Prefs.SetSpriteMove(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteMoveOn = next })
 	}
 	y += 26
 	if move {
@@ -1500,11 +1324,10 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+232, y+5, "drop every drag override back to the server's placement", ColTextDim)
 		y += 32
 	}
-	// Hide-sprite ("Missingno"): right-click a sprite → confirm → hidden for the
-	// session (for players who'd rather not see certain art). ON by default.
-	hideRC := a.d.Prefs.RightClickHideSpriteOn()
+	// Right-click a sprite to hide it for the session.
+	hideRC := a.d.Prefs.Load().RightClickHideSprite
 	if next := c.Checkbox(pad, y, "Right-click a sprite to hide it from the viewport (ON by default): confirms, then hides it for the session. Reshow all with the Reshow-hidden-sprites key (Controls tab).", hideRC); next != hideRC {
-		a.d.Prefs.SetRightClickHideSprite(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RightClickHideSprite = next })
 	}
 	y += 26
 	if len(a.hiddenSprites) > 0 {
@@ -1514,104 +1337,131 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+232, y+5, fmt.Sprintf("%d sprite(s) hidden this session — un-hide them all", len(a.hiddenSprites)), ColTextDim)
 		y += 32
 	}
-	// Hide the desk (the foreground table the character stands behind).
-	hideDesk := a.d.Prefs.HideDeskOn()
+	hideDesk := a.d.Prefs.Load().HideDesk
 	if next := c.Checkbox(pad, y, "Hide the courtroom desk (OFF by default): suppresses the foreground desk so the full character shows.", hideDesk); next != hideDesk {
-		a.d.Prefs.SetHideDesk(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				HideDesk =
+
+				next
+
+		})
+
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Application")
-	upd := a.d.Prefs.UpdateCheckEnabled()
-	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
-		a.d.Prefs.SetUpdateCheck(next)
-	}
-	y += 26
-	alt := a.d.Prefs.AutoLoginToastOn()
+	alt := a.d.Prefs.Load().AutoLoginToast
 	if next := c.Checkbox(pad, y, "Notify me when auto-login signs me in (toast + desktop notification — ON by default, so a mod knows they're logged in)", alt); next != alt {
-		a.d.Prefs.SetAutoLoginToast(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				AutoLoginToast =
+
+				next
+
+		})
+
 	}
 	y += 26
-	tabCap := a.d.Prefs.TabCap()
+	tabCap := a.d.Prefs.Load().TabCap()
 	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 99,
 		"How many servers you can have open at once — each Join opens a tab (up to 99)."); next != tabCap {
-		a.d.Prefs.SetTabCap(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.MultiTabCap = next })
 	}
 	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection (default 6)", ColTextDim)
 	y += 30
-	restoreTabs := a.d.Prefs.RestoreTabsOn()
+	restoreTabs := a.d.Prefs.Load().RestoreTabs
 	if next := c.Checkbox(pad, y, "Reopen my server tabs on launch (OFF by default): remembers open servers on exit and reconnects them next time", restoreTabs); next != restoreTabs {
-		a.d.Prefs.SetRestoreTabs(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.RestoreTabs = next })
 	}
 	y += 30
 	y = a.settingsSection(y, w, "Log colours")
-	// Log-selection highlight colour: a hue/saturation wheel + brightness
-	// slider + hex field (drag-select in IC/OOC shows it).
+	// Log-selection highlight colour: hue/saturation wheel, brightness slider and hex field.
 	y = a.drawHighlightPicker(y, w)
-	// Per-speaker name colours: tint each speaker's name by a stable hash, with
-	// saturation/brightness sliders + a live preview. OFF by default.
+	// Per-speaker name colours: a stable hash per name, with sliders and a preview.
 	y = a.drawNameColorPicker(y, w)
-	boldNames := a.d.Prefs.BoldNamesOn()
+	boldNames := a.d.Prefs.Load().BoldNamesOn()
 	if next := c.Checkbox(pad, y, "Bold speaker names + timestamps (ON by default): renders the name prefix (and the IC-log time stamp) in the log and chatbox in bold for readability.", boldNames); next != boldNames {
 		a.d.Prefs.SetBoldNames(next)
 	}
 	y += 28
 	y = a.settingsSection(y, w, "Stage")
-	slideOn := a.d.Prefs.BgSlideshowEnabled()
+	slideOn := a.d.Prefs.Load().BgSlideshow
 	if next := c.Checkbox(pad, y, "Background slideshow (OFF by default): when the courtroom is idle, cycle the stage through this server's backgrounds as ambiance", slideOn); next != slideOn {
-		a.d.Prefs.SetBgSlideshow(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				BgSlideshow =
+
+				next
+
+		})
+
 	}
 	y += 26
 	if slideOn {
-		secs := a.d.Prefs.BgSlideshowSeconds()
-		// Bounds match the config clamp (3..600s); SetBgSlideshowSeconds is authoritative.
+		secs := a.d.Prefs.Load().BgSlideshowSeconds()
+		// Bounds match the config clamp; SetBgSlideshowSeconds is authoritative.
 		if next := a.numberRow(y, "  Seconds per background", secs, 1, 3, 600); next != secs {
-			a.d.Prefs.SetBgSlideshowSeconds(next)
+			a.d.Prefs.Update(func(
+				sn *config.
+					Settings) {
+
+				sn.
+					BgSlideshowSecs =
+
+					next
+
+			})
+
 		}
 		c.Label(pad+270, y+4, "only while idle — a message instantly shows the real area background again", ColTextDim)
 		y += 30
 	}
-	dragLay := a.d.Prefs.DragLayoutOn()
+	dragLay := a.d.Prefs.Load().DragLayout
 	if next := c.Checkbox(pad, y, "Drag panel edges to resize the courtroom (ON by default): grab the viewport's right edge to make it bigger / the log smaller — uncheck for the +/− View/Text/MsgBox/Log/Input knob buttons instead", dragLay); next != dragLay {
-		a.d.Prefs.SetDragLayout(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DragLayout =
+
+				next
+
+		})
+
 	}
 	y += 26
-	smooth := a.d.Prefs.SmoothScalingEnabled()
+	smooth := a.d.Prefs.Load().SmoothScaling
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
-		a.d.Prefs.SetSmoothScaling(next)
-		hint := "1"
-		if !next {
-			hint = "0"
-		}
-		// The hint applies at texture CREATION; purge so everything
-		// re-streams (demand pipeline + scenery heal repopulate live).
-		sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, hint)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SmoothScaling = next })
+		// The filter applies at texture creation, so purge and let everything re-stream.
+		_ = c.Ren.SetDefaultTextureScaleMode(TextureScaleMode(next))
 		a.d.Store.Purge()
-		// Purge destroyed the pinned shape masks SYNCHRONOUSLY — drop the
-		// frame-resolved Ctx pointers before anything shaped draws this frame.
+		// Purge destroyed the pinned shape masks synchronously; drop the Ctx pointers before anything shaped draws.
 		a.invalidateShapeMasks()
 		c.purgeTextCache()
-		a.themeChatbox = false
 		a.applyThemeAsync()
-		// Purge also destroyed the pinned missingno placeholder — re-pin the
-		// embedded default (render thread) and re-kick a custom image if set, so
-		// the missing-sprite fallback survives a filtering swap (missingno.go).
-		a.uploadEmbeddedMissingno()
-		if p := a.d.Prefs.ErrorSpritePath(); p != "" {
-			a.applyErrorSprite(p)
-		}
+		// Purge also destroyed the pinned missingno placeholder, so it is reloaded to survive a filtering swap.
+		a.reloadErrorSprite()
 		settings.statusLine = "Re-streaming textures with new filtering."
 	}
 	y += 26
-	// Per-character sprite filtering (#21). Separate from the client-wide toggle
-	// above, which still governs backgrounds, desks and chrome. This one applies
-	// live — the filter is resolved at draw time from the page memo — so unlike
-	// the hint it needs no purge and no re-stream.
-	spriteScale := config.ClampSpriteScaling(a.d.Prefs.SpriteScalingMode())
+	// Separate from the client-wide toggle above; resolved at draw time from the page memo, so it needs no purge.
+	spriteScale := a.d.Prefs.SpriteScalingMode()
 	c.Label(pad, y+4, "Sprite filtering:", ColText)
 	if next, changed := c.Dropdown("spritescale",
 		sdl.Rect{X: pad + spriteScaleDDX, Y: y, W: spriteScaleDDW, H: fieldH},
 		spriteScalingLabels[:], spriteScale); changed {
-		a.d.Prefs.SetSpriteScalingMode(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.SpriteScaling = next })
 		spriteScale = config.ClampSpriteScaling(next)
 		settings.statusLine = "Sprite filtering: " + spriteScalingLabels[spriteScale]
 	}
@@ -1619,14 +1469,13 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	c.Label(pad, y+2, spriteScalingHints[spriteScale], ColTextDim)
 	y += 24
 	y = a.settingsSection(y, w, "Scale & text size")
-	// Global scale: DPI-driven by default, manual spinbox when auto is off.
-	scaleAuto := a.d.Prefs.UIScaleAuto()
+	scaleAuto := a.d.Prefs.Load().UIScaleAutoOn
 	scaleAutoLabel := "Auto UI scale (fits the window + display DPI)"
 	if a.detectedScalePct > 0 {
 		scaleAutoLabel = fmt.Sprintf("Auto UI scale — fits the window + display DPI (now: %d%%)", a.detectedScalePct)
 	}
 	if next := c.Checkbox(pad, y, scaleAutoLabel, scaleAuto); next != scaleAuto {
-		a.d.Prefs.SetUIScaleAuto(next)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.UIScaleAutoOn = next })
 		a.ctx.SetUIScale(a.UIScale())
 	}
 	y += 26
@@ -1638,10 +1487,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y = a.drawViewportSizeRow(y)
 
-	// Independent text size: scale the IC/OOC log + chatbox message text WITHOUT
-	// zooming the courtroom art (that's the UI scale above — it's a whole-frame
-	// zoom). These map to the same persisted layout scales the in-courtroom
-	// Ctrl+wheel zoom tunes, so a change here shows at once and survives restart.
+	// Scales log and chatbox text without zooming the art; same persisted scales as the in-courtroom Ctrl+wheel zoom.
 	if v := a.sliderRow(y, "Chat log text size %", a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent,
 		"Size of the IC/OOC log text only — not the courtroom art. Ctrl+wheel over the log does the same."); v != a.logPct {
 		a.logPct = v
@@ -1660,30 +1506,47 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.saveLayout()
 	}
 	y += 30
-	// See-through chatbox: panel opacity (0 = fully transparent, 100 = solid).
 	// Only affects the flat fallback skin; a theme chatbox keeps its own art.
-	op := a.d.Prefs.ChatboxOpacityPct()
+	op := a.d.Prefs.Load().ChatboxOpacity
 	if v := a.sliderRow(y, "Chatbox opacity %", op, 5, config.MinChatboxOpacity, config.MaxChatboxOpacity,
 		"How see-through the chatbox panel is: 0 = text only, 100 = solid. Only the flat fallback panel — a theme's own skin keeps its art."); v != op {
-		a.d.Prefs.SetChatboxOpacity(v)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ChatboxOpacity =
+
+				v
+
+		})
+
 	}
 	y += 34
-	tint := a.d.Prefs.ChatboxTintOn()
+	tint := a.d.Prefs.Load().ChatboxTint
 	if next := c.Checkbox(pad, y, "Per-character chatbox tint (OFF by default): the chatbox takes a hint of each speaker's colour", tint); next != tint {
-		a.d.Prefs.SetChatboxTint(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				ChatboxTint =
+
+				next
+
+		})
+
 	}
 	y += 26
 
 	y = a.settingsSection(y, w, "Window")
-	// Window size / fullscreen: pick your own client dimensions (a window bigger
-	// than the monitor can't be dragged smaller; F11 + Fit to screen are the
-	// escapes). All window ops run here on the render thread.
-	full := a.d.Prefs.WindowFullscreen()
+	// A window bigger than the monitor cannot be dragged smaller; F11 and Fit to screen are the escapes. Render thread.
+	full := a.d.Prefs.Load().WindowFull
 	if next := c.Checkbox(pad, y, "Fullscreen (borderless) · F11 toggles", full); next != full {
 		a.applyFullscreen(next)
 	}
 	y += 28
-	if a.d.Prefs.WindowFullscreen() {
+	if a.d.Prefs.Load().WindowFull {
 		c.LabelClipped(pad, y+4, a.formW, "Press F11 or untick Fullscreen to return to a window.", ColTextDim)
 		y += 28
 	} else {
@@ -1725,29 +1588,16 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+262, y+4, "×", ColTextDim)
 		settings.winHInput, hCommit = c.TextField("winh", sdl.Rect{X: pad + 276, Y: y, W: 66, H: fieldH}, settings.winHInput, "H")
 		if c.Button(sdl.Rect{X: pad + 350, Y: y, W: 70, H: btnH}, "Apply") || wCommit || hCommit {
-			if iw, ew := strconv.Atoi(strings.TrimSpace(settings.winWInput)); ew == nil {
-				if ih, eh := strconv.Atoi(strings.TrimSpace(settings.winHInput)); eh == nil && iw > 0 && ih > 0 {
-					a.applyWindowSize(iw, ih)
+			if iw, okW := parse.Int32(settings.winWInput, math.MinInt32, math.MaxInt32); okW {
+				if ih, okH := parse.Int32(settings.winHInput, math.MinInt32, math.MaxInt32); okH && iw > 0 && ih > 0 {
+					a.applyWindowSize(int(iw), int(ih))
 					settings.winLoaded = false
 				}
 			}
 		}
 		y += btnH + 10
-		// #35, manual half: snap to the size the ACTIVE theme was drawn for. Only
-		// offered when the theme declares a courtroom rect — the automatic snap on a
-		// theme pick covers the common case, this is the way back to 1:1 after any
-		// manual resize. Same applyWindowSize route as every button above, so the
-		// clamp, the un-maximize and the persist are shared, and it stays a one-line
-		// call a future Window menu can reuse.
-		//
-		// themeDesignSizeOffer, not themeDesignWindowSize: it also gates on the
-		// themed courtroom layout being the one actually drawn, so this row and the
-		// automatic snap agree about when a theme canvas is meaningful.
-		// The label carries the size the button APPLIES, not the theme's raw canvas.
-		// They are not the same number: the canvas sits below the app-chrome band, so
-		// the snap asks for canvas + themeDesignWindowInset (44 px) — the stock theme's
-		// 714×579 canvas needs a 714×623 window. Printing the canvas here while
-		// applying the window size made the button describe a resize it never performed.
+		// Snap to the size the active theme was drawn for; themeDesignSizeOffer also needs the themed layout drawn.
+		// The label shows the applied size: canvas + themeDesignWindowInset, as the canvas sits below the chrome band.
 		if _, _, ok := a.themeDesignSizeOffer(); ok {
 			tw, th, _ := a.themeDesignWindowTarget()
 			label := fmt.Sprintf("Theme's design size (%d×%d)", tw, th)
@@ -1756,8 +1606,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 				a.applyThemeDesignWindowSize()
 				settings.winLoaded = false
 			}
-			// The button label carries the size, so the hint is pure explanation —
-			// drop it rather than draw it into a negative width at a narrow window.
+			// The label carries the size, so drop the hint rather than draw it into a negative width.
 			if hintW := w - pad - bw - designSizeHintGap - scrollBarW; hintW > 0 {
 				c.LabelClipped(pad+bw+designSizeHintGap, y+4, hintW,
 					"this theme's canvas plus the menu bar and tab strip above it — the courtroom then draws 1:1, like the stock AO2 client", ColTextDim)
@@ -1767,19 +1616,18 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Extras box")
-	// Extras box appearance: a hex colour per element (blank = the stock colour),
-	// a live swatch, and a Background → Gradient↓ fade. Applies to the floating
-	// Extras box and its torn-off boxes; default (all blank) is byte-identical.
+	// Extras box appearance: a hex colour per element (blank is stock), a swatch, and a Background to Gradient fade.
 	c.Label(pad, y+4, "Colours:", ColTextDim)
 	c.LabelClipped(pad+150, y+4, w-pad-150-scrollBarW, "hex like 78aaff — blank = default · live on the open box", ColTextDim)
 	y += 24
-	exBg, exBg2, exBorder, exTitle, exText, exGrad := a.d.Prefs.ExtrasBoxStyle()
+	exBg, exBg2, exBorder, exTitle, exText, exGrad := a.d.Prefs.Load().ExtrasBoxStyle()
 	cur := [5]string{exBg, exBg2, exBorder, exTitle, exText}
 	next := cur
 	for i, label := range [5]string{"Background", "Gradient ↓", "Border", "Title bar", "Text"} {
 		c.Label(pad+16, y+4, label, ColTextDim)
 		swatch := ColPanel
-		if col, ok := parseHexColor(next[i]); ok {
+		if c, ok := parse.HexColor(next[i]); ok {
+			col := sdl.Color(c)
 			swatch = col
 		}
 		swR := sdl.Rect{X: pad + 120, Y: y + 1, W: 18, H: 18}
@@ -1797,22 +1645,40 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetExtrasBoxStyle(next[0], next[1], next[2], next[3], next[4], nextGrad)
 	}
 
+	y = a.settingsSection(y, w, "Wardrobe")
+	y = a.drawWardrobeSettings(y, w)
+
 	y = a.settingsSection(y, w, "Fonts")
-	// Dyslexia-friendly font: a persisted one-click toggle backed by the bundled
-	// OpenDyslexic (no install needed). Drives the IC/OOC chat + log text and
-	// takes precedence over the manual override below.
-	// The census reads the machine's OWN fonts, so it is the only text path whose
-	// behaviour differs per operating system. Exposed so a player seeing wrong or
-	// missing text can take the whole subsystem out of the picture in one click
-	// instead of waiting for a build.
-	census := a.d.Prefs.FontCensusOn()
+	// The scan reads the machine's own fonts, the only text path differing per OS,
+	// so a player seeing wrong text can take it out of the picture in one click.
+	census := a.d.Prefs.Load().FontCensus
 	if next := c.Checkbox(pad, y, "Use fonts installed on this computer (ON by default): lets text in scripts the bundled fonts don't cover borrow a font from your system. Turn off if text renders wrongly or goes missing — the client then uses only the fonts it ships with.", census); next != census {
-		a.d.Prefs.SetFontCensus(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FontCensus =
+
+				next
+
+		})
+
 	}
 	y += 26
-	dys := a.d.Prefs.DyslexiaFontOn()
+	dys := a.d.Prefs.Load().DyslexiaFont
 	if next := c.Checkbox(pad, y, "Dyslexia-friendly font (bundled OpenDyslexic) — applies to the chat & log text", dys); next != dys {
-		a.d.Prefs.SetDyslexiaFont(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				DyslexiaFont =
+
+				next
+
+		})
+
 		a.applyFontConfig()
 		if next {
 			settings.statusLine = "Dyslexia-friendly font on (OpenDyslexic)."
@@ -1823,14 +1689,10 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 28
 
-	// Custom font override: a chain of TTF/TTC paths, first covering font per
-	// line wins (put a CJK-capable font later in the chain). Drives the IC/OOC
-	// chat + log text; the "everywhere" checkbox below extends it to the whole
-	// UI. Saved even while the dyslexia font is on (which overrides it), so it
-	// returns when you switch back.
+	// A chain of TTF/TTC paths; first covering font per line wins. Saved even while the dyslexia font overrides it.
 	c.Label(pad, y+4, "Custom font:", ColText)
 	if !settings.fontLoaded {
-		settings.fontInput = a.d.Prefs.FontPaths()
+		settings.fontInput = a.d.Prefs.Load().FontOverridePaths
 		settings.fontLoaded = true
 	}
 	var fontCommit bool
@@ -1838,7 +1700,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		settings.fontInput, `C:\Windows\Fonts\meiryo.ttc; more fallbacks... (blank = built-in)`)
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || fontCommit {
 		raw := strings.TrimSpace(settings.fontInput)
-		a.d.Prefs.SetFontPaths(raw)
+		a.d.Prefs.Update(func(sn *config.Settings) { sn.FontOverridePaths = raw })
 		a.applyFontConfig()
 		switch {
 		case dys:
@@ -1854,20 +1716,27 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 34
 
-	// Font-everywhere: extend the ACTIVE override (dyslexia toggle or the chain
-	// above) to all chrome text too. Opt-in — the chrome's fixed row/button
-	// metrics are tuned for the embedded face, so an unusual font can sit tight
-	// in buttons; chat/log stay the reading-optimized surface either way.
-	few := a.d.Prefs.FontEverywhereOn()
+	// Opt-in: chrome's row and button metrics are tuned for the embedded face, so an unusual font can sit tight.
+	few := a.d.Prefs.Load().FontEverywhere
 	if next := c.Checkbox(pad, y, "Use the font everywhere — menus, buttons, lists & tabs too (not just chat)", few); next != few {
-		a.d.Prefs.SetFontEverywhere(next)
+		a.d.Prefs.Update(func(
+			sn *config.
+				Settings) {
+
+			sn.
+				FontEverywhere =
+
+				next
+
+		})
+
 		a.applyFontConfig()
 		switch {
 		case !next:
 			settings.statusLine = "Whole-UI font off — chrome back on the built-in font."
 		case dys:
 			settings.statusLine = "OpenDyslexic now drives the whole UI."
-		case strings.TrimSpace(a.d.Prefs.FontPaths()) != "":
+		case strings.TrimSpace(a.d.Prefs.Load().FontOverridePaths) != "":
 			settings.statusLine = "Custom font now drives the whole UI."
 		default:
 			settings.statusLine = "Whole-UI font armed — set a font above (or the dyslexia toggle) to see it."
@@ -1877,68 +1746,14 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	return y
 }
 
-// Call-out copy (precomputed package-level strings — drawn every frame, so no
-// per-frame fmt.Sprintf/concat: sibling settings labels use literals for the same
-// reason). The Import button opens the in-app file browser on EVERY OS; the
-// "drag anywhere" line is the second, cross-platform mechanism.
-const (
-	demoVideoCalloutLead = "Have an AO2 .demo session file? Turn it into a shareable video."
-	demoVideoCalloutDrag = "…or drag the .demo file anywhere onto this window."
-	// Reuses the ffmpeg wording from drawExportOptions/startSceneExport so the MP4
-	// promise doesn't dead-end: GIF/WebP still work, and the import still lands.
-	demoVideoCalloutNoFF = "🎥 Video needs ffmpeg on PATH — GIF/WebP work without it, and the import still lands in Recordings."
-)
-
-// drawDemoToVideoCallout draws the prominent ".demo → video" entry point at the
-// top of the Studio tab: a highlighted panel (the c.Fill(ColPanel)+c.Border(ColAccent)
-// idiom) with a one-line pitch, the in-app Import file browser (ALL platforms —
-// v1.72.2 replaced the Windows-only native dialog that failed foreground twice),
-// the cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
-// Shadows pad/w per the mandatory settings idiom.
-func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	y = a.settingsSection(y, w, ".demo → video")
-
-	// Highlighted panel background + accent border spanning the section width. The
-	// Import button now shows on every OS (the in-app browser is cross-platform),
-	// so the panel is always the full two-row height.
-	panelH := int32(60)
-	if !videoenc.Available() {
-		panelH += 18 // room for the ffmpeg fallback line
-	}
-	panel := sdl.Rect{X: pad, Y: y, W: w - pad - scrollBarW, H: panelH}
-	c.Fill(panel, ColPanel)
-	c.Border(panel, ColAccent)
-
-	iy := y + 8
-	c.Label(pad+12, iy, demoVideoCalloutLead, ColText)
-	iy += 22
-	if c.Button(sdl.Rect{X: pad + 12, Y: iy, W: 170, H: btnH}, "📥 Import .demo…") {
-		a.openDemoBrowser() // in-app file browser — pick any .demo/.aorec from your PC
-	}
-	c.Label(pad+192, iy+5, demoVideoCalloutDrag, ColTextDim)
-	iy += btnH + 6
-	if !videoenc.Available() {
-		c.Label(pad+12, iy, demoVideoCalloutNoFF, ColDanger)
-	}
-	return y + panelH + 12
-}
-
-// Content-tools call-out copy (package-level literals — drawn every frame, no
-// per-frame concat, matching the demo-video call-out).
+// Package-level literals because these draw every frame.
 const (
 	contentToolsLead = "Check what a recording needs — or bundle it so it plays anywhere."
 	contentToolsBody = "Enumerates every sprite/background/music/SFX/blip a .demo/.aorec references, probes the origin, and lists what's missing."
 	contentToolsPkg  = "Package writes the found assets + a self-contained .aorec into recordings\\<name>-bundle\\ — it replays offline forever."
 )
 
-// drawContentToolsCallout draws the "Check demo content" / "Package this RP"
-// entry points right under the .demo → video call-out (same highlighted-panel
-// idiom). Both reuse the in-app demo browser (openDemoBrowserFor) with a pick
-// PURPOSE, so the file-navigation surface is shared with the video flow — the
-// pick then routes to the content-report engine (openContentReportFor) and opens
-// the report panel. Shadows pad/w per the mandatory settings idiom.
+// drawContentToolsCallout draws the content entry points, which reuse the demo browser with a pick purpose.
 func (a *App) drawContentToolsCallout(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -1965,4304 +1780,10 @@ func (a *App) drawContentToolsCallout(y, w int32) int32 {
 	return y + panelH + 12
 }
 
-// drawSettingsStudio: the "Studio" tab — a ".demo → video" call-out, scene
-// recording, the recordings library/replay picker, and GIF/WebP/Video export.
-// See replay.go.
-func (a *App) drawSettingsStudio(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-	y = a.drawDemoToVideoCallout(y, w)
-	y = a.drawContentToolsCallout(y, w)
-	y = a.settingsSection(y, w, "Scene recording")
-	c.Label(pad, y, "Record the courtroom to a tiny .aorec replay file — it stores the scene EVENTS (who spoke,", ColTextDim)
-	y += 18
-	c.Label(pad, y, "emote, text, timing), not video — so it's near-free and replays at perfect quality. All off by default.", ColTextDim)
-	y += 18
-	c.Label(pad, y, "Record: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyRecordScene))+"   ·   Replay last: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyReplayLast))+"   (rebind in Controls). Files save under recordings\\.", ColTextDim)
-	y += 26
-	srb := a.d.Prefs.ShowRecordButtonOn()
-	if next := c.Checkbox(pad, y, "Show a small ● Record button on the courtroom stage (OFF by default)", srb); next != srb {
-		a.d.Prefs.SetShowRecordButton(next)
-	}
-	y += 28
-	// Recordings keep their assets (ON by default): on stop, auto-package the just-
-	// recorded scene's already-warm assets into a self-contained bundle beside the
-	// flat .aorec, so the recording survives its server's CDN. Additive — the flat
-	// .aorec still saves either way.
-	rka := a.d.Prefs.RecordingsKeepAssetsOn()
-	if next := c.Checkbox(pad, y, "Recordings keep their assets (ON): on stop, also save a self-contained bundle so the replay survives its server", rka); next != rka {
-		a.d.Prefs.SetRecordingsKeepAssets(next)
-	}
-	y += 32
-
-	y = a.settingsSection(y, w, "Instant replay (clip what just happened)")
-	c.Label(pad, y, "Optionally keep a rolling buffer of the recent conversation, so the clip key can save the last minute or", ColTextDim)
-	y += 18
-	c.Label(pad, y, "two as a .aorec — WITHOUT starting a recording first. Off by default; nothing is kept until you tick it.", ColTextDim)
-	y += 24
-	ir := a.d.Prefs.InstantReplayOn()
-	if next := c.Checkbox(pad, y, "Pre-record recent conversation (Instant Replay)", ir); next != ir {
-		a.d.Prefs.SetInstantReplay(next)
-	}
-	y += 30
-	if ir {
-		secs := a.d.Prefs.InstantReplaySecondsValue()
-		c.Label(pad+16, y+4, "Capture window:", ColTextDim)
-		track := sdl.Rect{X: pad + 140, Y: y + 5, W: 240, H: 16}
-		lo, hi := config.InstantReplayMinSeconds, config.InstantReplayMaxSeconds
-		if nv := int(c.Slider("ir_window", track, int32(secs-lo), int32(hi-lo))) + lo; nv != secs {
-			a.d.Prefs.SetInstantReplaySeconds(nv)
-			secs = nv
-		}
-		c.Label(track.X+track.W+10, y+4, formatReplayWindow(time.Duration(secs)*time.Second)+"  (10s … 1 hour)", ColAccent)
-		y += 26
-		c.Label(pad+16, y, "Clip the last window: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyClipReplay))+"  (rebind in Controls). Saves to recordings\\ — open it in the Scene Maker to trim/export.", ColTextDim)
-		y += 22
-	}
-	y += 6
-
-	y = a.settingsSection(y, w, "Scene maker")
-	c.Label(pad, y, "Build a scene from scratch — or edit a recording — line by line: pick the character, emote, text,", ColTextDim)
-	y += 18
-	c.Label(pad, y, "background and music, set the Origin/CDN the assets load from, then Preview and Save a .aorec.", ColTextDim)
-	y += 18
-	c.Label(pad, y, ".aorec files are plain text (JSON) — you can also open one in any text editor to tweak it by hand.", ColTextDim)
-	y += 18
-	c.Label(pad, y, "The Scene Maker's ⇄ .demo button writes scenes AO2's own demo player can watch (import a .demo above).", ColTextDim)
-	y += 26
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "🎬 New scene") {
-		a.newScene()
-	}
-	c.Label(pad+162, y+5, "opens the in-app Scene Maker (works offline — no server needed)", ColTextDim)
-	y += 36
-
-	y = a.settingsSection(y, w, "Recordings")
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "📁 Open folder") {
-		a.openRecordingsFolder()
-	}
-	c.Label(pad+162, y+5, "the default recordings\\ folder (next to AsyncAO) where .aorec files are saved", ColTextDim)
-	y += 32
-	// listRecordings does a dir read, but this is the Settings menu (never the
-	// courtroom render path), so it stays fresh with no caching.
-	recs := listRecordings()
-	if len(recs) == 0 {
-		c.Label(pad, y+4, "No recordings yet — press the Record key (or the on-stage button) during a scene.", ColTextDim)
-		y += 26
-	} else {
-		c.Label(pad, y+4, "Newest first — Play watches it back (it plays over the screen; ■ Stop to end):", ColText)
-		y += 26
-		const maxShow = 12
-		for i, r := range recs {
-			if i >= maxShow {
-				c.Label(pad+16, y+4, "… and "+strconv.Itoa(len(recs)-maxShow)+" more in the recordings\\ folder.", ColTextDim)
-				y += 24
-				break
-			}
-			if c.Button(sdl.Rect{X: pad + 16, Y: y, W: 64, H: btnH}, "▶ Play") {
-				a.replayFromPath(r.path)
-			}
-			if c.Button(sdl.Rect{X: pad + 84, Y: y, W: 58, H: btnH}, "✎ Edit") {
-				a.editRecordingInMaker(r.path)
-			}
-			if c.Button(sdl.Rect{X: pad + 146, Y: y, W: 54, H: btnH}, "🎞 GIF") {
-				a.sceneExportFromPath(r.path, exportGIF)
-			}
-			if c.Button(sdl.Rect{X: pad + 204, Y: y, W: 74, H: btnH}, "🎬 WebP") {
-				a.sceneExportFromPath(r.path, exportWebP) // higher-quality animated WebP
-			}
-			if c.Button(sdl.Rect{X: pad + 282, Y: y, W: 78, H: btnH}, "🎥 Video") {
-				a.sceneExportFromPath(r.path, exportVideo) // MP4/WebM via ffmpeg (Export-options format)
-			}
-			if c.Button(sdl.Rect{X: pad + 364, Y: y, W: 82, H: btnH}, "🖼 Comic") {
-				a.sceneExportFromPath(r.path, exportComic) // single PNG storyboard page (pure Go)
-			}
-			c.LabelClipped(pad+450, y+4, w-pad-450-scrollBarW, r.name, ColText)
-			y += 28
-		}
-	}
-	y += 10
-
-	y = a.settingsSection(y, w, "Replay playback")
-	c.Label(pad, y, "How fast a replay plays. Lower = slower, so the whole message types out and lingers long enough", ColTextDim)
-	y += 18
-	c.Label(pad, y, "to read; higher = a quick recap. 100% is the readable default — adjusts live while a replay runs.", ColTextDim)
-	y += 26
-	// Bounds mirror the config clamp; SetReplaySpeed is authoritative.
-	const (
-		minReplayPct  = 25
-		maxReplayPct  = 200
-		replayPctStep = 5
-	)
-	rspd := a.d.Prefs.ReplaySpeed()
-	if next := a.sliderRow(y, "  Playback speed %", rspd, replayPctStep, minReplayPct, maxReplayPct); next != rspd {
-		a.d.Prefs.SetReplaySpeed(next)
-	}
-	y += 32
-
-	y = a.settingsSection(y, w, "Export to GIF / WebP / Video")
-	c.Label(pad, y, "Turn a recording into a shareable animation. Use 🎞 GIF (works everywhere) or 🎬 WebP (true-colour, smaller)", ColTextDim)
-	y += 18
-	c.Label(pad, y, "on a recording above, or build one in the Scene Maker. These settings apply to every export:", ColTextDim)
-	y += 26
-	y = a.drawExportOptions(a.formX, y, false) // speed lives in the Replay-playback section above
-	return y
-}
-
-// themeFitOption pairs one row of the "Theme fit:" dropdown with the mode
-// constant it selects.
-//
-// The kit's Dropdown speaks LIST INDEXES, and the old code fed the index
-// straight to SetThemeFit — correct only for as long as the rows happened to sit
-// in constant order. They no longer do: the mode constants are persisted on disk
-// and therefore append-only (config.ThemeFitNative is 4), while Native has to be
-// listed FIRST because it is the shipped default. This table keeps the two
-// orders independent, so reordering or inserting a row can never silently
-// reinterpret somebody's saved mode.
-type themeFitOption struct {
-	mode  int
-	label string
-}
-
-var themeFitOptions = [...]themeFitOption{
-	{config.ThemeFitNative, "Native — 1:1, stock AO2 size"},
-	{config.ThemeFitStretch, "Stretch — fill, no bars"},
-	{config.ThemeFitLetterbox, "Letterbox — keep shape (bars)"},
-	{config.ThemeFitCrop, "Crop — fill, trim edges"},
-	{config.ThemeFitCustom, "Custom — zoom + pan"},
-}
-
-// themeFitLabels is the dropdown's row text, derived from themeFitOptions once
-// at package init so drawing the settings row never rebuilds a []string.
-var themeFitLabels = func() []string {
-	out := make([]string, len(themeFitOptions))
-	for i, o := range themeFitOptions {
-		out[i] = o.label
-	}
-	return out
-}()
-
-// themeFitRow maps a stored mode to its dropdown row. An unknown mode (a prefs
-// file from a NEWER build, downgraded) falls back to row 0 — the default mode —
-// rather than to a negative index the dropdown would render blank.
-func themeFitRow(mode int) int {
-	for i, o := range themeFitOptions {
-		if o.mode == mode {
-			return i
-		}
-	}
-	return 0
-}
-
-// themeFitModeAt maps a dropdown row back to its mode constant.
-func themeFitModeAt(row int) int {
-	if row < 0 || row >= len(themeFitOptions) {
-		return themeFitOptions[0].mode
-	}
-	return themeFitOptions[row].mode
-}
-
-// drawSettingsTheme: theme picker/folder, layout toggle, live preview, bind.
-func (a *App) drawSettingsTheme(y, w, h int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	winW := w // real window width, kept for the aspect-true fit preview
-	w = a.formW2()
-	y = a.settingsSection(y, w, "Theme")
-	c.Label(pad, y+4, "Theme:", ColText)
-	// Direct-jump dropdown so a big theme collection is one click + scroll away,
-	// not dozens of < > presses (#86). The < > buttons stay for fine stepping.
-	selIdx := 0
-	for i, n := range settings.themeList {
-		if n == settings.themeName {
-			selIdx = i
-			break
-		}
-	}
-	// Trigger 2 of four (§Q6): the picker OPENING asks for a fresh catalog. On the
-	// rising EDGE, not while open: the themeScanMinInterval floor alone would let a
-	// list held open walk the disk every 5 s forever, and "never poll the disk" is
-	// the whole reason this feature has no filesystem watcher (themecatalog.go's
-	// header). The floor still applies on top, so flicking the picker open twice in
-	// a second is one scan. The latch is updated OUTSIDE the list-non-empty arm so a
-	// dropdown that stops being drawn while open cannot strand it set.
-	themeDDOpen := c.ddOpen == themeDropdownID
-	if themeDDOpen && !settings.themeDDWasOpen {
-		a.requestThemeCatalog(themeScanOnOpen)
-	}
-	settings.themeDDWasOpen = themeDDOpen
-	if len(settings.themeList) > 0 {
-		if next, changed := c.Dropdown(themeDropdownID, sdl.Rect{X: pad + 60, Y: y, W: 240, H: btnH}, settings.themeList, selIdx); changed {
-			settings.themeName = settings.themeList[next]
-			a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
-			// #35: a deliberate pick may snap the window to the new canvas. Arm the
-			// gen this very apply allocated, so a heal already in flight (themePage
-			// heals from any theme-art draw, this screen's live preview included)
-			// cannot land first and spend the arming on the OLD theme's canvas.
-			a.themeResizeArmGen = a.applyThemeAsync()
-		}
-	} else {
-		c.Label(pad+60, y+6, settings.themeName, ColAccent)
-	}
-	if c.Button(sdl.Rect{X: pad + 308, Y: y, W: 26, H: btnH}, "<") {
-		a.cycleTheme(-1)
-	}
-	if c.Button(sdl.Rect{X: pad + 338, Y: y, W: 26, H: btnH}, ">") {
-		a.cycleTheme(1)
-	}
-	if settings.themeBusy {
-		c.Label(pad+372, y+6, "scanning...", ColTextDim)
-	} else {
-		c.Label(pad+372, y+6, themeFoundText(settings.themeList), ColTextDim)
-	}
-	y += 32
-	c.Label(pad, y+4, "Theme folder:", ColText)
-	settings.themeDir, _ = c.TextField("themedir", sdl.Rect{X: pad + 130, Y: y, W: 320, H: fieldH}, settings.themeDir, `optional root holding themes\<name> — or drop a folder anywhere`)
-	if c.Button(sdl.Rect{X: pad + 460, Y: y, W: 130, H: btnH}, "Apply & rescan") {
-		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
-		a.scanThemes(true) // user-driven: the scan landing may arm the #35 auto-resize
-		a.applyThemeAsync()
-	}
-	if runtime.GOOS == "windows" {
-		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Browse...") {
-			if !browseForFolder() {
-				settings.statusLine = "The folder picker is already open — finish or close it first (Alt-Tab if you don't see it)."
-			}
-		}
-	}
-	y += 36
-	y = a.drawThemeCatalogRows(y, w)
-	y = a.drawThemeArtBudgetRow(y, w)
-
-	y = a.settingsSection(y, w, "Layout & fit")
-	// Emote-grid icon spacing lives HERE rather than with the other emote controls
-	// on General: it is a layout measurement, and an AO2 theme overrides it — so
-	// this is where someone looks for it. It shipped on General with a changelog
-	// path naming a tab that does not exist ("Interface") and no search keyword at
-	// all, which made it effectively unreachable.
-	gap := a.d.Prefs.EmoteGridGap()
-	if next := a.emoteGridGapRow(y, gap); next != gap {
-		a.d.Prefs.SetEmoteGridGap(next)
-	}
-	c.Label(pad+340, y+4, "gap between emote icons (default 6 px; 0 butts them together). AO2 themes keep their own spacing.", ColTextDim)
-	y += 30
-	// Built-in look: the new optimal layout (OOC as its own box, etc.) is the main theme; ticking
-	// "Legacy Developer" reverts to the old developer layout exactly (OOC back in a tab).
-	legacy := a.d.Prefs.LegacyDevThemeOn()
-	if next := c.Checkbox(pad, y, "Legacy Developer theme (revert to the old built-in look — OOC back in a tab; off = the new optimal layout)", legacy); next != legacy {
-		a.d.Prefs.SetLegacyDevTheme(next)
-	}
-	y += 28
-	// Theme-driven courtroom geometry (courtroom_design.ini).
-	tlay := a.d.Prefs.ThemeLayoutEnabled()
-	if next := c.Checkbox(pad, y, "Use the theme's courtroom layout (courtroom_design.ini positions every widget; off = classic layout)", tlay); next != tlay {
-		a.d.Prefs.SetThemeLayout(next)
-		a.invalidateThemeCanvases()
-	}
-	y += 28
-	// #39: per-element courtroom_fonts.ini parity. Re-applies the theme so the
-	// table is rebuilt (and the faces read) off-thread, exactly like a theme swap.
-	tfonts := a.d.Prefs.ThemeFontsOn()
-	if next := c.Checkbox(pad, y, "Use the theme's fonts (courtroom_fonts.ini — per-element family, point size and bold)", tfonts); next != tfonts {
-		a.d.Prefs.SetThemeFonts(next)
-		a.applyThemeAsync()
-	}
-	y += 28
-	// The user's own per-panel font and size, which override the checkbox above
-	// for the panels they name. Placed directly under it because that is the
-	// question this answers: "yes, use the theme's — except here."
-	y = a.drawPanelFontSettings(y, w)
-
-	// Theme fit: how the theme's FIXED design size fills your (differently
-	// shaped) window — the cause of those borders.
-	c.Label(pad, y+4, "Theme fit:", ColText)
-	fit := a.d.Prefs.ThemeFitMode()
-	if next, changed := c.Dropdown("themefit", sdl.Rect{X: pad + 90, Y: y, W: 230, H: fieldH}, themeFitLabels, themeFitRow(fit)); changed {
-		fit = themeFitModeAt(next) // rows are ordered for the user, modes for the disk
-		a.d.Prefs.SetThemeFit(fit)
-		a.invalidateThemeCanvases() // both canvases re-fit under the new mode
-	}
-	c.LabelClipped(pad+330, y+4, w-pad-330-scrollBarW, "applies under a theme that drives the courtroom layout (above)", ColTextDim)
-	y += 30
-	if fit == config.ThemeFitCustom {
-		// Big interactive preview (window-shaped): drag to pan, scroll to zoom.
-		boxW := int32(560)
-		if avail := a.formW; boxW > avail {
-			boxW = avail
-		}
-		boxH := boxW * h / winW // match the real window aspect so the crop is true
-		if boxH > 340 {
-			boxH, boxW = 340, 340*winW/h
-		}
-		if boxH < 160 {
-			boxH = 160
-		}
-		a.drawThemeFitPreview(sdl.Rect{X: pad, Y: y, W: boxW, H: boxH})
-		y += boxH + 10
-		zoom := a.d.Prefs.ThemeZoom()
-		if next := a.sliderRow(y, "  Zoom %", zoom, 5, config.MinThemeZoom, config.MaxThemeZoom); next != zoom {
-			a.d.Prefs.SetThemeFitZoom(next)
-			a.invalidateThemeCanvases()
-		}
-		y += 28
-		px, py := a.d.Prefs.ThemePan()
-		if next := a.sliderRow(y, "  Pan X %", px, 1, -config.MaxThemePan, config.MaxThemePan); next != px {
-			a.d.Prefs.SetThemeFitPan(next, py)
-			a.invalidateThemeCanvases()
-		}
-		y += 28
-		if next := a.sliderRow(y, "  Pan Y %", py, 1, -config.MaxThemePan, config.MaxThemePan); next != py {
-			a.d.Prefs.SetThemeFitPan(px, next)
-			a.invalidateThemeCanvases()
-		}
-		y += 30
-	}
-
-	// Layout presets (#34): save the whole default-courtroom arrangement under a name
-	// and flip between setups. Presets are window fractions, so they travel across sizes.
-	// applyLayoutPreset/applyStagePreset (layoutpresets.go) take effect the same frame.
-	y = a.settingsSection(y, w, "Layout profiles")
-	for _, ln := range c.WrapText("Save the WHOLE courtroom layout (the bottom-right toolbox's Edit chip — or Ctrl+Space → Edit Layout — lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. A profile captures the box positions, their corner anchors, their rotations, which chrome you hid, and the snap-grid step, so loading one restores everything at once. Stored as window fractions, so it looks right at any window size. Profiles cover the default courtroom layout; an AO2 theme's own layout, tilts and the chrome shape are saved separately (per-theme overrides / the chrome shape picker).", a.formW-8, 0) {
-		c.Label(pad, y, ln, ColTextDim)
-		y += 16
-	}
-	y += 8
-	// Quick stage premades — overlay just the stage; every other box keeps its spot.
-	c.Label(pad, y+4, "Quick stage:", ColText)
-	bx := pad + c.TextWidth("Quick stage:") + 12
-	for _, pm := range []struct {
-		label string
-		vp    [4]float64
-	}{
-		{"Theater 4:3", a.theaterStageFrac(winW, h)},
-		{"Wide stage", [4]float64{0, 0, 0.74, 0.66}},
-		{"Compact", [4]float64{0, 0, 0.50, 0.46}},
-	} {
-		bw := c.TextWidth(pm.label) + 16
-		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, pm.label) {
-			a.applyStagePreset(pm.vp)
-			a.pushDebug("layout: stage preset applied")
-		}
-		bx += bw + 6
-	}
-	y += btnH + 8
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Reset to stock") {
-		a.applyLayoutPreset(nil)
-		a.pushDebug("layout: reset to stock")
-	}
-	// Mouse-reachable chrome recovery (A6 no-strand): un-hides every piece at
-	// once. The pieces panel refuses to hide BOTH the toolbox and the Settings
-	// button precisely so this button stays reachable by mouse. Drawn only
-	// while something is actually hidden.
-	if len(a.hidden) > 0 {
-		lbl := "Show all hidden UI pieces"
-		if c.Button(sdl.Rect{X: pad + 158, Y: y, W: c.TextWidth(lbl) + 16, H: btnH}, lbl) {
-			a.hidden = map[string]bool{}
-			a.d.Prefs.SetHiddenPanels(nil)
-			a.pushDebug("layout: all hidden UI pieces restored")
-		}
-	}
-	y += btnH + 12
-
-	// Save the CURRENT arrangement under a name.
-	c.Label(pad, y+4, "Save current as:", ColText)
-	nameX := pad + c.TextWidth("Save current as:") + 10
-	saveW := int32(64)
-	fieldW := int32(200)
-	if maxW := w - nameX - saveW - 10; fieldW > maxW {
-		fieldW = maxW
-	}
-	if fieldW < 80 {
-		fieldW = 80
-	}
-	a.layoutPresetName, _ = c.TextField("layoutpreset", sdl.Rect{X: nameX, Y: y, W: fieldW, H: fieldH}, a.layoutPresetName, "profile name")
-	if c.Button(sdl.Rect{X: nameX + fieldW + 8, Y: y, W: saveW, H: fieldH}, "Save") {
-		if name := strings.TrimSpace(a.layoutPresetName); name != "" {
-			a.d.Prefs.SaveLayoutProfile(name, config.LayoutProfile{
-				Classic:   a.d.Prefs.ClassicLayoutOverrides(),
-				Anchors:   a.d.Prefs.ClassicAnchorSnapshot(),
-				Hidden:    a.d.Prefs.HiddenPanels(),
-				GridPx:    a.d.Prefs.LayoutGridSize(),
-				Rotations: a.d.Prefs.ClassicRotationSnapshot(), // A4: classic rotations travel with the profile
-			})
-			a.layoutPresetName = ""
-		}
-	}
-	y += fieldH + 10
-
-	// Saved profiles: load / delete each.
-	if names := a.d.Prefs.LayoutProfileNames(); len(names) == 0 {
-		c.Label(pad, y, "No saved profiles yet — arrange your layout, then Save it above.", ColTextDim)
-		y += 20
-	} else {
-		sort.Strings(names)
-		for _, name := range names {
-			if c.Button(sdl.Rect{X: pad, Y: y, W: 60, H: btnH}, "Load") {
-				a.applyProfile(a.d.Prefs.LayoutProfile(name))
-				a.pushDebug("layout: profile loaded")
-			}
-			if c.Button(sdl.Rect{X: pad + 66, Y: y, W: 64, H: btnH}, "Delete") {
-				a.d.Prefs.DeleteLayoutProfile(name)
-			}
-			c.LabelClipped(pad+140, y+4, w-(pad+140)-8, name, ColText)
-			y += btnH + 6
-		}
-	}
-	y += 4
-
-	y = a.settingsSection(y, w, "Lobby")
-	// Plain lobby: the server list keeps the readable client backdrop instead of
-	// the theme's lobbybackground (which is built for AO2's own list and often
-	// makes ours unreadable). The courtroom still uses the theme either way.
-	plain := a.d.Prefs.PlainLobbyOn()
-	if next := c.Checkbox(pad, y, "Plain lobby — keep my readable server-list backdrop, ignore the theme's lobby image (ON by default; the courtroom still uses the theme)", plain); next != plain {
-		a.d.Prefs.SetPlainLobby(next)
-	}
-	y += 28
-
-	y = a.settingsSection(y, w, "Preview & binding")
-	// Live preview of the applied chatbox skin + theme text colors.
-	y = a.drawThemePreview(y)
-	// Per-server theme binding: "this server always uses that theme".
-	y = a.drawThemeBindRow(y, w)
-	y = a.drawSettingsStageFX(y)
-	return y
-}
-
-// drawSettingsStageFX: every render-side stage/viewport look — the sprite
-// colour washes, motion FX, the retro post-process overlays (CRT / vignette /
-// scanlines / grain), chatbox skins, the stage frame and the ambient extras
-// (spotlight, breathing, reflection, weather). Lived in General → Display &
-// behaviour; moved to the Theme tab on playtest feedback (Tifera: settings
-// were overwhelming — these edit how the VIEWPORT looks, which is theme
-// territory). Rows are unchanged, only re-homed.
-func (a *App) drawSettingsStageFX(y int32) int32 {
-	c := a.ctx
-	pad := a.formX // rebase every pad-relative box into the content card
-	w := a.formW2()
-	y = a.settingsSection(y, w, "Stage & viewport effects")
-	// The master off-switch leads the section: one tick box for players who want
-	// none of this. It doesn't rewrite the rows below — it overrules them — so
-	// unticking it hands back the exact set-up they had. The rows stay visible but
-	// muted while it's on, which is what tells them what it's actually suppressing.
-	noFX := a.d.Prefs.EffectsDisabled()
-	if next := c.Checkbox(pad, y, "Disable all visual effects (OFF by default): one switch for a calm screen — stops other players' spinning / glowing / moving sprite styles, screen shake and flash, animated text, entrance slides, sprite washes and the post-processing overlays. Your settings below are remembered, just overruled while this is ticked.", noFX); next != noFX {
-		a.d.Prefs.SetDisableEffects(next)
-		noFX = next
-		if a.room != nil { // apply to the live room immediately, like the rows below do
-			a.room.ReduceMotion = a.d.Prefs.ReduceMotion() || noFX
-			a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() && !noFX
-			a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() || noFX
-		}
-	}
-	y += 26
-	// Mute only the rows the master actually overrules. The per-character chatbox
-	// skin and the stage frame further down are NOT effects — they're AO2 parity
-	// and decor — so the bracket is reopened around them below.
-	unmute := c.pushMuted(noFX)
-	// Screen effects (AO2 parity, ON by default): the \s screenshake and \f flash
-	// codes you can type into a message, plus the field-based shake / realization.
-	// Off keeps your screen still; "Reduce motion" (accessibility) also suppresses.
-	seff := a.d.Prefs.ScreenEffectsOn()
-	if next := c.Checkbox(pad, y, "Enable screen effects (ON by default): screenshake (\\s) and flash (\\f) typed into messages, plus authored shake / realization. Turn off to keep your screen still.", seff); next != seff {
-		a.d.Prefs.SetScreenEffects(next)
-		if a.room != nil {
-			a.room.ScreenEffects = next // apply to the live room immediately
-		}
-	}
-	y += 26
-	// Sprite colour FX (all OFF by default): a render-side wash over the
-	// on-stage characters. Local eye-candy only — nothing on the wire, nobody
-	// else sees it, and zero render cost when everything's off.
-	rbs := a.d.Prefs.RainbowSpritesOn()
-	if next := c.Checkbox(pad, y, "Rainbow character sprites (OFF by default): washes every on-stage sprite through a hue cycle — local eye-candy only, nobody else sees it, zero render cost when off", rbs); next != rbs {
-		a.d.Prefs.SetRainbowSprites(next)
-	}
-	y += 26
-	if rbs {
-		sp := a.d.Prefs.RainbowSpeed()
-		c.Label(pad+16, y+4, "Speed:", ColTextDim)
-		if next := int(c.Slider("rbspeed", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(sp), 100)); next != sp {
-			a.d.Prefs.SetRainbowSpriteSpeed(next)
-			sp = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", sp), ColAccent)
-		y += 26
-		vv := a.d.Prefs.RainbowVividness()
-		c.Label(pad+16, y+4, "Vividness:", ColTextDim)
-		if next := int(c.Slider("rbvivid", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(vv), 100)); next != vv {
-			a.d.Prefs.SetRainbowSpriteVividness(next)
-			vv = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", vv), ColAccent)
-		y += 26
-		dsy := a.d.Prefs.RainbowPairDesyncOn()
-		if next := c.Checkbox(pad+16, y, "Desync the pair's colour (the two characters show different hues at once)", dsy); next != dsy {
-			a.d.Prefs.SetRainbowPairDesync(next)
-		}
-		y += 26
-		pch := a.d.Prefs.RainbowPerCharOn()
-		if next := c.Checkbox(pad+16, y, "Different hue per character (each on-stage character cycles to its own colour)", pch); next != pch {
-			a.d.Prefs.SetRainbowPerChar(next)
-		}
-		y += 26
-	}
-	sst := a.d.Prefs.SpriteSolidTintOn()
-	if next := c.Checkbox(pad, y, "Solid colour sprite tint (OFF by default): wash sprites in one fixed colour instead of a cycle (rainbow takes priority if both are on)", sst); next != sst {
-		a.d.Prefs.SetSpriteSolidTint(next)
-	}
-	y += 26
-	if sst {
-		c.Label(pad+16, y+4, "Tint colour:", ColTextDim)
-		cur := a.d.Prefs.SpriteTintColorRGB()
-		sw := sdl.Rect{X: pad + 130, Y: y, W: 28, H: fieldH}
-		c.Fill(sw, sdl.Color{R: uint8(cur >> 16 & 0xFF), G: uint8(cur >> 8 & 0xFF), B: uint8(cur & 0xFF), A: 255})
-		c.Border(sw, ColPanelHi)
-		if c.focusID != "spritetinthex" {
-			a.spriteTintHex = fmt.Sprintf("%06x", cur) // reflect the pref when not typing
-		}
-		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.spriteTintHex, "RRGGBB"); next != a.spriteTintHex {
-			a.spriteTintHex = next
-			if rgb, ok := parseHex6(next); ok {
-				a.d.Prefs.SetSpriteTintColor(rgb)
-			}
-		}
-		y += 28
-	}
-	if rbs || sst { // glow applies to whichever wash is on
-		glw := a.d.Prefs.RainbowSpriteGlowOn()
-		if next := c.Checkbox(pad+16, y, "Neon glow (additive): the tint adds light so sprites glow — they become translucent neon ghosts (you can see the room through them)", glw); next != glw {
-			a.d.Prefs.SetRainbowSpriteGlow(next)
-		}
-		y += 26
-	}
-	// Motion FX (independent of the colour wash, OFF by default).
-	wob := a.d.Prefs.SpriteWobbleOn()
-	if next := c.Checkbox(pad, y, "Wobble sprites (OFF by default): a gentle, continuous sway", wob); next != wob {
-		a.d.Prefs.SetSpriteWobble(next)
-	}
-	y += 26
-	spn := a.d.Prefs.SpriteSpinOn()
-	if next := c.Checkbox(pad, y, "Spin sprites (OFF by default): the on-stage characters rotate slowly — maximum chaos", spn); next != spn {
-		a.d.Prefs.SetSpriteSpin(next)
-	}
-	y += 26
-	punch := a.d.Prefs.ShoutPunchOn()
-	if next := c.Checkbox(pad, y, "Shout punch (OFF by default): a quick zoom-pop of the whole stage when an objection/shout appears", punch); next != punch {
-		a.d.Prefs.SetShoutPunch(next)
-	}
-	y += 26
-	// Post-processing overlays (#10): retro looks blended over the whole stage. All OFF.
-	// #77 CRT preset leads the group: one toggle for the whole old-TV look.
-	crt := a.d.Prefs.PostCRTOn()
-	if next := c.Checkbox(pad, y, "CRT / retro TV (OFF by default): scanlines + an RGB phosphor grille + vignette — the whole old-TV look in one toggle", crt); next != crt {
-		a.d.Prefs.SetPostCRT(next)
-	}
-	y += 26
-	vig := a.d.Prefs.PostVignetteOn()
-	if next := c.Checkbox(pad, y, "Vignette (OFF by default): darken the stage edges for a cinematic frame", vig); next != vig {
-		a.d.Prefs.SetPostVignette(next)
-	}
-	y += 26
-	scan := a.d.Prefs.PostScanlinesOn()
-	if next := c.Checkbox(pad, y, "Scanlines (OFF by default): faint CRT scan lines over the stage", scan); next != scan {
-		a.d.Prefs.SetPostScanlines(next)
-	}
-	y += 26
-	grain := a.d.Prefs.PostGrainOn()
-	if next := c.Checkbox(pad, y, "Film grain (OFF by default): subtle animated noise over the stage", grain); next != grain {
-		a.d.Prefs.SetPostGrain(next)
-	}
-	y += 26
-	c.popMuted(unmute) // the next two rows are parity/decor, not effects — keep them live
-	// Per-character chatbox skins (char.ini chat=<misc>): canonical AO2/webAO
-	// behaviour, default ON; off also stops the misc art fetches.
-	ccb := a.d.Prefs.CharChatboxOn()
-	if next := c.Checkbox(pad, y, "Per-character chatbox skins (ON by default): a speaker with their own chatbox art (char.ini chat=) shows it, like AO2/webAO", ccb); next != ccb {
-		a.d.Prefs.SetCharChatbox(next)
-	}
-	y += 26
-	// #56 stage frame: a decorative border around the viewport (Off by default).
-	c.Label(pad, y+4, "Stage frame:", ColText)
-	sf := a.d.Prefs.StageFrame()
-	if next, changed := c.Dropdown("stageframe", sdl.Rect{X: pad + 130, Y: y, W: 170, H: fieldH}, stageFrameNames, sf); changed {
-		a.d.Prefs.SetStageFrame(next)
-	}
-	c.Label(pad+312, y+4, "a decorative border on the stage — pure looks, zero cost when Off", ColTextDim)
-	y += 30
-	defer c.popMuted(c.pushMuted(noFX)) // back under the master for the rest of the section
-	ent := a.d.Prefs.AnimateEntrancesOn()
-	if next := c.Checkbox(pad, y, "Animate entrances (OFF by default): a new speaker slides in when they take the stage", ent); next != ent {
-		a.d.Prefs.SetAnimateEntrances(next)
-	}
-	y += 26
-	dof := a.d.Prefs.DepthOfFieldOn()
-	if next := c.Checkbox(pad, y, "Depth of field (OFF by default): soft-focus + dim the background behind the speaker", dof); next != dof {
-		a.d.Prefs.SetDepthOfField(next)
-	}
-	y += 26
-	// #121 speaker spotlight: dim the non-speaker characters + the desk. The Dim slider only
-	// shows while it's on (like the rainbow knobs above).
-	spot := a.d.Prefs.SpotlightOn()
-	if next := c.Checkbox(pad, y, "Speaker spotlight (OFF by default): dim the other characters + the desk so the talking character pops", spot); next != spot {
-		a.d.Prefs.SetSpotlight(next)
-		spot = next
-	}
-	y += 26
-	if spot {
-		lv := a.d.Prefs.SpotlightLevel()
-		c.Label(pad+16, y+4, "Dim:", ColTextDim)
-		if next := int(c.Slider("spotdim", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(lv), 100)); next != lv {
-			a.d.Prefs.SetSpotlightLevel(next)
-			lv = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", lv), ColAccent)
-		y += 26
-	}
-	// #122 idle breathing: a gentle bob + breathing-scale on static sprites (AsyncAO-only).
-	// The amplitude/speed sliders + the two component toggles show only while it's on. The
-	// keybind (Settings → Keybinds, or the default below) toggles it hands-free.
-	brth := a.d.Prefs.IdleBreathOn()
-	if next := c.Checkbox(pad, y, "Idle breathing (OFF by default): static sprites gently bob + breathe so they feel alive — only other AsyncAO users won't see your local view, this is your viewer", brth); next != brth {
-		a.d.Prefs.SetIdleBreath(next)
-		brth = next
-	}
-	y += 26
-	if brth {
-		amp := a.d.Prefs.BreathAmp()
-		c.Label(pad+16, y+4, "Amount:", ColTextDim)
-		if next := int(c.Slider("breathamp", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(amp), 100)); next != amp {
-			a.d.Prefs.SetBreathAmp(next)
-			amp = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", amp), ColAccent)
-		y += 26
-		spd := a.d.Prefs.BreathSpeed()
-		c.Label(pad+16, y+4, "Speed:", ColTextDim)
-		if next := int(c.Slider("breathspd", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(spd), 100)); next != spd {
-			a.d.Prefs.SetBreathSpeed(next)
-			spd = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", spd), ColAccent)
-		y += 26
-		bob := a.d.Prefs.BreathBobOn()
-		if next := c.Checkbox(pad+16, y, "Vertical bob", bob); next != bob {
-			a.d.Prefs.SetBreathBob(next)
-		}
-		scl := a.d.Prefs.BreathScaleOn()
-		if next := c.Checkbox(pad+180, y, "Breathing scale", scl); next != scl {
-			a.d.Prefs.SetBreathScale(next)
-		}
-		y += 26
-	}
-	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line.
-	refl := a.d.Prefs.ReflectionOn()
-	if next := c.Checkbox(pad, y, "Glass-floor reflection (OFF by default): a flipped, faded mirror of the characters on the floor below them", refl); next != refl {
-		a.d.Prefs.SetReflection(next)
-		refl = next
-	}
-	y += 26
-	if refl {
-		op := a.d.Prefs.ReflectStrength()
-		c.Label(pad+16, y+4, "Opacity:", ColTextDim)
-		if next := int(c.Slider("reflop", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(op), 100)); next != op {
-			a.d.Prefs.SetReflectStrength(next)
-			op = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", op), ColAccent)
-		y += 26
-	}
-	// #124 ambient weather: a cycle picker (None → Snow → Rain → Sakura → Embers) + an
-	// Intensity slider while a weather is on. The keybind cycles it hands-free.
-	wk := a.d.Prefs.WeatherType()
-	c.Label(pad, y+4, "Weather (OFF by default):", ColTextDim)
-	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 90, H: 22}, render.WeatherName(render.Weather(wk))) {
-		a.d.Prefs.SetWeatherType((wk + 1) % int(render.WeatherCount))
-	}
-	y += 26
-	if wk != 0 {
-		wi := a.d.Prefs.WeatherIntensity()
-		c.Label(pad+16, y+4, "Intensity:", ColTextDim)
-		if next := int(c.Slider("wxint", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(wi), 100)); next != wi {
-			a.d.Prefs.SetWeatherIntensity(next)
-			wi = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", wi), ColAccent)
-		y += 26
-	}
-	return y
-}
-
-// drawThemeFitPreview draws a big interactive preview of the Custom theme fit:
-// the theme's courtroom background scaled + panned exactly as the live courtroom
-// would (the box carries the window aspect, so the crop you see is the crop you
-// get). Drag to pan, scroll to zoom — both write the prefs and re-fit live.
-// Settings-screen only; never the courtroom hot path.
-func (a *App) drawThemeFitPreview(box sdl.Rect) {
-	c := a.ctx
-	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 255})
-	court, ok := a.themeRects["courtroom"]
-	if ok && court.W > 0 && court.H > 0 {
-		base := float64(box.W) / float64(court.W) // min-fit within the box
-		if by := float64(box.H) / float64(court.H); by < base {
-			base = by
-		}
-		s := base * float64(a.d.Prefs.ThemeZoom()) / 100
-		artW, artH := int32(float64(court.W)*s), int32(float64(court.H)*s)
-		px, py := a.d.Prefs.ThemePan()
-		art := sdl.Rect{
-			X: box.X + (box.W-artW)/2 + int32(px)*box.W/100,
-			Y: box.Y + (box.H-artH)/2 + int32(py)*box.H/100,
-			W: artW, H: artH,
-		}
-		clipPrev, clipHad := c.pushClip(box)
-		if page, pok := a.themePage("courtroombackground"); pok {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &art)
-		} else {
-			c.Fill(art, ColPanel)
-			c.Border(art, ColAccent)
-			c.LabelClipped(art.X+6, art.Y+6, art.W-12, "(theme ships no courtroombackground — this outline is its design area)", ColTextDim)
-		}
-		c.popClip(clipPrev, clipHad)
-	} else {
-		c.LabelClipped(box.X+8, box.Y+8, box.W-16, "This theme has no courtroom_design.ini — the fit modes don't apply to it.", ColTextDim)
-	}
-	c.Border(box, ColAccent)
-	c.Label(box.X+6, box.Y+4, "Drag to pan · scroll to zoom", ColTextDim)
-
-	// Interaction: wheel zooms, drag pans; both clamp via the setters and re-fit
-	// the live courtroom by invalidating the geometry cache.
-	if c.hovering(box) && c.wheelY != 0 {
-		c.wheelTaken = true
-		a.d.Prefs.SetThemeFitZoom(a.d.Prefs.ThemeZoom() + int(c.wheelY)*5)
-		a.invalidateThemeCanvases()
-	}
-	if c.hovering(box) && c.mouseDown && !a.themeFitDrag {
-		a.themeFitDrag = true
-		a.themeFitDragStart = [2]int32{c.mouseX, c.mouseY}
-		px, py := a.d.Prefs.ThemePan()
-		a.themeFitDragBase = [2]int{px, py}
-	}
-	if a.themeFitDrag {
-		if !c.mouseDown {
-			a.themeFitDrag = false
-		} else if box.W > 0 && box.H > 0 {
-			dx := int(c.mouseX-a.themeFitDragStart[0]) * 100 / int(box.W)
-			dy := int(c.mouseY-a.themeFitDragStart[1]) * 100 / int(box.H)
-			a.d.Prefs.SetThemeFitPan(a.themeFitDragBase[0]+dx, a.themeFitDragBase[1]+dy)
-			a.invalidateThemeCanvases()
-		}
-	}
-}
-
-// drawSettingsAssets: predictive prefetch, the missing-sprite placeholder, local
-// mounts, the opt-in downloader, and the cache browser/actions. Format probing
-// and the learned-format tools moved to the Formats tab (settingsformats.go).
-// prefetchAggroLabel names the predictive-prefetch level (#100) for the slider readout.
-func prefetchAggroLabel(n int) string {
-	switch n {
-	case 1:
-		return "Conservative (1 sprite)"
-	case 2:
-		return "Balanced (2 sprites)"
-	case 3:
-		return "Eager (3 sprites)"
-	default:
-		return "Aggressive (4 sprites)"
-	}
-}
-
-func (a *App) drawSettingsAssets(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-
-	// Pointer, not a duplicate: every format control (which file types are asked
-	// for, the per-server profile, autodetect, fallbacks, the learned-format
-	// tools) now lives on the Formats tab. Keeping a second copy here is what
-	// scattered them in the first place.
-	y = a.settingsSection(y, w, "Image & audio formats")
-	y = a.settingsDesc(pad, y, "Art or sounds not loading on a server? The controls that decide which file type AsyncAO asks for — including the one-click fix for the server you're on — moved to their own tab.", ColTextDim)
-	y += 6
-	y = a.formatsTabPointer(y)
-
-	y = a.settingsSection(y, w, "Predictive prefetch")
-	c.LabelClipped(pad, y, w-pad-scrollBarW, "How many of the next sprites AsyncAO guesses ahead and warms while you chat — higher means snappier sprite swaps but more speculative downloading.", ColTextDim)
-	y += 22
-	aggro := int32(a.d.Prefs.PrefetchAggressiveness())
-	c.Label(pad, y+4, "Level:", ColText)
-	if nv := c.Slider("prefetchaggro", sdl.Rect{X: pad + 70, Y: y, W: 200, H: btnH}, aggro, 4); nv != aggro {
-		if nv < 1 {
-			nv = 1
-		}
-		a.d.Prefs.SetPrefetchAggressiveness(int(nv))
-		if a.room != nil && a.room.Predictor != nil {
-			a.room.Predictor.SetAggressiveness(int(nv)) // apply live to the running predictor
-		}
-	}
-	c.Label(pad+285, y+4, prefetchAggroLabel(a.d.Prefs.PrefetchAggressiveness()), ColAccent)
-	y += 30
-
-	// (Image formats + desk-format policy moved to the Power user tab.)
-
-	// #127 full-character bundle prefetch (default OFF): pre-grab a character's whole sprite
-	// set on load so emote switches are instant — speculative + low priority, so it sheds
-	// under load and never blocks live fetches (it uses more bandwidth + cache up front).
-	bundle := a.d.Prefs.CharBundlePrefetchOn()
-	if next := c.Checkbox(pad, y, "Preload a character's whole sprite set (OFF by default): grabs every emote up front so switching is instant — speculative, low-priority, more bandwidth", bundle); next != bundle {
-		a.d.Prefs.SetCharBundlePrefetch(next)
-	}
-	y += 28
-
-	// #128 connection-quality chip: a tiny signal-bar icon (bottom-left) showing the server
-	// round-trip time, with the exact ms on hover. Off by default → no ping loop runs.
-	pingChip := a.d.Prefs.PingChipOn()
-	if next := c.Checkbox(pad, y, "Connection ping chip (OFF by default): a tiny signal-bar icon (bottom-left); hover it for the exact ms", pingChip); next != pingChip {
-		a.d.Prefs.SetPingChip(next)
-	}
-	y += 28
-
-	// Missing-asset chip: opt-in (default OFF). The failures always reach the
-	// debug log; this only governs the count chip in the menu bar (GH #27 —
-	// the old red banner it replaced is gone, so the label must not promise one).
-	showWarn := a.d.Prefs.AssetWarningsOn()
-	if next := c.Checkbox(pad, y, "Show missing-asset warnings (OFF by default): a count chip in the menu bar — click it for Debug ▸ Log", showWarn); next != showWarn {
-		a.d.Prefs.SetAssetWarnings(next)
-	}
-	y += 28
-
-	// Loop preanimations (OFF by default): non-canonical. AO2 plays a preanim once
-	// and settles into talk/idle; ON keeps it wrapping while it's on stage.
-	loopPre := a.d.Prefs.LoopPreanimOn()
-	if next := c.Checkbox(pad, y, "Loop preanimations (OFF by default): keep a preanim wrapping while it's on stage — AO2 plays them once", loopPre); next != loopPre {
-		a.d.Prefs.SetLoopPreanim(next)
-	}
-	y += 28
-
-	// Missing-sprite placeholder (missingno) — the AO2 "placeholder" for a
-	// character sprite whose whole fallback chain 404'd. Lives HERE (moved from
-	// Power User in v1.70.1 — this is where people look for it). Distinct from
-	// the still-loading hold: this fires ONLY once there is nothing left to
-	// fetch, so it never flashes over a sprite that's merely streaming.
-	y = a.settingsSection(y, w, "Missing sprites (missingno)")
-	mno := a.d.Prefs.ShowMissingPlaceholderOn()
-	if next := c.Checkbox(pad, y, "Show a placeholder for missing character sprites (like AO2's \"missingno\")", mno); next != mno {
-		a.d.Prefs.SetShowMissingPlaceholder(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "On (default): when a character's idle/talk sprite can't be found at all (every spelling and format 404'd), the stage shows a distinct placeholder image instead of holding the previous character. Off: the previous sprite stays (or the stage goes blank), exactly as before. Only fires once nothing is left to fetch — a still-downloading sprite never shows it.", ColTextDim)
-	y += 6
-	// Custom placeholder image path: TextField + Apply, with an inline error label
-	// on a bad path. The load runs OFF-THREAD (rule §17.2); Apply re-triggers it.
-	c.Label(pad, y+4, "Custom image:", ColText)
-	if !settings.errorSpriteLoaded {
-		settings.errorSpriteInput = a.d.Prefs.ErrorSpritePath()
-		settings.errorSpriteLoaded = true
-	}
-	var esCommit bool
-	settings.errorSpriteInput, esCommit = c.TextField("errorsprite", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH},
-		settings.errorSpriteInput, "path to a PNG/WebP/GIF/APNG/JPG (blank = built-in missingno)")
-	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || esCommit {
-		raw := strings.TrimSpace(settings.errorSpriteInput)
-		a.d.Prefs.SetErrorSpritePath(raw)
-		a.errorSpriteErr = ""   // clear a stale error; the load reports fresh via pollErrorSprite
-		a.applyErrorSprite(raw) // "" restores the embedded default synchronously
-		if raw == "" {
-			settings.statusLine = "Custom missing-sprite image cleared — using the built-in placeholder."
-		} else {
-			settings.statusLine = "Loading custom missing-sprite image…"
-		}
-	}
-	y += 30
-	if a.errorSpriteErr != "" {
-		c.LabelClipped(pad+130, y, w-pad-130-scrollBarW, "Couldn't load that image: "+a.errorSpriteErr+" — using the built-in placeholder.", ColDanger)
-		y += 22
-	}
-	y = a.settingsDesc(pad, y, "Optional: replace the built-in glitch placeholder with your own image (a PNG, WebP, GIF, APNG or JPG). Loaded in the background; if the file can't be read or decoded it's ignored and the built-in one stays. Leave blank for the default.", ColTextDim)
-	y += 10
-
-	// (The per-type audio-format fallbacks moved to the Formats tab, with the
-	// image ones — they are the same control for a different asset class.)
-
-	y = a.settingsSection(y, w, "Asset source")
-	y = a.drawAssetSourceSettings(y, w)
-
-	y = a.settingsSection(y, w, "Downloader")
-	// Built-in single-asset downloader (opt-in).
-	y = a.drawDownloaderSettings(y, w)
-
-	y = a.settingsSection(y, w, "Cache")
-	// Cache browser: live tier stats, T3 size on demand, open-in-Explorer.
-	t2 := a.d.Manager.T2Stats()
-	hitPct := 0.0
-	if total := t2.Hits + t2.Misses; total > 0 {
-		hitPct = float64(t2.Hits) / float64(total) * 100
-	}
-	c.Label(pad, y, fmt.Sprintf("Memory cache (T2): %d entries · %.1f / %.0f MiB · %.0f%% hit rate · %d evictions",
-		t2.Entries, float64(t2.Bytes)/(1<<20), float64(t2.Budget)/(1<<20), hitPct, t2.Evictions), ColTextDim)
-	y += 24
-	zstdOn := a.d.Prefs.DiskZstdEnabled()
-	if next := c.Checkbox(pad, y, "Compress disk cache with zstd (new writes only; smaller T3, tiny CPU on hits — old blobs always read fine)", zstdOn); next != zstdOn {
-		a.d.Prefs.SetDiskZstd(next)
-		a.d.Manager.SetDiskCompression(next)
-	}
-	y += 26
-	// #34: opt-in T3 byte-budget auto-prune. DEFAULT 0 = unlimited (far-left of
-	// the track) — T3's unboundedness is a deliberate spec exception, so an
-	// update never silently deletes a cache. Past a positive cap the writer
-	// goroutine sweeps the OLDEST blobs. The slider step keeps values round.
-	c.Label(pad, y+4, "Disk cache size limit:", ColText)
-	dcb := a.d.Prefs.DiskCacheBudgetMiB()
-	dcbTrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	ndcb := int(clampI32(c.Slider("diskcachebudget", dcbTrack, int32(dcb), config.DiskCacheBudgetMaxMiB), 0, config.DiskCacheBudgetMaxMiB))
-	if ndcb != 0 { // snap positive values to a coarse grid and pull sub-minimum up to the floor
-		ndcb = (ndcb / diskCacheBudgetStepMiB) * diskCacheBudgetStepMiB
-		if ndcb < config.DiskCacheBudgetMinMiB {
-			ndcb = config.DiskCacheBudgetMinMiB
-		}
-	}
-	c.Tooltip(dcbTrack, "Cap the on-disk asset cache (T3). Far LEFT = unlimited (default — nothing is ever auto-deleted). Set a limit and the OLDEST assets auto-delete once the cache grows past it.")
-	dcbLabel := "unlimited (default)"
-	if ndcb != 0 {
-		dcbLabel = diskCacheBudgetLabel(ndcb)
-	}
-	c.Label(pad+200+236, y+4, dcbLabel, ColTextDim)
-	if ndcb != dcb {
-		a.d.Prefs.SetDiskCacheBudgetMiB(ndcb)
-		a.d.Manager.SetDiskBudget(int64(a.d.Prefs.DiskCacheBudgetMiB()) << 20) // live; writer prunes on next sweep
-	}
-	y += 28
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Measure disk cache") {
-		measureDiskCacheAsync(a.d.Manager.DiskRoot())
-	}
-	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 170, H: btnH}, "Open cache folder") {
-		if root := a.d.Manager.DiskRoot(); root != "" {
-			// Fire-and-forget Explorer launch; never blocks the frame.
-			_ = exec.Command("explorer.exe", root).Start()
-		}
-	}
-	y += 32
-
-	// Cache actions. (The learned-format buttons that used to sit on this row —
-	// clear / export / import, and "Fix stuck images" — moved to the Formats tab:
-	// they are format state, not cache state, and splitting them across two tabs
-	// is why nobody could find either half.)
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Clear disk cache") {
-		if err := a.d.Manager.ClearDisk(); err != nil {
-			settings.statusLine = "Clear failed: " + err.Error()
-		} else {
-			settings.statusLine = "Disk cache cleared."
-		}
-	}
-	// Retry-missing: the manual half of the session miss memory. The client stops
-	// asking for an asset once it has probed every format of it and come up empty,
-	// which is what keeps it from re-404ing the server every couple of seconds
-	// forever; that answer is otherwise only revisited on a reconnect or a folder
-	// change, so a server that uploads the missing files mid-session needs a way
-	// to say so without one.
-	missCount := a.d.Manager.ConclusiveMissCount()
-	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, "Retry missing assets") {
-		a.d.Manager.ForgetConclusiveMisses()
-		a.d.Manager.ForgetNotFound() // the network 404 LRU + local miss memo
-		if a.d.Store != nil {        // nil only in headless tests
-			a.d.Store.ForgetMissing() // the render side's copy, or the viewport keeps drawing placeholders
-		}
-		settings.statusLine = "Will look for " + strconv.Itoa(missCount) + " missing asset(s) again."
-	}
-	c.Tooltip(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, "Look again for assets this server didn't have. Use it if files were added while you were connected. Reconnecting does the same thing.")
-	y += 30
-	c.Label(pad, y, "\"Clear disk cache\" wipes the on-disk asset cache (T3); assets re-download fresh on next use.", ColTextDim)
-	y += 18
-	c.Label(pad, y, "\"Retry missing assets\" asks again for the "+strconv.Itoa(missCount)+" asset(s) this session found the server doesn't have.", ColTextDim)
-	y += 18
-	c.Label(pad, y, "Recommended after a server that's behind Cloudflare / a CDN updates its assets: otherwise the CDN —", ColTextDim)
-	y += 18
-	c.Label(pad, y, "or your cache — can keep serving the OLD file, so you'd see the wrong (outdated) version. Worth keeping", ColTextDim)
-	y += 18
-	c.Label(pad, y, "in mind if a character or background looks stale right after a server update.", ColTextDim)
-	y += 30
-
-	return y
-}
-
-// drawSettingsReset is the dedicated Reset tab: the factory-reset launcher, moved
-// out of the Assets tab into its own section so it stands alone and isn't a
-// misclick risk among other controls (playtest: factory reset wanted a section of
-// its own, and the settings wanted splitting up).
-func (a *App) drawSettingsReset(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-	y = a.settingsSection(y, w, "Reset")
-	c.Label(pad, y, "Reset the settings page, or wipe everything (favourites, logins, data, cache).", ColTextDim)
-	y += 26
-	// Factory reset: opens a pop-up offering settings-only or a full wipe.
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 220, H: btnH}, "Reset to defaults…") {
-		a.showReset = true
-	}
-	y += 34
-	return y
-}
-
-// drawResetConfirm is the factory-reset pop-up: settings-only (keeps your data,
-// logins and cache) or a full wipe (erases everything, fresh-install state). It
-// owns the screen + input while open, so its buttons can't double-fire with the
-// settings widgets underneath.
-func (a *App) drawResetConfirm(w, h int32) {
-	c := a.ctx
-	if c.escPressed { // ESC cancels the confirm (the safe default), like Cancel
-		a.showReset = false
-		return
-	}
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 235})
-	pw, ph := int32(620), int32(300)
-	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
-	c.Fill(panel, ColPanel)
-	c.Border(panel, ColAccent)
-	x, y := panel.X+24, panel.Y+18
-	c.Heading(x, y, "Reset AsyncAO", ColText)
-	y += 40
-
-	c.LabelClipped(x, y, pw-48, "Reset settings — restores the settings page to defaults (scales, volumes,", ColText)
-	y += 18
-	c.LabelClipped(x, y, pw-48, "theme, hotkeys, colours, toggles). KEEPS favourites, wardrobes, servers &", ColTextDim)
-	y += 18
-	c.LabelClipped(x, y, pw-48, "logins, callwords, learned formats, and your disk cache.", ColTextDim)
-	y += 26
-	if c.Button(sdl.Rect{X: x, Y: y, W: pw - 48, H: btnH}, "Reset settings (keep my data, logins & cache)") {
-		a.applyFactoryReset(false)
-	}
-	y += 42
-
-	c.LabelClipped(x, y, pw-48, "Wipe everything — a brand-new install: ALSO erases favourites, wardrobes,", ColDanger)
-	y += 18
-	c.LabelClipped(x, y, pw-48, "servers, logins, callwords, jukebox, notes, and the disk cache. No undo.", ColDanger)
-	y += 26
-	if c.Button(sdl.Rect{X: x, Y: y, W: pw - 48, H: btnH}, "WIPE EVERYTHING — logins, data, cache (no undo)") {
-		a.applyFactoryReset(true)
-	}
-	y += 42
-	if c.Button(sdl.Rect{X: x, Y: y, W: 120, H: btnH}, "Cancel") {
-		a.showReset = false
-	}
-}
-
-// applyFactoryReset resets preferences (settings-only or full wipe), clears the
-// disk cache on a full wipe, then re-applies the derived UI state and refreshes
-// the lobby so the change is visible immediately.
-func (a *App) applyFactoryReset(wipeAll bool) {
-	if wipeAll {
-		a.d.Prefs.ResetAll()
-		_ = a.d.Manager.ClearDisk()
-		a.d.Resolver.InvalidateAll()
-		if a.juke != nil {
-			a.juke.Clear() // the jukebox library lives in its own file — wipe it too
-		}
-		if a.notebook != nil {
-			a.notebook.Clear() // empty + stop its flush before deleting the files
-		}
-		_ = config.WipeNotebooks() // per-server case notes live in their own dir
-		a.warnLine = "Everything wiped — fresh-install state."
-	} else {
-		a.d.Prefs.ResetSettings()
-		a.warnLine = "Settings reset to defaults."
-	}
-	a.applyPrefsToState()
-	// RefreshServers deliberately PRESERVES ping state now (the on-open
-	// auto-refresh funnels through it), so a factory reset clears it here
-	// explicitly — an ephemeral sort mode + RTT cache must not outlive
-	// "fresh-install state". The gen bump discards an in-flight sweep.
-	a.pings, a.pingMode, a.pinging = nil, false, false
-	a.pingGen++
-	a.RefreshServers() // favourites/master re-merge
-	a.showReset = false
-	a.warnAt = time.Now()
-}
-
-// applyPrefsToState re-pulls the App-cached values derived from preferences —
-// the subset NewApp seeds — so a reset (or import) takes effect without a
-// restart. Not a hot path.
-func (a *App) applyPrefsToState() {
-	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
-	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
-	a.oocPct = a.d.Prefs.OOCScale()
-	a.uiScalePct = a.d.Prefs.UIScale()
-	a.ctx.SetUIScale(a.UIScale())
-	a.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
-	a.refreshCharKeys()
-	a.applyThemeAsync()
-	a.applyAudioVolumes()
-	if a.room != nil {
-		a.applyTimingToRoom()
-		a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
-		a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
-		a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn()
-	}
-}
-
-// drawSettingsAudio: per-channel volumes (master/music/SFX/blip/alert) and music
-// ducking. Split out of the old combined Audio & Chat tab so audio settings stand
-// on their own (playtest: audio and chat did not belong in one group).
-func (a *App) drawSettingsAudio(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-	y = a.settingsSection(y, w, "Volume")
-	// Volumes save PER SERVER while you're connected to one, so muting blips (or
-	// anything) on one server leaves the others untouched — each tab keeps its own.
-	// Edited from the lobby they set the global default new servers start from.
-	if a.serverName != "" {
-		c.Label(pad, y, "Saved for this server ("+a.serverName+") — each tab keeps its own volumes; a channel you never touch follows the global default.", ColTextDim)
-		y += 22
-	}
-	em, emu, es, eb := a.effectiveVolumes()
-	nm := a.volumeRow(y, "Master volume", em) // scales everything; also on the Extras box
-	y += 30
-	nmu := a.volumeRow(y, "Music volume", emu)
-	y += 26
-	ns := a.volumeRow(y, "SFX volume", es)
-	y += 26
-	nb := a.volumeRow(y, "Blip volume", eb)
-	y += 26
-	if nm != em || nmu != emu || ns != es || nb != eb {
-		a.setEffectiveVolumes(nm, nmu, ns, nb) // per-server when connected, else global
-	}
-	// Callword/friend ping volume — its OWN control, independent of SFX (so a quiet
-	// SFX mix or the SFX mute never silences your name-pings) and global (alerts
-	// should reach you the same on every server).
-	if av := a.volumeRow(y, "Callword/alert volume", a.d.Prefs.AlertVolume()); av != a.d.Prefs.AlertVolume() {
-		a.d.Prefs.SetAlertVolume(av)
-		a.applyAudioVolumes()
-	}
-	y += 32
-	// Music ducking (off by default): dip the music while a message plays.
-	duck := a.d.Prefs.MusicDucking()
-	if next := c.Checkbox(pad, y, "Duck music while someone talks (lower music during a message so dialogue stays clear)", duck); next != duck {
-		a.d.Prefs.SetMusicDucking(next)
-	}
-	y += 28
-	// Custom /play music streaming (ON by default): fetch and play /play tracks.
-	// OFF stops AsyncAO downloading any custom music — including your OWN plays,
-	// which go silent for you (they still play for everyone else).
-	stream := a.d.Prefs.MusicStreamingOn()
-	if next := c.Checkbox(pad, y, "Stream custom /play music (off stops fetching /play tracks — including your own, which go silent for you)", stream); next != stream {
-		a.applyMusicStreaming(next) // persists + re-syncs the room + stops playback on OFF
-	}
-	y += 28
-	// Cross-tab music continuity (default OFF): music never stops on a server-tab
-	// switch — it keeps playing and is ducked to silence by default so tabs stay
-	// acoustically isolated (switching back restores it in sync). ON keeps a
-	// backgrounded tab's music AUDIBLE while you browse another tab that has none.
-	across := a.d.Prefs.MusicAcrossTabsOn()
-	if next := c.Checkbox(pad, y, "Keep music playing (audible) across server tabs (off = keep it playing but silent while backgrounded)", across); next != across {
-		// Both directions act immediately. ON un-wedges a backgrounded stream: it
-		// clears BOTH silencers (the duck AND the delivery-await latch) and re-applies
-		// volumes, so it works even when the stream is stuck behind a never-arriving
-		// await. OFF re-ducks an audible background stream on the spot — the label
-		// promises "silent while backgrounded" and the flip is the yank request
-		// (ducked, not stopped: the position keeps advancing). See
-		// applyMusicAcrossTabs.
-		a.applyMusicAcrossTabs(next)
-	}
-	y += 28
-
-	y = a.settingsSection(y, w, "Blips")
-	rate, onSpaces := a.d.Prefs.BlipTyping()
-	if v := a.sliderRow(y, "Blip rate (1 blip / N letters)", rate, 1, config.MinBlipRate, config.MaxBlipRate); v != rate {
-		a.d.Prefs.SetBlipTyping(v, onSpaces)
-		a.applyTimingToRoom() // applies from the next message
-	}
-	c.LabelClipped(pad+300, y+4, w-pad-300-scrollBarW, "2 = Ace Attorney style · 1 = every letter", ColTextDim)
-	y += 30
-	if next := c.Checkbox(pad, y, "Blip on spaces too (off = skip whitespace, like Ace Attorney)", onSpaces); next != onSpaces {
-		a.d.Prefs.SetBlipTyping(rate, next)
-		a.applyTimingToRoom()
-	}
-	y += 28
-	return y
-}
-
-// drawSettingsChat: message timing, typing, casing alerts, callwords, plus the
-// friends / ignore / DND / music-history / mod sections — everything from the old
-// Audio & Chat tab except the volumes (now their own Audio tab).
-func (a *App) drawSettingsChat(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-
-	y = a.settingsSection(y, w, "Group chat")
-	gcBtn := a.d.Prefs.GroupChatButtonOn()
-	if next := c.Checkbox(pad, y, "Show the Group Chat button in the courtroom (ON by default): a main button to open DMs & group chats with other AsyncAO players. It's always in Extras → Group Chat too.", gcBtn); next != gcBtn {
-		a.d.Prefs.SetGroupChatButton(next)
-	}
-	y += 30
-
-	y = a.settingsSection(y, w, "Text & typing")
-	// Hold-to-clear: hold a key (default Backspace, rebindable) to wipe a text
-	// box at once instead of deleting char-by-char.
-	hcOn, hcKey, hcMs := a.d.Prefs.HoldClear()
-	if next := c.Checkbox(pad, y, "Hold a key to clear a text box (a fast wipe — no holding backspace char-by-char)", hcOn); next != hcOn {
-		a.d.Prefs.SetHoldClearOn(next)
-	}
-	y += 28
-	if hcOn {
-		c.Label(pad+16, y+4, "Clear key:", ColTextDim)
-		keyLabel := hcKey
-		if a.holdKeyArmed {
-			keyLabel = "press a key…  (Esc cancels)"
-		}
-		if c.Button(sdl.Rect{X: pad + 96, Y: y, W: 200, H: btnH}, keyLabel) {
-			a.holdKeyArmed = !a.holdKeyArmed
-		}
-		if a.holdKeyArmed && c.keyPressed != 0 {
-			if c.keyPressed != sdl.K_ESCAPE {
-				a.d.Prefs.SetHoldClearKey(sdl.GetKeyName(c.keyPressed))
-			}
-			a.holdKeyArmed = false
-			c.keyPressed = 0 // consume — don't let the captured key act elsewhere
-		}
-		y += btnH + 6
-		if next := a.sliderRow(y, "  Hold time (ms)", hcMs, 100, config.MinHoldClearMs, config.MaxHoldClearMs); next != hcMs {
-			a.d.Prefs.SetHoldClearMs(next)
-		}
-		c.Label(pad+270, y+4, "how long to hold before it clears (default 1.5 s)", ColTextDim)
-		y += 30
-	}
-
-	// Word delete (ON by default): Ctrl+Backspace removes the whole preceding
-	// word instead of one letter — the standard editor chord. Off restores
-	// plain-key behavior (Ctrl+Backspace does nothing inside a field).
-	wdOn := a.d.Prefs.WordDeleteOn()
-	if next := c.Checkbox(pad, y, "Ctrl+Backspace deletes a word", wdOn); next != wdOn {
-		a.d.Prefs.SetWordDelete(next)
-	}
-	y += 24
-	c.Label(pad+16, y, "In any text box. Off restores plain-key behavior.", ColTextDim)
-	y += 22
-
-	// Message timing (AO2-Client options.ini parity); applies live. Plain
-	// descriptions beside each knob so they're self-explanatory.
-	c.Label(pad, y, "Text speed — how the IC chatbox plays messages:", ColTextDim)
-	y += 20
-	crawl, stay, rate := a.d.Prefs.Timing()
-	crawl = a.sliderRow(y, "Text crawl ms", crawl, 5, config.MinTextCrawlMs, config.MaxTextCrawlMs)
-	c.Label(pad+270, y+4, "delay between letters (higher = slower, easier to read)", ColTextDim)
-	y += 26
-	stay = a.sliderRow(y, "Text stay ms", stay, 100, 0, config.MaxTextStayMs)
-	c.Label(pad+270, y+4, "pause after a message finishes before the next plays", ColTextDim)
-	y += 26
-	rate = a.sliderRow(y, "Chat limit ms", rate, 100, 0, config.MaxChatRateLimitMs)
-	c.Label(pad+270, y+4, "smallest gap between YOUR sent messages (anti-spam)", ColTextDim)
-	y += 30
-	if c0, s0, r0 := a.d.Prefs.Timing(); c0 != crawl || s0 != stay || r0 != rate {
-		a.d.Prefs.SetTiming(crawl, stay, rate)
-		a.applyTimingToRoom()
-	}
-
-	// Packed-room catch-up vs. the OG-client queue. ON (default) = webAO pacing:
-	// when 20 people talk at once, backlog messages skip their animations so the
-	// stage tracks real-time. OFF = the original AO2 client's queue — every line
-	// plays in full and in order, nothing cut off, but a room full of webAO users
-	// (who skip the queue) can leave you behind. The log keeps every line either
-	// way. (This is the "message queue" toggle — it was a setting, not removed.)
-	cuOn, cuThresh := a.d.Prefs.CatchUp()
-	const cuLabel = "Catch up in packed rooms — uncheck for the OG-client queue (every line plays in full, nothing cut off)"
-	if next := c.Checkbox(pad, y, cuLabel, cuOn); next != cuOn {
-		a.d.Prefs.SetCatchUp(next, cuThresh)
-		a.applyTimingToRoom()
-	}
-	c.Tooltip(sdl.Rect{X: pad, Y: y, W: 22 + c.TextWidth(cuLabel), H: 16},
-		"On (default): in a packed room, queued messages skip their animations so chat stays at real-time — like webAO. Off: the original AO2 client's queue — every IC message plays in full and in order (nothing cut off), but a roomful of webAO users can leave you minutes behind. The IC log keeps every line either way.")
-	y += 26
-	c.Label(pad+22, y, "Checked (default): webAO pacing — in a busy room, backlog messages skip their animation to keep chat current (they can flash past).", ColTextDim)
-	y += 18
-	c.Label(pad+22, y, "Unchecked: the original AO2 client's queue — every message plays out in full and in order, nothing skipped (busy webAO rooms may lag you).", ColTextDim)
-	y += 22
-	if cuOn {
-		nt := a.numberRow(y, "Catch up after", cuThresh, 1, 1, 50)
-		c.Label(pad+270, y+4, "fast-forward once at least this many messages are waiting (1 = stay on the newest)", ColTextDim)
-		if nt != cuThresh {
-			a.d.Prefs.SetCatchUp(cuOn, nt)
-			a.applyTimingToRoom()
-		}
-		y += 30
-	}
-	// Message-send extras — lived in General → Display & behaviour; moved here
-	// on playtest feedback (Tifera: the messaging settings belong in Chat). They
-	// shape the messages you TYPE, so they belong with text & typing.
-	re := a.d.Prefs.RandomEmoteOn()
-	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {
-		a.d.Prefs.SetRandomEmote(next)
-	}
-	y += 26
-	rmc := a.d.Prefs.RandomMessageColorOn()
-	if next := c.Checkbox(pad, y, "Random colour for each IC message (OFF by default): every message you send picks a random text colour — everyone sees it (standard colour field)", rmc); next != rmc {
-		a.d.Prefs.SetRandomMessageColor(next)
-	}
-	y += 26
-	rbw := a.d.Prefs.RainbowMessagesOn()
-	if next := c.Checkbox(pad, y, "Rainbow IC messages (OFF by default): your text cycles the palette per letter (takes priority over random; renders on clients that read inline \\cr colour)", rbw); next != rbw {
-		a.d.Prefs.SetRainbowMessages(next)
-	}
-	y += 26
-	// #14 2.8 additive text (ON by default): honor an incoming ADDITIVE=1 line
-	// (it appends to the previous message, mirroring AO2's additive_previous) and
-	// offer the Additive checkbox on servers that advertise it. Off falls back to
-	// the pre-2.8 replace behavior.
-	add := a.d.Prefs.AdditiveTextOn()
-	if next := c.Checkbox(pad, y, "Additive text (ON by default): let a message add to the previous one instead of replacing it (2.8 narration RP) — shows the Additive checkbox on servers that support it", add); next != add {
-		a.d.Prefs.SetAdditiveText(next)
-		if a.room != nil {
-			a.room.AdditiveText = next // apply live
-		}
-	}
-	y += 26
-
-	y = a.settingsSection(y, w, "Chat log")
-	// IC log depth (Nightingale's report): how many IC lines the on-screen log
-	// keeps before the oldest scrolls away. Type an exact number, or press ∞ to
-	// never cap it.
-	c.Label(pad, y+4, "IC log depth:", ColText)
-	depth := a.d.Prefs.ICLogDepth()
-	depthFieldID := "iclogdepth"
-	depthField := sdl.Rect{X: pad + 150, Y: y, W: 64, H: fieldH}
-	if c.focusID != depthFieldID {
-		switch depth {
-		case config.ICLogDepthUnlimited:
-			settings.logDepthBuf = ""
-		case 0:
-			settings.logDepthBuf = strconv.Itoa(icLogCap)
-		default:
-			settings.logDepthBuf = strconv.Itoa(depth)
-		}
-	}
-	var depthEntered bool
-	settings.logDepthBuf, depthEntered = c.TextField(depthFieldID, depthField, settings.logDepthBuf, "lines")
-	if depthEntered {
-		if n, err := strconv.Atoi(strings.TrimSpace(settings.logDepthBuf)); err == nil && n > 0 {
-			a.d.Prefs.SetICLogDepth(n)
-		} else {
-			a.d.Prefs.SetICLogDepth(0) // blank / garbage → back to the default
-		}
-		c.focusID = ""
-	}
-	c.Tooltip(depthField, "How many IC lines the on-screen log keeps before the oldest scrolls away. Type an exact number, or press ∞ to never cap it.")
-	depthInf := sdl.Rect{X: depthField.X + depthField.W + 6, Y: y, W: 28, H: btnH}
-	if depth == config.ICLogDepthUnlimited {
-		c.Fill(sdl.Rect{X: depthInf.X - 2, Y: depthInf.Y - 2, W: depthInf.W + 4, H: depthInf.H + 4}, ColAccent)
-	}
-	if c.Button(depthInf, "∞") {
-		if depth == config.ICLogDepthUnlimited {
-			a.d.Prefs.SetICLogDepth(0)
-		} else {
-			a.d.Prefs.SetICLogDepth(config.ICLogDepthUnlimited)
-		}
-	}
-	c.Tooltip(depthInf, "Don't cap at all: keep every IC line for the whole session.")
-	depthLbl := "default (" + strconv.Itoa(icLogCap) + " lines)"
-	if depth == config.ICLogDepthUnlimited {
-		depthLbl = "don't cap"
-	} else if depth > 0 {
-		depthLbl = strconv.Itoa(depth) + " lines"
-	}
-	c.Label(depthInf.X+depthInf.W+8, y+4, depthLbl, ColAccent)
-	y += 28
-
-	// Per-area IC scrollback (opt-in): each visited area keeps its own log.
-	areaScroll := a.d.Prefs.PerAreaScrollbackOn()
-	if next := c.Checkbox(pad, y, "Per-area chat scrollback (OFF by default): each area keeps its own IC log; switches when you click an area in the Areas list", areaScroll); next != areaScroll {
-		a.d.Prefs.SetPerAreaScrollback(next)
-	}
-	y += 26
-	// Detailed transcript logging (opt-OUT since the 2026-08-09 flip — every other
-	// AO client saves the log, and people only discover they wanted it afterwards).
-	// Existing configs are moved once by DetailedLogDefaultMigrated; turning it back
-	// off here sticks forever.
-	detLog := a.d.Prefs.DetailedLogOn()
-	if next := c.Checkbox(pad, y, "Save the chat log to disk (ON by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
-		a.d.Prefs.SetDetailedLog(next)
-	}
-	y += 26
-	// Ghost text (Crystalwarrior's ask): the tail of a message the typewriter has
-	// not reached yet is drawn transparent instead of absent, so the line keeps its
-	// final shape and the log stops reflowing under the reader on every rune.
-	ghost := a.d.Prefs.GhostCrawlTextOn()
-	if next := c.Checkbox(pad, y, "Ghost the text a message hasn't typed out yet (ON by default): the rest of the line shows faintly while it crawls, instead of the log growing a word at a time", ghost); next != ghost {
-		a.d.Prefs.SetGhostCrawlText(next)
-	}
-	y += 26
-	// Auto-clip on modcall (opt-out): save the recent IC log when a modcall fires.
-	clipMod := a.d.Prefs.AutoClipModcallOn()
-	if next := c.Checkbox(pad, y, "Auto-clip on modcall (ON by default): when a mod is called, save the last IC lines to logs/<server>/modcalls/ as evidence", clipMod); next != clipMod {
-		a.d.Prefs.SetAutoClipModcall(next)
-	}
-	y += 26
-	// Show the full song URL in the "has played a song" log line instead of just
-	// the name (a song's link, on request).
-	songURL := a.d.Prefs.ShowSongURLOn()
-	if next := c.Checkbox(pad, y, "Show the full song URL in the music log line (OFF by default): the whole link instead of just the song name", songURL); next != songURL {
-		a.d.Prefs.SetShowSongURL(next)
-	}
-	y += 26
-	// Smooth log scrolling (OFF by default = AO2 parity). The default snaps the log
-	// to a newly-arrived line the instant it lands, exactly as AO2-Client does;
-	// turning this on brings back the glide. It governs the FOLLOW only — the wheel
-	// and the scrollbar keep their own easing either way.
-	const smoothLogLabel = "Smooth log scrolling (OFF by default): when a new IC message arrives the log jumps straight to it, like AO2. Turn on to glide instead."
-	smoothLog := a.d.Prefs.SmoothLogScrollOn()
-	if next := c.Checkbox(pad, y, smoothLogLabel, smoothLog); next != smoothLog {
-		a.d.Prefs.SetSmoothLogScroll(next)
-	}
-	c.Tooltip(sdl.Rect{X: pad, Y: y, W: 22 + c.TextWidth(smoothLogLabel), H: 16},
-		"Only the automatic follow — the jump that keeps the newest message in view — is affected. Scrolling with the wheel or the scrollbar is unchanged.")
-	y += 26
-
-	y = a.settingsSection(y, w, "Area list")
-	// Current-area highlight (playtest ask): the row you're in reads coloured
-	// at a glance in the player list + mod dashboard; green by default,
-	// recolourable here (the Extras-box hex convention: blank = default).
-	c.Label(pad, y+4, "Your area's colour:", ColTextDim)
-	areaHex := a.d.Prefs.AreaHighlightColorHex()
-	sw := sdl.Rect{X: pad + 160, Y: y + 1, W: 18, H: 18}
-	c.Fill(sw, a.areaHighlightCol())
-	c.Border(sw, ColTextDim)
-	if next, _ := c.TextField("areahicol", sdl.Rect{X: pad + 186, Y: y, W: 110, H: fieldH}, areaHex, "rrggbb"); next != areaHex {
-		a.d.Prefs.SetAreaHighlightColorHex(next)
-	}
-	wheelLbl := "Wheel…"
-	if a.showAreaWheel {
-		wheelLbl = "Close"
-	}
-	if c.Button(sdl.Rect{X: pad + 306, Y: y - 1, W: 64, H: 22}, wheelLbl) {
-		a.showAreaWheel = !a.showAreaWheel
-	}
-	c.LabelClipped(pad+378, y+4, w-pad-378-scrollBarW, "hex like 4ac96c — blank = the stock green; marks the area you're in", ColTextDim)
-	y += 32
-	if a.showAreaWheel {
-		// The shared inline colour wheel (drawWheelPicker), writing back as hex —
-		// the same value the field above edits. The extra button restores the
-		// stock green (the blank-pref default).
-		hi := a.areaHighlightCol()
-		wheelY := y
-		ny, hx := a.drawWheelPicker(pad, wheelY, int(hi.R)<<16|int(hi.G)<<8|int(hi.B), func(rgb int) {
-			a.d.Prefs.SetAreaHighlightColorHex(fmt.Sprintf("%06x", rgb))
-		})
-		if c.Button(sdl.Rect{X: hx, Y: wheelY + 42, W: 100, H: btnH}, "Stock green") {
-			a.d.Prefs.SetAreaHighlightColorHex("")
-		}
-		y = ny
-	}
-
-	y = a.settingsSection(y, w, "Case alerts")
-	// Case announcements (CASEA, tsuserver-family): subscribe by role.
-	y = a.drawCasingRow(y)
-
-	y = a.settingsSection(y, w, "Callwords")
-	// #203 self-mention: auto-treat your own showname / character name as a
-	// callword (whole-word match, never your own messages) so you're pinged when
-	// addressed by name without adding it manually. Honours the sound/toast/OS
-	// options below and the streamer / DND / login-grace suppressions.
-	ms := a.d.Prefs.MentionSelfOn()
-	if next := c.Checkbox(pad, y, "Alert me when someone says my name (OFF by default): treats your showname + character as callwords, matched as whole words and never on your own lines", ms); next != ms {
-		a.d.Prefs.SetMentionSelf(next)
-	}
-	y += 30
-	// Callwords manager: type a word (or paste "a, b, c") + Add, and each shows
-	// below with a × to remove. Flash + sound + toast fire on an IC/OOC match.
-	c.Label(pad, y+4, "Add word(s):", ColTextDim)
-	var callCommit bool
-	settings.callAddInput, callCommit = c.TextField("callwordadd", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.callAddInput, "your name, nickname… (comma-separates; flash + sound when seen in IC/OOC)")
-	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "+ Add") || callCommit {
-		if n := a.d.Prefs.AddCallWord(settings.callAddInput); n > 0 {
-			settings.callAddInput = ""
-			settings.statusLine = fmt.Sprintf("Added %d callword(s).", n)
-		} else {
-			settings.statusLine = "Nothing added (blank, already listed, or at the 32-word cap)."
-		}
-	}
-	y += 26
-	// §3.5 rule reminder: whole-word match by default, trailing '*' for the loose
-	// prefix shorthand. Kept to one dim line so the manager layout is unchanged.
-	c.Label(pad+130, y, "Matched as whole words — add a trailing * for a loose prefix (e.g. obj* catches \"objection\").", ColTextDim)
-	y += 22
-	if words := a.d.Prefs.CallWords(); len(words) > 0 {
-		for _, w := range words {
-			if c.Button(sdl.Rect{X: pad + 28, Y: y, W: 20, H: 18}, "×") {
-				a.d.Prefs.RemoveCallWord(w)
-			}
-			c.LabelClipped(pad+56, y+1, 320, w, ColText)
-			y += 24
-		}
-	} else {
-		c.Label(pad+28, y+1, "No callwords yet — add your name to get pinged when it's said.", ColTextDim)
-		y += 24
-	}
-	y += 6
-	c.Label(pad, y+4, "Callword sound:", ColTextDim)
-	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.CallwordSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.CallwordSoundPath() {
-		a.d.Prefs.SetCallwordSoundPath(next)
-	}
-	y += 32
-	if c.Button(sdl.Rect{X: pad + 120, Y: y, W: 130, H: btnH}, "Test sound") {
-		// Play exactly what a callword/friend alert fires: the custom file if set,
-		// else the built-in ping — so people can confirm it's actually audible.
-		if f := a.d.Prefs.CallwordSoundPath(); f != "" {
-			a.d.Audio.PlayFile(f)
-		} else {
-			a.d.Audio.PlayAlert()
-		}
-	}
-	c.Label(pad+260, y+6, "play the alert sound now to check it works", ColTextDim)
-	y += 34
-	ct := a.d.Prefs.CallwordToastOn()
-	if next := c.Checkbox(pad, y, "Toast when a callword is heard (ON by default): a popup names the word, like the modcall/friend toasts.", ct); next != ct {
-		a.d.Prefs.SetCallwordToast(next)
-	}
-	y += 26
-	cot := a.d.Prefs.CallwordOSToastOn()
-	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification when AsyncAO is in the background (OFF by default; Windows; rate-limited)", cot); next != cot {
-		a.d.Prefs.SetCallwordOSToast(next)
-	}
-	y += 26
-	cooc := a.d.Prefs.CallwordsOOCOn()
-	if next := c.Checkbox(pad, y, "Check OOC messages for callwords too (OFF by default — IC only; on = also ping on OOC, e.g. someone typing your room ID)", cooc); next != cooc {
-		a.d.Prefs.SetCallwordsOOC(next)
-	}
-	y += 30
-	y = a.settingsSection(y, w, "Do Not Disturb")
-	// Do Not Disturb: session-only by default (clears every launch so it can't
-	// silently kill your callwords days later) — mutes the personal pings only.
-	// The keybind (default Ctrl+D, rebindable on the Controls tab) toggles it too.
-	dndPersist := a.d.Prefs.DNDPersistOn()
-	dndTail := "Clears on restart."
-	if dndPersist {
-		dndTail = "Remembered across restarts (option below)."
-	}
-	dndLabel := "Do Not Disturb (Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyDND)) + ") — mute callword + friend pings (sound/toast/window flash). Modcalls + case alerts still come through. " + dndTail
-	if next := c.Checkbox(pad, y, dndLabel, a.dndOn); next != a.dndOn {
-		a.setDND(next)
-		if next {
-			settings.statusLine = "Do Not Disturb ON — callword + friend pings muted."
-		} else {
-			settings.statusLine = "Do Not Disturb off."
-		}
-	}
-	y += 26
-	if next := c.Checkbox(pad+16, y, "Remember Do Not Disturb across restarts (default off — DND normally clears every launch)", dndPersist); next != dndPersist {
-		a.d.Prefs.SetDNDPersist(next)
-		if next {
-			a.d.Prefs.SetDNDSaved(a.dndOn) // snapshot the current state so it restores correctly
-		}
-	}
-	y += 30
-
-	// AO2's four send-time options, shipped with AsyncAO's defaults. The three
-	// "sticky" ones govern Courtroom::reset_ui (courtroom.cpp:2340, :2348, :2356),
-	// which clears each pick only when the matching option is OFF; AO2 ships all
-	// three ON, AsyncAO ships them OFF so the picks reset after every send (matching
-	// the one-shot Screenshake/Realization arms).
-	y = a.settingsSection(y, w, "Sending a message")
-	y = a.settingsDesc(pad, y, "What the IC bar does to itself after you press Enter. These are Attorney Online's own options, shipped with AsyncAO's defaults (reset after every send).", ColTextDim)
-	y += 6
-	ssnd := a.d.Prefs.StickySoundsOn()
-	if next := c.Checkbox(pad, y, "Sticky sounds (OFF by default): keep the SFX dropdown's pick after sending, instead of returning it to Default", ssnd); next != ssnd {
-		a.d.Prefs.SetStickySounds(next)
-	}
-	y += 26
-	sfxx := a.d.Prefs.StickyEffectsOn()
-	if next := c.Checkbox(pad, y, "Sticky effects (OFF by default): keep the effects dropdown's pick after sending. Off, an effect clears unless it declares itself sticky in effects.ini", sfxx); next != sfxx {
-		a.d.Prefs.SetStickyEffects(next)
-	}
-	y += 26
-	spre := a.d.Prefs.StickyPreanimsOn()
-	if next := c.Checkbox(pad, y, "Sticky preanims (OFF by default): leave the Pre checkbox ticked after sending, instead of clearing it", spre); next != spre {
-		a.d.Prefs.SetStickyPreanims(next)
-	}
-	y += 26
-	soi := a.d.Prefs.SFXOnIdleOn()
-	if next := c.Checkbox(pad, y, "Always send SFX (OFF by default): play a hand-picked sound even with Pre unticked", soi); next != soi {
-		a.d.Prefs.SetSFXOnIdle(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "AO plays a message's sound off its pre-animation stage, so a line sent with Pre unticked is silent at everyone else's client no matter which SFX you picked. On, the message is marked as having a pre-animation with an empty animation name and no delay, which is how the sound gets heard without anything actually playing. This is Attorney Online's own \"Always Send SFX\"; it ships off there too.", ColTextDim)
-	y += 10
-
-	y = a.settingsSection(y, w, "Messages & connection")
-	mc := a.d.Prefs.MessageCounterOn()
-	if next := c.Checkbox(pad, y, "Show a character count by the IC box (ON by default): turns red past ~256 chars, where many servers truncate.", mc); next != mc {
-		a.d.Prefs.SetMessageCounter(next)
-	}
-	y += 26
-
-	ts := a.d.Prefs.ICTimestampsOn()
-	if next := c.Checkbox(pad, y, "Show local timestamps in the IC log (OFF by default): prefixes each line with the time it arrived, so you can see when people spoke.", ts); next != ts {
-		a.d.Prefs.SetICTimestamps(next)
-	}
-	y += 26
-
-	ar := a.d.Prefs.AutoReconnectOn()
-	if next := c.Checkbox(pad, y, "Auto-reconnect after a dropped connection (OFF by default): a drop otherwise returns you to the lobby to click Reconnect. When ON, retries the last server with backoff (which re-runs the join handshake, so you land at character select). A deliberate Disconnect never reconnects; the manual Reconnect button always works.", ar); next != ar {
-		a.d.Prefs.SetAutoReconnect(next)
-	}
-	y += 26
-
-	idc := a.d.Prefs.InstantDisconnectOn()
-	if next := c.Checkbox(pad, y, "Instant disconnect (OFF by default): the Disconnect button asks for confirmation first, since it's easy to hit by accident. Turn this on to disconnect immediately with no prompt.", idc); next != idc {
-		a.d.Prefs.SetInstantDisconnect(next)
-	}
-	y += 26
-
-	acl := a.d.Prefs.AutoConnectOnLaunchOn()
-	lastName, lastURL := a.d.Prefs.LastServer()
-	label := "Auto-connect to my last server on launch (OFF by default): opens straight onto the server you last used, even after a disconnect. Also bound to a Connect-to-last-server key (Controls tab)."
-	if lastURL != "" {
-		label = "Auto-connect on launch to \"" + lastName + "\" (OFF by default): your last server. Reconnect there with the Connect-to-last-server key (Controls tab) too."
-	}
-	if next := c.Checkbox(pad, y, label, acl); next != acl {
-		a.d.Prefs.SetAutoConnectOnLaunch(next)
-	}
-	y += 30
-
-	y = a.settingsSection(y, w, "Sound effects")
-	// M11 per-SFX mute: silence an annoying emote sound effect by name. The
-	// last one you heard gets a one-click toggle; the muted list is below.
-	if a.lastSFXName != "" {
-		on := a.d.Prefs.IsSFXMuted(a.lastSFXName)
-		lbl := "Mute last SFX: " + a.lastSFXName
-		if on {
-			lbl = "Unmute last SFX: " + a.lastSFXName
-		}
-		if c.Button(sdl.Rect{X: pad, Y: y, W: c.TextWidth(lbl) + 20, H: btnH}, lbl) {
-			if on {
-				a.d.Prefs.UnmuteSFX(a.lastSFXName)
-			} else {
-				a.d.Prefs.MuteSFX(a.lastSFXName)
-			}
-		}
-		y += 30
-	} else {
-		c.Label(pad, y+2, "Per-SFX mute: the last emote sound effect you hear gets a one-click Mute button here.", ColTextDim)
-		y += 26
-	}
-	if list := a.d.Prefs.MutedSFXList(); len(list) > 0 {
-		c.Label(pad, y+2, "Muted sound effects (× to unmute):", ColTextDim)
-		y += 22
-		for _, name := range list {
-			if c.Button(sdl.Rect{X: pad + 12, Y: y, W: 20, H: 18}, "×") {
-				a.d.Prefs.UnmuteSFX(name)
-			}
-			c.LabelClipped(pad+40, y+1, 360, name, ColText)
-			y += 24
-		}
-		y += 6
-	}
-
-	// M11 per-character blip volume: quiet a character whose typing blips are
-	// too loud (their scale multiplies the global blip volume; 100% = no
-	// change). The last speaker gets a quick slider; everyone you've adjusted
-	// is listed below with their own slider and a × that resets to 100%.
-	c.Label(pad, y+2, "Per-character blip volume (typing-sound loudness, 100% = unchanged):", ColTextDim)
-	y += 22
-	if a.lastBlipChar != "" {
-		cur := a.d.Prefs.BlipVolumeFor(a.lastBlipChar)
-		if nv := a.volumeRow(y, "Last speaker — "+a.lastBlipChar, cur); nv != cur {
-			a.d.Prefs.SetBlipVolume(a.lastBlipChar, nv)
-		}
-		y += 28
-	} else {
-		c.Label(pad+12, y+1, "The last character to speak gets a quick slider here.", ColTextDim)
-		y += 24
-	}
-	if vols := a.d.Prefs.BlipVolumes(); len(vols) > 0 {
-		names := make([]string, 0, len(vols))
-		for name := range vols {
-			names = append(names, name)
-		}
-		sort.Strings(names) // stable row order (map iteration is random)
-		for _, name := range names {
-			if c.Button(sdl.Rect{X: pad + 12, Y: y, W: 20, H: 18}, "×") {
-				a.d.Prefs.SetBlipVolume(name, 100) // reset to default (100% = unchanged)
-			}
-			c.LabelClipped(pad+40, y+1, 124, name, ColText)
-			track := sdl.Rect{X: pad + 170, Y: y + 1, W: 110, H: 16}
-			if nv := int(c.Slider("blipvol:"+name, track, int32(vols[name]), 100)); nv != vols[name] {
-				a.d.Prefs.SetBlipVolume(name, nv)
-			}
-			c.Label(track.X+track.W+8, y+1, fmt.Sprintf("%3d%%", vols[name]), ColAccent)
-			y += 24
-		}
-		y += 6
-	}
-
-	y = a.settingsSection(y, w, "Music history")
-	// M12: keep a session "recently played" jukebox history (ON by default).
-	mh := a.d.Prefs.MusicHistoryOn()
-	if next := c.Checkbox(pad, y, "Keep a \"recently played\" music history (ON by default): the Jukebox tab lists songs played in the room so you can Save a link (into the \"Music history\" playlist), Play, or Share. Off = don't record.", mh); next != mh {
-		a.d.Prefs.SetMusicHistory(next)
-	}
-	y += 30
-
-	// Domain allowlist for the history: only songs from these "unique" user-hosted
-	// domains are recorded (the server's own music still plays, it's just not
-	// saved). Discord records audio files only. Add/remove like the muted-SFX list.
-	if mh {
-		c.Label(pad+16, y, "Only record songs from these hosts — others still play, just aren't saved. Add a host (catbox.moe), or a host/folder", ColTextDim)
-		y += 18
-		c.Label(pad+16, y, "for a server's user-rip path (e.g. miku.pizza/base/youtube → only songs under it). Discord: audio files only.", ColTextDim)
-		y += 22
-		a.musicHostInput, _ = c.TextField("musichost", sdl.Rect{X: pad + 16, Y: y, W: 240, H: fieldH}, a.musicHostInput, "Host or host/folder (e.g. catbox.moe)…")
-		if c.Button(sdl.Rect{X: pad + 262, Y: y, W: 80, H: btnH}, "+ Add") {
-			if a.d.Prefs.AddMusicHost(a.musicHostInput) {
-				a.musicHostInput = ""
-			} else {
-				a.jukeWarn("Enter a host or host/folder (or it's already listed / at the cap).")
-			}
-		}
-		y += fieldH + 6
-		for _, h := range a.d.Prefs.MusicHostList() {
-			if c.Button(sdl.Rect{X: pad + 28, Y: y, W: 20, H: 18}, "×") {
-				a.d.Prefs.RemoveMusicHost(h)
-			}
-			c.LabelClipped(pad+56, y+1, 320, h, ColText)
-			y += 24
-		}
-		y += 6
-	}
-
-	y = a.settingsSection(y, w, "Friends")
-	// Player-list friend button (ON by default): the per-row "+ Friend" /
-	// "Unfriend" button. Hide it if it clutters the panel.
-	sfb := a.d.Prefs.FriendButtonShown()
-	if next := c.Checkbox(pad, y, "Show the \"+ Friend\" / \"Unfriend\" button on player-list rows (ON by default): one click adds or removes a friend.", sfb); next != sfb {
-		a.d.Prefs.SetShowFriendButton(next)
-	}
-	y += 26
-	// Highlighted friends (per server): shownames whose IC messages glow.
-	fh := a.d.Prefs.FriendHighlightOn()
-	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {
-		a.d.Prefs.SetFriendHighlight(next)
-	}
-	y += 26
-	fgp := a.d.Prefs.FriendGlowPulseOn()
-	if next := c.Checkbox(pad+16, y, "Pulse the friend glow (gentle breathing animation; obeys reduce-motion)", fgp); next != fgp {
-		a.d.Prefs.SetFriendGlowPulse(next)
-	}
-	y += 26
-	fn := a.d.Prefs.FriendNotifyOn()
-	if next := c.Checkbox(pad+16, y, "Notify + flash the taskbar when a friend speaks (fires even from a backgrounded server tab)", fn); next != fn {
-		a.d.Prefs.SetFriendNotify(next)
-	}
-	y += 26
-	fot := a.d.Prefs.FriendOSToastOn()
-	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification — a real Windows toast (rate-limited so it can't storm)", fot); next != fot {
-		a.d.Prefs.SetFriendOSToast(next)
-	}
-	y += 26
-	gio := a.d.Prefs.GroupInviteOSToastOn()
-	if next := c.Checkbox(pad+16, y, "Pop a DESKTOP (OS) notification for a group invite while the window is unfocused (rate-limited)", gio); next != gio {
-		a.d.Prefs.SetGroupInviteOSToast(next)
-	}
-	y += 26
-	fsnd := a.d.Prefs.FriendSoundOn()
-	if next := c.Checkbox(pad+16, y, "Play a sound when a friend speaks", fsnd); next != fsnd {
-		a.d.Prefs.SetFriendSound(next)
-	}
-	y += 26
-	c.Label(pad+16, y+4, "Friend sound:", ColTextDim)
-	if next, _ := c.TextField("friendsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.FriendSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.FriendSoundPath() {
-		a.d.Prefs.SetFriendSoundPath(next)
-	}
-	y += 32
-	if a.serverKey == "" {
-		c.Label(pad, y+4, "Friends: connect to a server to set its highlighted shownames.", ColTextDim)
-		y += 30
-	} else {
-		c.Label(pad, y+4, "Friends:", ColText)
-		if settings.friendKey != a.serverKey { // reload buffer per server
-			settings.friendInput = strings.Join(a.d.Prefs.ServerFriends(a.serverKey), ", ")
-			settings.friendKey = a.serverKey
-		}
-		var friendCommit bool
-		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.friendInput, "showname, showname=ffcc00, showname=ffcc00=Nickname, ... (per server)")
-		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || friendCommit {
-			a.d.Prefs.SetServerFriends(a.serverKey, strings.Split(settings.friendInput, ","))
-			settings.statusLine = "Friends saved for this server."
-		}
-		y += 28
-		c.Label(pad+110, y, "name=RRGGBB sets a custom glow + name colour; name=RRGGBB=Nick adds a personal nickname (shown in the player list). Use name==Nick for a nickname with no colour. No commas in nicknames.", ColTextDim)
-		y += 24
-	}
-
-	y = a.settingsSection(y, w, "Ignored players")
-	if a.serverKey == "" {
-		c.Label(pad, y+4, "Ignored: connect to a server to manage its ignore list.", ColTextDim)
-		y += 30
-	} else {
-		c.Label(pad, y+4, "Ignored:", ColText)
-		if settings.ignoreKey != a.serverKey { // reload buffer per server
-			settings.ignoreInput = strings.Join(a.d.Prefs.ServerIgnored(a.serverKey), ", ")
-			settings.ignoreKey = a.serverKey
-		}
-		var ignoreCommit bool
-		settings.ignoreInput, ignoreCommit = c.TextField("ignored", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.ignoreInput, "showname1, showname2, ... (saved per server)")
-		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || ignoreCommit {
-			a.d.Prefs.SetServerIgnored(a.serverKey, strings.Split(settings.ignoreInput, ","))
-			settings.statusLine = "Ignore list saved for this server."
-		}
-		y += 28
-		c.Label(pad+110, y, "Ignored players' IC + OOC are hidden entirely (no log, no sprite, no blip). Edit here to un-ignore someone who's left. Use the Ignore button on player rows too.", ColTextDim)
-		y += 24
-	}
-
-	y = a.settingsSection(y, w, "Mod tools")
-	// Mod-call desktop toast (for moderators).
-	mct := a.d.Prefs.ModcallToastOn()
-	if next := c.Checkbox(pad, y, "Desktop notification on mod-call (OFF by default): pop a Windows toast when a modcall comes in — for mods who alt-tabbed away", mct); next != mct {
-		a.d.Prefs.SetModcallToast(next)
-	}
-	y += 28
-
-	// Mod-command feedback sounds (#60): a distinct sound on ban/kick/mute —
-	// fires when your own /ban /kick /mute lands in OOC, on mod actions you can
-	// see, and when you personally get kicked/banned. Each action has its own
-	// toggle + optional custom file (blank = the built-in default). A duty
-	// signal, so it plays through Do Not Disturb. Test plays it right now.
-	c.Label(pad, y, "Mod-command SFX — play a sound when a ban / kick / mute happens (blank file = built-in default):", ColTextDim)
-	y += 24
-	type modSFXRow struct {
-		label  string
-		on     bool
-		path   string
-		action render.ModAction
-		setOn  func(bool)
-		setPth func(string)
-	}
-	for _, r := range []modSFXRow{
-		{"Ban", a.d.Prefs.ModBanSFXOn(), a.d.Prefs.ModBanSoundPath(), render.ModBan, a.d.Prefs.SetModBanSFX, a.d.Prefs.SetModBanSoundPath},
-		{"Kick", a.d.Prefs.ModKickSFXOn(), a.d.Prefs.ModKickSoundPath(), render.ModKick, a.d.Prefs.SetModKickSFX, a.d.Prefs.SetModKickSoundPath},
-		{"Mute", a.d.Prefs.ModMuteSFXOn(), a.d.Prefs.ModMuteSoundPath(), render.ModMute, a.d.Prefs.SetModMuteSFX, a.d.Prefs.SetModMuteSoundPath},
-	} {
-		if next := c.Checkbox(pad+16, y, r.label, r.on); next != r.on {
-			r.setOn(next)
-		}
-		if next, _ := c.TextField("modsfx:"+r.label, sdl.Rect{X: pad + 130, Y: y, W: 380, H: fieldH}, r.path, "custom .wav/.ogg/.mp3/.opus (blank = built-in)"); next != r.path {
-			r.setPth(next)
-		}
-		if c.Button(sdl.Rect{X: pad + 520, Y: y, W: 60, H: btnH}, "Test") {
-			a.d.Audio.PlayModAction(r.action, r.path)
-		}
-		y += 28
-	}
-	return y
-}
-
-// drawSettingsAccount: per-server login, the master-list override, Discord.
-// formatWaitMs renders a millisecond knob compactly ("850 ms", "1.5 s").
-func formatWaitMs(ms int) string {
-	if ms < 1000 {
-		return strconv.Itoa(ms) + " ms"
-	}
-	return strconv.FormatFloat(float64(ms)/1000, 'f', -1, 64) + " s"
-}
-
-// spriteLoadModeLabel is the cycle-button label for the power-user loading mode.
-func spriteLoadModeLabel(mode int) string {
-	switch mode {
-	case config.SpriteLoadDefault:
-		return "Loading mode: Default — wait for every asset before each message plays"
-	case config.SpriteLoadHoldPrev:
-		return "Loading mode: webAO — keep the previous sprite until the new one loads"
-	case config.SpriteLoadWait:
-		return "Loading mode: Hold the message — wait for the speaker sprite (timeout)"
-	}
-	return "Loading mode: Show nothing — blank until the sprite loads"
-}
-
-// spriteLoadModeDesc is the per-mode WHAT-IT-DOES shown under the cycle button.
-func spriteLoadModeDesc(mode int) string {
-	switch mode {
-	case config.SpriteLoadDefault:
-		return "Default: every message holds until ALL its assets have loaded — character sprites (speaker, pair, group), the background + desk, the custom chatbox, zoom speedlines, the emote SFX + blip, and any screen-effect art or realization/effect sound. Nothing pops in mid-ceremony. Shouts still skip the queue (toggle below), and catch-up (AO2's skip-to-newest, above) still fast-forwards a backlog."
-	case config.SpriteLoadHoldPrev:
-		return "webAO: while an uncached sprite is still downloading, the layer's last drawn sprite stays on screen until the new one lands (the old default)."
-	case config.SpriteLoadWait:
-		return "Hold the message: the message stays off-stage until its speaker sprite decodes, capped by the timeout below (a broken sprite only ever delays it)."
-	}
-	return "Show nothing: blank until the sprite lands (the original behaviour, the cold-load flash)."
-}
-
-// powerUserToggleLabel is the reveal-button label for the advanced (power-user) settings.
-func powerUserToggleLabel(on bool) string {
-	if on {
-		return "Hide advanced options"
-	}
-	return "Show advanced (power-user) options"
-}
-
-// charCaseLabel is the cycle-button label for the character-folder asset casing (power-user only).
-func charCaseLabel(c uint8) string {
-	switch c {
-	case courtroom.CharCaseFirstCap:
-		return "Casing: First cap (Phoenix wright)"
-	case courtroom.CharCaseTitle:
-		return "Casing: Title (Phoenix Wright)"
-	case courtroom.CharCaseAuto:
-		return "Casing: Auto-detect (learn per server)"
-	default:
-		return "Casing: lowercase (default)"
-	}
-}
-
-// texCompressLabel is the cycle-button label for the texture-compression mode.
-func texCompressLabel(mode int) string {
-	switch mode {
-	case config.TexCompressDXT5:
-		return "DXT5 (BC3) - ~4x smaller"
-	case config.TexCompressDXT1:
-		return "DXT1 (BC1) - ~8x smaller"
-	default:
-		return "Off (raw RGBA)"
-	}
-}
-
-// drawSettingsPowerUser is the advanced Settings card (its own left-sidebar tab): TLS validation,
-// the Asset Origin header, character-folder casing, and image-format tuning — options that can
-// BREAK connections or asset fetching if set wrong. The whole card hides behind a reveal button and
-// its warnings are red. Moved here out of Account / Assets so everyday settings stay uncluttered.
-func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-
-	// Diagnostics — the Debug panel only READS state, so it sits ABOVE the
-	// dangerous reveal gate below. Opening it returns to the courtroom, where the
-	// floating panel draws. Also on F8 anywhere, and Extras → Debug.
-	y = a.settingsSection(y, w, "Diagnostics")
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, "Open Debug panel (F8)") {
-		a.showDebugPanel = true
-		a.screen = a.prevScreen // back to the courtroom, where the panel is drawn
-	}
-	y += btnH + 6
-	y = a.settingsDesc(pad, y, "Server software, live packet inspector, performance (frame graph, heap vs budget, GC), the three-tier asset cache, and the failure log — one floating panel. Also opens with F8 anywhere, or Extras → Debug.", ColTextDim)
-	y += 10
-
-	y = a.settingsSection(y, w, "Power user (advanced)")
-	y = a.settingsDesc(pad, y, "⚠ Everything here is for people who KNOW what their server needs. The wrong value can make characters fetch 0 assets or stop you connecting. If unsure, leave it all at the defaults.", ColDanger)
-	y += 4
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.showPowerUser)) {
-		a.showPowerUser = !a.showPowerUser
-		a.powerNukeArm = false // never carry an armed nuke across a hide/reveal
-	}
-	y += btnH + 8
-	if !a.showPowerUser {
-		return y
-	}
-
-	// The nuke: reset EVERY option on this tab to its shipped default (two-click
-	// confirm — arming flips the label). Scoped to this tab; the image-format block
-	// keeps its own controls (its learned state is per-server, not a "knob").
-	nukeLabel := "⟲ Reset ALL power-user options to defaults"
-	if a.powerNukeArm {
-		nukeLabel = "⚠ Click again to confirm the reset"
-	}
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 340, H: btnH}, nukeLabel) {
-		if a.powerNukeArm {
-			a.d.Prefs.ResetPowerUser()
-			a.d.Manager.SetAssetOrigin("") // the live network override too, not just the pref
-			a.rebuildAssetOrigin()         // re-derive the URL builder (character casing reset)
-			a.applyTimingToRoom()          // push the reset renderer/timing knobs to the live room
-			if th := a.d.Manager.Thumbs(); th != nil {
-				th.SetEnabled(false) // the thumbnail store follows its reset pref (stored thumbs are kept — Clear is separate)
-				th.SetParams(0, 0)
-				th.SetBudget(0)
-			}
-			a.d.Manager.SetAdaptiveLatencyMultiple(0) // back to the ×8 default, live
-			a.applySpriteCap()                        // re-derive the downscale cap from defaults
-			a.warnLine = "Power-user options reset to defaults."
-			a.warnAt = a.now()
-		}
-		a.powerNukeArm = !a.powerNukeArm
-	}
-	y += btnH + 6
-	y = a.settingsDesc(pad, y, "Puts every option on this tab back to its default. Image-format probing keeps its own controls below; saved presets and mod chips are untouched.", ColTextDim)
-	y += 10
-
-	// Update channel: stable releases vs the experimental test-branch feed.
-	// Power-user by design — test builds exist for extensive debugging and may
-	// move sideways or DOWN in version; the strict per-platform asset match
-	// still applies, and flipping back rejoins stable on its next release.
-	y = a.settingsSection(y, w, "Update channel")
-	expCh := a.d.Prefs.UpdateChannelExperimentalOn()
-	if next := c.Checkbox(pad, y, "Get experimental test builds (the MayAO-Test branch) instead of stable releases", expCh); next != expCh {
-		a.d.Prefs.SetUpdateChannelExperimental(next)
-		// Re-arm the one-shot launch check so the swap takes effect NOW (next
-		// frame), not on the next restart — and drop a stale offer from the
-		// other channel so its modal can't push the wrong build.
-		a.updateChecked = false
-		a.updateRel = nil
-		a.updateShow = false
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "OFF (default): the launch check follows stable releases and only ever moves forward. ON: it follows the newest published build INCLUDING prereleases cut from the test branch — riskier, less tested, and it may offer a lower version than you run (that's also how you get back: turn this off and take the next stable offer). Toggling re-checks immediately.", ColTextDim)
-	y += 10
-
-	// Message sequencing — how each IC message is presented while its assets are
-	// still streaming + decoding. Four named modes; Default (strict sequencing) is
-	// the shipped default. Fully isolated (it can't break a connection or an asset
-	// fetch), but it touches the render/message path, so it sits behind the reveal
-	// with the rest of the advanced kit.
-	y = a.settingsSection(y, w, "Message sequencing")
-	slm := a.d.Prefs.SpriteLoadMode()
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 520, H: btnH}, spriteLoadModeLabel(slm)) {
-		a.d.Prefs.SetSpriteLoadMode((slm + 1) % config.SpriteLoadModeCount)
-		a.applyTimingToRoom() // the wait gate lives on the live room — flip it now
-	}
-	y += btnH + 6
-	y = a.settingsDesc(pad, y, spriteLoadModeDesc(slm), ColTextDim)
-	y += 6
-	if slm == config.SpriteLoadWait {
-		c.Label(pad, y+4, "Max hold per message:", ColText)
-		waitMs := a.d.Prefs.SpriteWaitMs()
-		wtrack := sdl.Rect{X: pad + 170, Y: y + 2, W: 260, H: 16}
-		nw := int(clampI32(c.Slider("spritewaitms", wtrack, int32(waitMs), config.SpriteWaitMaxMs), config.SpriteWaitMinMs, config.SpriteWaitMaxMs))
-		c.Tooltip(wtrack, "How long one message may wait for its sprite before playing anyway (50 ms – 30 s).")
-		c.Label(pad+170+266, y+4, formatWaitMs(nw), ColTextDim)
-		if nw != waitMs {
-			a.d.Prefs.SetSpriteWaitMs(nw)
-			a.applyTimingToRoom()
-		}
-		y += 26
-		wp := a.d.Prefs.SpriteWaitPairOn()
-		if next := c.Checkbox(pad, y, "Also wait for the pair partner's sprite", wp); next != wp {
-			a.d.Prefs.SetSpriteWaitPair(next)
-			a.applyTimingToRoom()
-		}
-		y += 24
-		wpre := a.d.Prefs.SpriteWaitPreanimOn()
-		if next := c.Checkbox(pad, y, "Also wait for the pre-animation", wpre); next != wpre {
-			a.d.Prefs.SetSpriteWaitPreanim(next)
-			a.applyTimingToRoom()
-		}
-		y += 26
-	}
-	if slm != config.SpriteLoadBlank { // hold-previous applies in Hold mode AND as Wait's timeout fallback
-		c.Label(pad, y+4, "Keep the previous sprite for:", ColText)
-		ageMs := a.d.Prefs.HoldPrevMaxAgeMs()
-		atrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-		na := int(clampI32(c.Slider("holdmaxage", atrack, int32(ageMs), config.HoldPrevMaxAgeMaxMs), 0, config.HoldPrevMaxAgeMaxMs))
-		if na != 0 && na < config.HoldPrevMaxAgeMinMs {
-			na = 0 // the bottom of the track snaps to "forever" (0)
-		}
-		c.Tooltip(atrack, "How long the stand-in may bridge a still-loading sprite before giving up to blank. Far left = forever.")
-		ageLabel := "forever"
-		if na != 0 {
-			ageLabel = formatWaitMs(na)
-		}
-		c.Label(pad+200+236, y+4, ageLabel, ColTextDim)
-		if na != ageMs {
-			a.d.Prefs.SetHoldPrevMaxAgeMs(na)
-		}
-		y += 26
-		tint := a.d.Prefs.HoldDebugTintOn()
-		if next := c.Checkbox(pad, y, "Tint stand-in sprites amber (diagnostic: shows when a stand-in is bridging a load)", tint); next != tint {
-			a.d.Prefs.SetHoldDebugTint(next)
-		}
-		y += 26
-	}
-	c.Label(pad, y+4, "Speaker-swap crossfade:", ColText)
-	cfMs := a.d.Prefs.CrossfadeMs()
-	cftrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	ncf := int(clampI32(c.Slider("crossfadems", cftrack, int32(cfMs), config.CrossfadeMaxMs), 0, config.CrossfadeMaxMs))
-	if ncf != 0 && ncf < config.CrossfadeMinMs {
-		ncf = 0 // bottom of the track = off (the default hard swap)
-	}
-	c.Tooltip(cftrack, "Blend a sprite change: the new sprite fades in over this long instead of snapping (0 = off). Suppressed by Reduce motion.")
-	cfLabel := "off (hard swap)"
-	if ncf != 0 {
-		cfLabel = formatWaitMs(ncf)
-	}
-	c.Label(pad+200+236, y+4, cfLabel, ColTextDim)
-	if ncf != cfMs {
-		a.d.Prefs.SetCrossfadeMs(ncf)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "Fades the new sprite in over the old on every character/emote change instead of hard-swapping. Local only; a still-loading sprite starts its fade when it arrives. With a crossfade set, the idle frame-rate cap stands down so fades stay smooth.", ColTextDim)
-	y += 10
-
-	// Shouts — AO2's default is that an interjection (Hold it!/Objection!/…) skips
-	// the queue and plays immediately. The toggle off queues shouts like any other
-	// message, so under the Default mode they wait for their bubble art + cry too.
-	y = a.settingsSection(y, w, "Shouts")
-	shoutBypass := a.d.Prefs.ShoutBypassQueueOn()
-	if next := c.Checkbox(pad, y, "Shouts skip the queue and play immediately (AO2 default)", shoutBypass); next != shoutBypass {
-		a.d.Prefs.SetShoutBypassQueue(next)
-		a.applyTimingToRoom()
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "ON (default): a shout clears the backlog and plays at once, exactly like AO2. OFF: shouts queue in order and, under the Default loading mode, wait for their bubble art and cry like any other message.", ColTextDim)
-	y += 10
-
-	// (The missing-sprite "missingno" placeholder controls moved to Settings →
-	// Assets in v1.70.1 — playtest: nobody looked for them under Power User.)
-
-	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
-	y = a.settingsSection(y, w, "Frame rate & GPU")
-	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: the active rate while you interact or anything animates, the idle rate when nothing needs redrawing, the unfocused rate when another window has focus (minimized draws nothing). Any change returns to the active rate instantly. Each rate takes a typed exact number; 0 on Idle/Unfocused means never redraw in that state (0 GPU when nothing moves), and ∞ removes the cap — for Active that means vsync paces the frames.", ColTextDim)
-	y += 6
-	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
-		config.FPSCapMin, config.FPSCapMax, config.FPSCapUnlimitedOff, config.FPSCapMin,
-		a.d.Prefs.FPSCap, a.d.Prefs.SetFPSCap, &settings.fpsBufs[0],
-		"The ceiling while interacting or animating (1–240, type an exact number, or ∞ = uncapped/vsync). Default is ∞ (vsync); turning ∞ off drops to 60, plenty for AO.")
-	y = a.fpsSettingRow(y, "idlefps", "Idle frame rate:",
-		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault, config.FPSOff,
-		a.d.Prefs.IdleFPS, a.d.Prefs.SetIdleFPS, &settings.fpsBufs[1],
-		"The rate when nothing needs redrawing (1–120, 0 = never redraw when idle, or ∞ = uncapped). Any change returns to the active rate instantly.")
-	y = a.fpsSettingRow(y, "unfocusedfps", "Unfocused frame rate:",
-		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault, config.FPSOff,
-		a.d.Prefs.UnfocusedFPS, a.d.Prefs.SetUnfocusedFPS, &settings.fpsBufs[2],
-		"The rate while another window has focus (1–60, 0 = never redraw when unfocused, or ∞ = uncapped). Minimized draws nothing.")
-	// The "ignore the background rate entirely" escape hatch (pacingfocus.go). An
-	// OPTION, never a default change: it overrides the focus boolean the whole pacer
-	// branches on, so the background rate above, the static park and the wake
-	// schedule all stop applying at once.
-	ufr := a.d.Prefs.UnfocusedFullRateOn()
-	if next := c.Checkbox(pad, y, "Keep full speed when another window has focus (OFF by default)", ufr); next != ufr {
-		a.d.Prefs.SetUnfocusedFullRate(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "On, the client paces an unfocused window exactly like a focused one — the Unfocused frame rate above stops applying, including its 0 = never-redraw setting. For a second monitor, or for capture software recording AsyncAO while you work in another app. Costs power: leave it off unless you can see the window.", ColTextDim)
-	y += 6
-	// Post-input full-rate hold, in frames — a slider (the playtest ask). Default
-	// 1 frame: the input's own frame shows, then the rate drops straight to idle.
-	c.Label(pad, y+4, "Input responsiveness:", ColText)
-	ig := a.d.Prefs.InputGraceFrames()
-	igtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nig := int(clampI32(c.Slider("inputgrace", igtrack, int32(ig), config.InputGraceFramesMax), 0, config.InputGraceFramesMax))
-	c.Tooltip(igtrack, "How long the frame rate stays at the active cap after a click or keypress, in frames (0–60). 0 = off (just the input's own frame), 1 = snappiest, higher = a smoother tail. Mouse movement isn't affected.")
-	igLabel := strconv.Itoa(nig) + " frame"
-	if nig != 1 {
-		igLabel += "s"
-	}
-	if nig == 0 {
-		igLabel = "off"
-	}
-	c.Label(pad+210+226, y+4, igLabel, ColTextDim)
-	if nig != ig {
-		a.d.Prefs.SetInputGraceFrames(nig)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "After a click or keypress the client holds the active rate for this many frames, then falls back to the idle rate. 0 turns the hold off entirely; 1 (the default) is nearly as snappy — the input still shows instantly either way, it just doesn't keep the frame rate up afterward. Mouse movement has its own brief hold and isn't affected.", ColTextDim)
-	y += 6
-	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, voice, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
-	y += 10
-	edl := a.d.Prefs.EventDrivenLoopOn()
-	if next := c.Checkbox(pad, y, "Event-driven renderer (EXPERIMENTAL, default ON on this test build)", edl); next != edl {
-		a.d.Prefs.SetEventDrivenLoop(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "Static screens stop redrawing entirely: input wakes the renderer instantly, incoming messages and finished loads push their own wake, and a blinking caret or ticking clock redraws one frame exactly when it's due. Sounds and the connection never slow down — only wasted redraws go. Applies live. If anything looks frozen or choppy, turn this off (the classic pacing loop) and report what it was.", ColTextDim)
-	y += 10
-	mrp := a.d.Prefs.MotionRedrawPerEventOn()
-	if next := c.Checkbox(pad, y, "Redraw once per mouse-move event (less power on cursor motion)", mrp); next != mrp {
-		a.d.Prefs.SetMotionRedrawPerEvent(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "Event-driven renderer only. On (default): each mouse-move event draws a single frame and the renderer parks again — the cursor still tracks, but sweeping it over static UI stops burning frames and power. Off: moving the mouse holds the full frame rate for a moment, so a hover sweep renders at your active cap. Clicks, keys and the scroll wheel keep their normal full-rate response.", ColTextDim)
-	y += 10
-	nolimit := a.d.Prefs.FrameLimiterDisabled()
-	if next := c.Checkbox(pad, y, "Disable the frame limiter entirely (render every frame — vsync only, HIGH GPU)", nolimit); next != nolimit {
-		a.d.Prefs.SetFrameLimiterDisabled(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "Off by default. On = no idle skipping and no pacing at all: the client redraws continuously, paced only by vsync (or a 60 fps floor with -vsync=false). The opposite of everything above — it trades GPU for the last drop of responsiveness. Leave it off unless you have a specific reason.", ColTextDim)
-	y += 10
-
-	// Sprite thumbnail cache — the persistent low-q stand-in store.
-	y = a.settingsSection(y, w, "Sprite thumbnail cache")
-	th := a.d.Manager.Thumbs()
-	if th == nil {
-		y = a.settingsDesc(pad, y, "Unavailable in this build (the thumbnail store could not open).", ColTextDim)
-		y += 10
-	} else {
-		tcOn := a.d.Prefs.ThumbCacheOn()
-		if next := c.Checkbox(pad, y, "Keep tiny low-quality thumbnails of every sprite (default OFF)", tcOn); next != tcOn {
-			a.d.Prefs.SetThumbCache(next)
-			th.SetEnabled(next)
-		}
-		y += 26
-		y = a.settingsDesc(pad, y, "Every sprite that finishes loading leaves a ~1 KB low-quality thumbnail on disk (its own folder, kept after the full sprite is evicted). The next cold load shows the thumbnail instantly while the real one streams, then swaps — covering the case where there's no previous sprite to hold. Costs a little disk and a moment of visibly crunchy art.", ColTextDim)
-		y += 6
-		if a.d.Prefs.ThumbCacheOn() {
-			c.Label(pad, y+4, "Thumbnail height:", ColText)
-			tHp := a.d.Prefs.ThumbHeightPx()
-			ttrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			nth := int(clampI32(c.Slider("thumbheight", ttrack, int32(tHp), config.ThumbHeightMaxPx), 0, config.ThumbHeightMaxPx))
-			if nth != 0 && nth < config.ThumbHeightMinPx {
-				nth = 0 // bottom of the track = the default (64 px)
-			}
-			c.Tooltip(ttrack, "How tall a stored thumbnail is (32–160 px). Bigger = sharper stand-in, bigger files. Applies to NEWLY stored thumbnails.")
-			thLabel := "default (64 px)"
-			if nth != 0 {
-				thLabel = strconv.Itoa(nth) + " px"
-			}
-			c.Label(pad+200+236, y+4, thLabel, ColTextDim)
-			if nth != tHp {
-				a.d.Prefs.SetThumbHeightPx(nth)
-				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
-			}
-			y += 26
-			c.Label(pad, y+4, "Thumbnail quality:", ColText)
-			tq := a.d.Prefs.ThumbQuality()
-			qtrack2 := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			ntq := int(clampI32(c.Slider("thumbquality", qtrack2, int32(tq), config.ThumbQualityMax), 0, config.ThumbQualityMax))
-			if ntq != 0 && ntq < config.ThumbQualityMin {
-				ntq = 0
-			}
-			c.Tooltip(qtrack2, "WebP quality of a stored thumbnail (5–60). Lower = smaller + crunchier; the default 20 lands ~1 KB.")
-			tqLabel := "default (20)"
-			if ntq != 0 {
-				tqLabel = strconv.Itoa(ntq)
-			}
-			c.Label(pad+200+236, y+4, tqLabel, ColTextDim)
-			if ntq != tq {
-				a.d.Prefs.SetThumbQuality(ntq)
-				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
-			}
-			y += 26
-			c.Label(pad, y+4, "Thumbnail store budget:", ColText)
-			tb := a.d.Prefs.ThumbBudgetMiB()
-			btrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-			ntb := int(clampI32(c.Slider("thumbbudget", btrack, int32(tb), config.ThumbBudgetMaxMiB), 0, config.ThumbBudgetMaxMiB))
-			if ntb != 0 && ntb < config.ThumbBudgetMinMiB {
-				ntb = 0 // bottom of the track = the default (64 MiB)
-			}
-			c.Tooltip(btrack, "Hard cap on the thumbnail folder (8–512 MiB): past it the OLDEST thumbnails auto-delete. 64 MiB ≈ ~60,000 thumbnails.")
-			tbLabel := "default (64 MiB)"
-			if ntb != 0 {
-				tbLabel = strconv.Itoa(ntb) + " MiB"
-			}
-			c.Label(pad+200+236, y+4, tbLabel, ColTextDim)
-			if ntb != tb {
-				a.d.Prefs.SetThumbBudgetMiB(ntb)
-				th.SetBudget(int64(a.d.Prefs.ThumbBudgetMiB()) << 20)
-			}
-			y += 26
-			if c.Button(sdl.Rect{X: pad, Y: y, W: 200, H: btnH}, "Clear stored thumbnails") {
-				if err := th.Clear(); err != nil {
-					a.warnLine = clampLine("Clear thumbnails: " + err.Error())
-				} else {
-					a.warnLine = "Stored thumbnails cleared."
-				}
-				a.warnAt = a.now()
-			}
-			y += btnH + 6
-		}
-		y += 10
-	}
-
-	// Core message timings — the courtroom ceremony's hard-coded spans, exposed.
-	y = a.settingsSection(y, w, "Core message timings")
-	c.Label(pad, y+4, "Shout bubble duration:", ColText)
-	shoutMs := a.d.Prefs.ShoutDurationMs()
-	strack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	ns := int(clampI32(c.Slider("shoutdurms", strack, int32(shoutMs), config.ShoutDurationMaxMs), 0, config.ShoutDurationMaxMs))
-	if ns != 0 && ns < config.ShoutDurationMinMs {
-		ns = 0 // bottom of the track = the canonical default
-	}
-	c.Tooltip(strack, "How long an Objection!/Hold It!/Take That! bubble holds the stage. Far left = the canonical AO2 timing (~0.72 s).")
-	shoutLabel := "default (0.72 s)"
-	if ns != 0 {
-		shoutLabel = formatWaitMs(ns)
-	}
-	c.Label(pad+200+236, y+4, shoutLabel, ColTextDim)
-	if ns != shoutMs {
-		a.d.Prefs.SetShoutDurationMs(ns)
-		a.applyTimingToRoom()
-	}
-	y += 26
-	c.Label(pad, y+4, "Pre-animation wait cap:", ColText)
-	preMs := a.d.Prefs.PreanimTimeoutMs()
-	ptrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	np := int(clampI32(c.Slider("preanimms", ptrack, int32(preMs), config.PreanimTimeoutMaxMs), 0, config.PreanimTimeoutMaxMs))
-	if np != 0 && np < config.PreanimTimeoutMinMs {
-		np = 0
-	}
-	c.Tooltip(ptrack, "How long a pre-animation may play before the text starts anyway when its real length is unknown (still decoding). Far left = the canonical default (2.5 s).")
-	preLabel := "default (2.5 s)"
-	if np != 0 {
-		preLabel = formatWaitMs(np)
-	}
-	c.Label(pad+200+236, y+4, preLabel, ColTextDim)
-	if np != preMs {
-		a.d.Prefs.SetPreanimTimeoutMs(np)
-		a.applyTimingToRoom()
-	}
-	y += 26
-	c.Label(pad, y+4, "IC backlog queue depth:", ColText)
-	qcap := a.d.Prefs.ICQueueCap()
-	qtrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	nq := int(clampI32(c.Slider("icqueuecap", qtrack, int32(qcap), config.ICQueueCapMax), 0, config.ICQueueCapMax))
-	if nq != 0 && nq < config.ICQueueCapMin {
-		nq = 0 // bottom of the track = the canonical default (64)
-	}
-	c.Tooltip(qtrack, "How many unplayed messages a packed room may stack before the OLDEST drops (the IC log records everything regardless). Far left = the default (64).")
-	qLabel := "default (64)"
-	if nq != 0 {
-		qLabel = strconv.Itoa(nq) + " messages"
-	}
-	c.Label(pad+200+236, y+4, qLabel, ColTextDim)
-	if nq != qcap {
-		a.d.Prefs.SetICQueueCap(nq)
-		a.applyTimingToRoom()
-	}
-	y += 26
-	c.Label(pad, y+4, "Catch-up flash linger:", ColText)
-	cul := a.d.Prefs.CatchUpLingerMs()
-	ctrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
-	nc := int(clampI32(c.Slider("catchuplinger", ctrack, int32(cul), config.CatchUpLingerMaxMs), 0, config.CatchUpLingerMaxMs))
-	c.Tooltip(ctrack, "How long each fast-forwarded backlog message stays up while catch-up drains a pile-up. 0 (default) = one per frame — fastest; a little linger makes the backlog readable as it flashes past.")
-	culLabel := "default (one per frame)"
-	if nc != 0 {
-		culLabel = formatWaitMs(nc)
-	}
-	c.Label(pad+200+236, y+4, culLabel, ColTextDim)
-	if nc != cul {
-		a.d.Prefs.SetCatchUpLingerMs(nc)
-		a.applyTimingToRoom()
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "Shout and preanim pace the message ceremony; queue depth bounds how much backlog is kept; catch-up linger holds each fast-forwarded backlog message a touch longer. Far left on every slider = the canonical AO2 default.", ColTextDim)
-	y += 10
-
-	// Viewport sprite mask — confine offset sprites to the stage.
-	y = a.settingsSection(y, w, "Viewport sprite mask")
-	clipS := a.d.Prefs.ClipSpritesToStageOn()
-	if next := c.Checkbox(pad, y, "Clip sprites to the stage (default ON)", clipS); next != clipS {
-		a.d.Prefs.SetClipSpritesToStage(next)
-	}
-	y += 24
-	y = a.settingsDesc(pad, y, "Masks character sprites to the stage so a large pair/reposition offset can't spill over the chatbox or log. Off = free placement past the stage edges.", ColTextDim)
-	y += 10
-
-	// TLS certificate validation.
-	y = a.settingsSection(y, w, "TLS certificate")
-	validate := a.d.Prefs.ValidateTLSCertsOn()
-	if next := c.Checkbox(pad, y, "Validate server certificates (wss) — OFF by default", validate); next != validate {
-		a.d.Prefs.SetValidateTLSCerts(next)
-	}
-	y += 24
-	y = a.settingsDesc(pad, y, "Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this ON can make them UNREACHABLE — it's only for confirming the encrypted connection is to the real server.", ColDanger)
-	y += 10
-
-	// Origin overrides (asset fetches + the WS handshake).
-	y = a.settingsSection(y, w, "Origin overrides")
-	c.Label(pad, y+4, "Assets Origin/Referer:", ColText)
-	origin := a.d.Prefs.AssetOriginHeader()
-	if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
-		a.d.Prefs.SetAssetOriginHeader(next)
-		a.d.Manager.SetAssetOrigin(next)
-	}
-	y += 24
-	y = a.settingsDesc(pad, y, "Sends this Origin/Referer header on asset downloads, so a server that only serves its base to its own web client still streams to AsyncAO. Wrong value = assets stop loading — leave it blank unless you know you need it.", ColDanger)
-	y += 8
-	c.Label(pad, y+4, "Connection Origin:", ColText)
-	wsOrigin := a.d.Prefs.WSOriginHeader()
-	if next, _ := c.TextField("wsorigin", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, wsOrigin, "https://webao.example  (blank = off)"); next != wsOrigin {
-		a.d.Prefs.SetWSOriginHeader(next)
-	}
-	y += 24
-	y = a.settingsDesc(pad, y, "Sends this Origin header on the SERVER CONNECTION itself (the WebSocket handshake), for the rare server that only accepts its own web client — e.g. one that requires \"webao.<its domain>\". Applies on the next connect. Wrong value can get the connection refused — leave it blank unless a server demands it.", ColDanger)
-	y += 10
-
-	// Network tuning — the streaming pipeline's self-tuning bounds, exposed.
-	y = a.settingsSection(y, w, "Network tuning")
-	c.Label(pad, y+4, "Missing-asset (404) memory:", ColText)
-	ttl := a.d.Prefs.NotFoundTTLSec()
-	ntrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nttl := int(clampI32(c.Slider("notfoundttl", ntrack, int32(ttl), config.NotFoundTTLMaxSec), 0, config.NotFoundTTLMaxSec))
-	if nttl != 0 && nttl < config.NotFoundTTLMinSec {
-		nttl = 0 // bottom of the track = the default (5 min)
-	}
-	c.Tooltip(ntrack, "How long a 404'd asset stays \"missing\" before AsyncAO will probe it again (30 s – 60 min). Applies on RESTART.")
-	ttlLabel := "default (5 min)"
-	if nttl != 0 {
-		ttlLabel = formatWaitMs(nttl * 1000)
-	}
-	c.Label(pad+210+226, y+4, ttlLabel, ColTextDim)
-	if nttl != ttl {
-		a.d.Prefs.SetNotFoundTTLSec(nttl)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "How long a missing (404) asset is remembered before it may be probed again. Shorter picks up newly-uploaded art sooner; longer wastes fewer probes on sparse packs. Applies on restart.", ColTextDim)
-	y += 8
-	c.Label(pad, y+4, "Slow-host patience:", ColText)
-	lm := a.d.Prefs.AdaptiveLatMultiple()
-	ltrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nlm := int(clampI32(c.Slider("latmultiple", ltrack, int32(lm), config.AdaptiveLatMultipleMax), 0, config.AdaptiveLatMultipleMax))
-	if nlm != 0 && nlm < config.AdaptiveLatMultipleMin {
-		nlm = 0 // bottom of the track = the default (×8)
-	}
-	c.Tooltip(ltrack, "Each asset host's request deadline = THIS × its observed response-time average (2–32). Applies immediately.")
-	lmLabel := "default (×8)"
-	if nlm != 0 {
-		lmLabel = "×" + strconv.Itoa(nlm)
-	}
-	c.Label(pad+210+226, y+4, lmLabel, ColTextDim)
-	if nlm != lm {
-		a.d.Prefs.SetAdaptiveLatMultiple(nlm)
-		a.d.Manager.SetAdaptiveLatencyMultiple(a.d.Prefs.AdaptiveLatMultiple())
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "Each asset host's request deadline is N × its average response time, so one dying mirror can't stall the download lane. Lower gives up sooner (jittery links may see spurious timeouts); higher is more patient.", ColTextDim)
-	y += 10
-
-	// Decode downscale + texture memory — how big decoded art lives on the GPU.
-	y = a.settingsSection(y, w, "Decode downscale & texture memory")
-	dsOff := a.d.Prefs.SpriteDownscaleOffOn()
-	if next := c.Checkbox(pad, y, "Disable the automatic sprite downscale entirely (keep EXACT source art)", dsOff); next != dsOff {
-		a.d.Prefs.SetSpriteDownscaleOff(next)
-		a.applySpriteCap()
-	}
-	y += 24
-	y = a.numSliderRow(y, "downscalepct", "Downscale target:", config.SpriteDownscaleMinPct, config.SpriteDownscaleMaxPct, 5, 100, a.d.Prefs.SpriteDownscalePct, func(n int) { a.d.Prefs.SetSpriteDownscalePct(n); a.applySpriteCap() }, &settings.memBufs[0], "%", "The decode-time downscale shrinks huge art toward your display height; this scales that target (50-200%). Applies to NEWLY loaded art.")
-	y = a.settingsDesc(pad, y, "Art taller than your display is downscaled once at load (high quality) instead of every frame on the GPU. Lower % = smaller textures, less memory; higher % or the off-switch = more source detail for heavy zooming, at memory cost. Applies to newly loaded art.", ColTextDim)
-	y += 8
-	y = a.numSliderRow(y, "animspritecap", "Animated sprite height cap:", config.AnimatedSpriteCapMinPx, config.AnimatedSpriteCapMaxPx, 16, 0, a.d.Prefs.AnimatedSpriteCap, func(n int) { a.d.Prefs.SetAnimatedSpriteCap(n); a.applySpriteCap() }, &settings.memBufs[1], " px", "Optional: downscale ANIMATED sprites harder than stills to save memory (default OFF). 0 = use the still cap; otherwise this caps animated sprite height in pixels. Applies to NEWLY loaded art.")
-	y = a.settingsDesc(pad, y, "Animations are no longer truncated to fit the texture budget, so one full high-res preanimation can hold a few hundred MB of GPU memory. This caps animated sprite HEIGHT (still art is untouched) to shrink that footprint; leave off for AO2-identical full quality.", ColTextDim)
-	y += 8
-	y = a.numSliderRow(y, "animbudget", "Animated sprite memory:", config.AnimatedBudgetMinMiB, config.AnimatedBudgetMaxMiB, 32, config.AnimatedBudgetDefaultMiB, a.d.Prefs.AnimatedBudgetMiB, func(n int) { a.d.Prefs.SetAnimatedBudgetMiB(n); a.applySpriteCap() }, &settings.memBufs[2], " MiB", "How much decoded memory ONE animated sprite may use before its frames are downscaled to fit (64-512 MiB). 128 = the shipped default (very large clips downscale to fit); lower = softer sprites, far less RAM. Applies to NEWLY loaded art (LIVE).")
-	y = a.settingsDesc(pad, y, "Decoded memory allowed for ONE animated sprite before its frames are downscaled to fit. 500 MiB keeps full-size high-res clips native (sharpest, most RAM); lower shrinks them to fit (softer, a fraction of the RAM). The per-frame decoded pixels of several such clips are what spiked RAM, so this is the biggest lever. Applies to newly loaded art.", ColTextDim)
-	y += 8
-	y = a.numSliderRow(y, "animdeccon", "Concurrent animated decodes:", config.AnimDecodeConcurrencyMin, config.AnimDecodeConcurrencyMax, 1, config.AnimDecodeConcurrencyDefault, a.d.Prefs.AnimDecodeConcurrency, func(n int) { a.d.Prefs.SetAnimDecodeConcurrency(n); a.applySpriteCap() }, &settings.memBufs[3], "", "How many long animations decode at once. The decoded pixels of a full clip are the RAM spike, so fewer = less peak memory (slower loads); more = faster loads (more RAM). Applies LIVE.")
-	y = a.settingsDesc(pad, y, "How many full animations may decode at once. Each long clip holds every frame in memory until it uploads, so capping this flattens the memory spike while a character's animations stream in (at the cost of slightly slower loads). Applies live.", ColTextDim)
-	y += 8
-	y = a.numSliderRow(y, "texbudget", "Texture memory budget:", config.TexBudgetMinMiB, config.TexBudgetMaxMiB, 16, config.TexBudgetDefaultMiB, a.d.Prefs.TexBudgetMiB, a.d.Prefs.SetTexBudgetMiB, &settings.memBufs[4], " MiB", "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32-256 MiB). Above 128 is EXPERIMENTAL and may stutter or crash on low-RAM machines. Applies on RESTART.")
-	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms AND longer animations decode before they truncate; smaller = lighter footprint. The default (64) and anything up to 128 fit the 256 MiB memory budget — above 128 is EXPERIMENTAL and deliberately exceeds it, so only raise it there if long animations are cut and you have RAM to spare. Applies on restart.", ColTextDim)
-	y += 10
-
-	// Texture compression (restart-applied; lossy).
-	y += 8
-	c.Label(pad, y+4, "Texture compression:", ColText)
-	txc := a.d.Prefs.TexCompression()
-	next := txc
-	switch txc {
-	case config.TexCompressOff:
-		next = config.TexCompressDXT5
-	case config.TexCompressDXT5:
-		next = config.TexCompressDXT1
-	case config.TexCompressDXT1:
-		next = config.TexCompressOff
-	}
-	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 220, H: btnH}, texCompressLabel(txc)) {
-		a.d.Prefs.SetTexCompression(next)
-	}
-	y += btnH + 6
-	y = a.settingsDesc(pad, y, "How decoded art is stored on the GPU. Off = raw RGBA (lossless). DXT5 (BC3) = ~4x smaller with smooth alpha; DXT1 (BC1) = ~8x smaller but 1-bit alpha (jagged soft edges). Both are lossy 4x4-block formats, only apply to art whose width and height are multiples of 4, and only when your GPU supports them (otherwise it silently stays Off). Applies on RESTART.", ColTextDim)
-	y += 10
-
-	// Character-folder casing.
-	y = a.settingsSection(y, w, "Character folder casing")
-	cs := a.d.Prefs.AssetCharCasing()
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, charCaseLabel(cs)) {
-		a.d.Prefs.SetAssetCharCasing((cs + 1) % courtroom.CharCaseCount)
-		a.rebuildAssetOrigin() // apply the new casing to the URL builder immediately
-	}
-	y += btnH + 6
-	y = a.settingsDesc(pad, y, "How the character FOLDER is capitalised in asset URLs. The VAST MAJORITY of servers are lowercase (the default) — CHECK YOUR SERVER FIRST: the wrong choice makes EVERY character fetch 0 assets. \"First cap\" = Phoenix wright · \"Title\" = Phoenix Wright. \"Auto-detect\" (OFF unless you pick it) probes one character per server once and learns the casing, staying on lowercase unless lowercase actually fails.", ColDanger)
-	y += 10
-
-	y = a.drawProxySettings(y, w)
-
-	// Image formats lived here from v1.70.1 until they got their own tab. They are
-	// NOT power-user knobs: art failing to render is a first-week problem, and
-	// burying its fix behind a tab called Power user is why it went unfound. A
-	// pointer stays because the casing control above is the OTHER reason a server's
-	// art fetches nothing, so someone who lands here is one click away.
-	y = a.settingsSection(y, w, "Image & audio formats")
-	y = a.settingsDesc(pad, y, "Which file types AsyncAO asks a server for — and the one-click fix for a server whose art isn't loading — live on their own tab now.", ColTextDim)
-	y += 6
-	y = a.formatsTabPointer(y)
-	return y
-}
-
-func (a *App) drawSettingsAccount(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-	y = a.settingsSection(y, w, "Login")
-	// Auto-login: ITS OWN automation, not a macro — per-server creds,
-	// software-detected wire flow, fires on join (or via hotkey/button).
-	y = a.drawLoginSettings(y, w)
-	y += 8
-
-	y = a.settingsSection(y, w, "Master list")
-	// Master list override (blank = official). Refresh in the lobby applies.
-	c.Label(pad, y+4, "URL:", ColTextDim)
-	master := a.d.Prefs.MasterList()
-	if next, _ := c.TextField("masterurl", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, master, network.DefaultMasterServerURL); next != master {
-		a.d.Prefs.SetMasterList(next)
-	}
-	y += 34
-
-	// Discord Rich Presence: the whole section lives in a build-tagged file, so a
-	// -tags nodiscord binary compiles it out entirely (no section, no code).
-	y = a.drawDiscordSection(y, w)
-	return y
-}
-
-// drawSettingsHotkeys: hotkey rebinds, macros, and the whole-settings bundle.
-func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-	y = a.settingsSection(y, w, "Hotkeys")
-	y = a.settingsDesc(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
-	y += 8
-	// Hotkeys are opt-in: every Ctrl+key chord below is OFF until this is ticked,
-	// so a fresh install fires none of them (no accidental shout / FX / menu). The
-	// bindings stay editable either way.
-	hk := a.d.Prefs.HotkeysEnabledOn()
-	if next := c.Checkbox(pad, y, "Enable hotkeys (Ctrl+key shortcuts) — OFF by default", hk); next != hk {
-		a.d.Prefs.SetHotkeysEnabled(next)
-	}
-	y += 28
-	// Conflict scan: two actions resolving to the same key clash — only the first
-	// in the dispatch switch fires — so flag both rather than fail silently.
-	hkConflicts := a.hotkeyConflictKeys()
-	hx := pad
-	for _, def := range hotkeyDefs {
-		c.LabelClipped(hx, y+4, 190, def.label, ColText)
-		key := a.hotkeyFor(def.id)
-		lbl := "Ctrl+" + strings.ToUpper(key)
-		switch {
-		case a.hkCapture == def.id:
-			lbl = "press a key…"
-		case key == "":
-			lbl = "(unset)"
-		}
-		br := sdl.Rect{X: hx + 198, Y: y, W: 110, H: btnH}
-		if c.Button(br, lbl) {
-			a.hkCapture = def.id // arm capture for this action
-			a.bindingFor = ""    // don't also arm a character keybind
-			c.focusID = ""       // the capture owns the next keypress
-		}
-		if c.rightClicked && c.hovering(br) {
-			a.d.Prefs.SetHotkey(def.id, "") // reset to the built-in default
-			if a.hkCapture == def.id {
-				a.hkCapture = ""
-			}
-		}
-		if a.hkCapture != def.id && hkConflicts[key] {
-			c.Border(br, ColDanger) // clash: another action shares this key
-			c.Tooltip(br, "Ctrl+"+strings.ToUpper(key)+" is bound to more than one action — only the first fires. Rebind one.")
-		}
-		hx += 340
-		if hx > 560 {
-			hx = pad
-			y += 30
-		}
-	}
-	if hx != pad {
-		y += 30 // finish a partial row
-	}
-	a.consumeHotkeyCapture()
-	y += 8
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Reset all to defaults") {
-		for _, def := range hotkeyDefs {
-			a.d.Prefs.SetHotkey(def.id, "")
-		}
-		settings.statusLine = "All hotkeys reset to their defaults."
-	}
-	y += 36
-
-	y = a.settingsSection(y, w, "Macros")
-	// Macros: user-defined OOC command sequences with optional keybinds.
-	y = a.drawMacroSettings(y, w)
-	y += 8
-
-	y = a.settingsSection(y, w, "IC quick-phrases")
-	// Bind a key to a canned IC line your CHARACTER says (the IC counterpart to macros).
-	y = a.drawICPhraseSettings(y, w)
-	y += 8
-	// (Export / Import / Open config moved to their own "Data" tab.)
-	return y
-}
-
-// drawSettingsData is the dedicated "where's my stuff / back it up" tab — one place
-// for the settings file, its folder, and export/import, so nobody hunts through
-// %AppData% (the recurring confusion).
-func (a *App) drawSettingsData(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-
-	y = a.settingsSection(y, w, "Your settings file")
-	y = a.settingsDesc(pad, y, "Every setting is ONE editable JSON file (asset_preferences.json). Close AsyncAO before hand-editing — it autosaves.", ColTextDim)
-	y += 6
-	c.LabelClipped(pad, y, w-pad, configDir(), ColAccent) // the actual path
-	y += 24
-	if config.ConfigIsPortable() {
-		y = a.settingsDesc(pad, y, "Storage: PORTABLE — this folder sits next to AsyncAO, so it travels with a copied install / USB stick.", ColAccent)
-	} else {
-		y = a.settingsDesc(pad, y, "Storage: OS config folder. Use \"Make portable\" to keep settings beside AsyncAO (USB stick / copy).", ColTextDim)
-	}
-	y += 6
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Open config folder") {
-		openConfigFolder()
-	}
-	if c.Button(sdl.Rect{X: pad + 190, Y: y, W: 180, H: btnH}, "Open settings file") {
-		openSettingsFile()
-	}
-	y += 38
-	if !config.ConfigIsPortable() {
-		if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, "Make portable (copy beside AsyncAO)") {
-			makePortableAsync(a)
-		}
-		c.Label(pad+270, y+6, "Copies settings next to the program; takes effect on restart.", ColTextDim)
-		y += 38
-	}
-
-	y = a.settingsSection(y, w, "Back up / move to another PC")
-	y = a.settingsDesc(pad, y, "Export everything (favourites, layout, hotkeys, wardrobes, learned formats — NOT passwords) to a portable JSON; import it elsewhere.", ColTextDim)
-	y += 6
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Export settings") {
-		exportSettingsAsync(a)
-	}
-	importLabel := "Import settings..."
-	if settings.importArmed {
-		importLabel = "Drop the .json here"
-	}
-	if c.Button(sdl.Rect{X: pad + 190, Y: y, W: 200, H: btnH}, importLabel) {
-		settings.importArmed = !settings.importArmed
-		if settings.importArmed {
-			settings.statusLine = "Drop an exported asyncao-settings .json anywhere on this window."
-		}
-	}
-	y += 38
-
-	// Setting presets (Nightingale): named bundles of the WHOLE settings file.
-	y = a.settingsSection(y, w, "Setting presets")
-	y = a.settingsDesc(pad, y, "Save your current settings under a name and switch between bundles. A preset is a full snapshot (passwords excluded); applying one replaces your settings on the next restart, like an import. Save your current setup as its own preset first if you'll want it back.", ColTextDim)
-	y += 6
-	settings.presetName, _ = c.TextField("presetname", sdl.Rect{X: pad, Y: y, W: 220, H: fieldH}, settings.presetName, "preset name (e.g. casing)")
-	if c.Button(sdl.Rect{X: pad + 228, Y: y, W: 170, H: btnH}, "💾 Save as preset") {
-		savePresetAsync(a, settings.presetName)
-		settings.presetName = ""
-	}
-	y += btnH + 8
-	for _, name := range a.d.Prefs.ListPresets() {
-		c.Label(pad, y+4, name, ColText)
-		if c.Button(sdl.Rect{X: pad + 240, Y: y, W: 150, H: btnH}, "Apply (restart)") {
-			applyPresetAsync(a, name)
-		}
-		if c.Button(sdl.Rect{X: pad + 396, Y: y, W: 30, H: btnH}, "×") {
-			_ = a.d.Prefs.DeletePreset(name)
-		}
-		y += btnH + 4
-	}
-	y += 6
-
-	y = a.settingsSection(y, w, "Other data")
-	y = a.settingsDesc(pad, y, "logs / recordings / screenshots sit next to the AsyncAO program (portable).", ColTextDim)
-	y = a.settingsDesc(pad, y, "The streamed-asset cache is separate — view or clear it under Assets → Cache.", ColTextDim)
-	y += 8
-	return y
-}
-
-// savePresetAsync snapshots the current settings under presets/<name>.json
-// (the export machinery: flush, strip passwords, write) off-thread.
-func savePresetAsync(a *App, name string) {
-	go func() {
-		line := "Preset saved — pick it from the list any time."
-		if err := a.d.Prefs.SavePreset(name); err != nil {
-			line = "Save preset failed: " + err.Error()
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// applyPresetAsync stages a preset as the live settings (the import machinery:
-// validate + atomic replace, applied on the next start) off-thread.
-func applyPresetAsync(a *App, name string) {
-	go func() {
-		line := "Preset \"" + name + "\" staged — RESTART AsyncAO to apply (changes made this session won't save)."
-		if err := a.d.Prefs.ApplyPreset(name); err != nil {
-			line = "Apply preset failed: " + err.Error()
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// measureDiskCacheAsync walks the T3 directory off-thread and reports the
-// blob count + total size on the status line.
-func measureDiskCacheAsync(root string) {
-	if root == "" {
-		return
-	}
-	go func() {
-		var files int
-		var bytes int64
-		_ = filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil //nolint:nilerr // best-effort measurement
-			}
-			if info, ierr := d.Info(); ierr == nil {
-				files++
-				bytes += info.Size()
-			}
-			return nil
-		})
-		line := fmt.Sprintf("Disk cache (T3): %d blobs · %.1f MiB at %s", files, float64(bytes)/(1<<20), root)
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// learnedExportFileName sits next to the executable — easy to hand to a
-// friend, easy to find.
-const learnedExportFileName = "learned-formats.json"
-
-func learnedExportPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(filepath.Dir(exe), learnedExportFileName), nil
-}
-
-// exportLearnedAsync writes the learned table off-thread (§17.2: no sync
-// disk I/O on the render thread) and reports on the status line.
-func exportLearnedAsync(a *App) {
-	go func() {
-		path, err := learnedExportPath()
-		if err == nil {
-			var data []byte
-			if data, err = a.d.Prefs.ExportLearnedJSON(); err == nil {
-				err = os.WriteFile(path, data, 0o644)
-			}
-		}
-		line := "Learned formats exported to " + path
-		if err != nil {
-			line = "Export failed: " + err.Error()
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// makePortableAsync copies the active config set (settings + notebooks + jukebox)
-// into a config/ folder beside the executable, AND your themes folder to the
-// portable write root beside it (<exeDir>/themes — not inside config/, which is
-// not where anything writes themes after the move), so the whole set travels with
-// a portable copy or USB stick. Off-thread (§17.2: no sync disk I/O on the render
-// thread); the move takes effect on the next launch.
-//
-// Themes are the one half that can fail on its own, and MigrateToPortable says so
-// with ErrThemesNotMigrated rather than an opaque error. That case is reported as
-// what it is — the settings DID move — because "Make portable failed" would send
-// the user hunting for settings that are already in place.
-func makePortableAsync(a *App) {
-	go func() {
-		dest, err := a.d.Prefs.MigrateToPortable()
-		var line string
-		switch {
-		case err == config.ErrAlreadyPortable:
-			line = "Config is already portable (" + dest + ")."
-		case errors.Is(err, config.ErrThemesNotMigrated):
-			line = "Copied your settings to " + dest + ", but your themes folder did not travel (" + err.Error() +
-				"). Restart to use the portable settings, and copy your themes folder across by hand."
-		case err != nil:
-			line = "Make portable failed: " + err.Error()
-		default:
-			line = "Copied your settings to " + dest + " and your themes beside them — restart AsyncAO to start using the portable copy."
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// exportSettingsAsync writes the whole-settings bundle beside the exe
-// (timestamped, so repeated exports never clobber each other).
-func exportSettingsAsync(a *App) {
-	go func() {
-		var path string
-		exe, err := os.Executable()
-		if err == nil {
-			path = filepath.Join(filepath.Dir(exe),
-				"asyncao-settings-"+time.Now().Format("20060102-150405")+".json")
-			err = a.d.Prefs.ExportSettings(path)
-		}
-		line := "Settings exported to " + path + " — copy it to the new PC and Import there. (Saved passwords are NOT exported; re-enter them there.)"
-		if err != nil {
-			line = "Settings export failed: " + err.Error()
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// importSettingsAsync replaces the preferences file with a dropped
-// bundle; the import owns the file from then on (saver freezes) and
-// applies on the next start.
-func importSettingsAsync(a *App, path string) {
-	go func() {
-		line := "Settings imported — RESTART AsyncAO to apply (changes made this session won't save)."
-		if err := a.d.Prefs.ImportSettings(path); err != nil {
-			line = "Settings import failed: " + err.Error()
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// importLearnedAsync merges a learned-formats export and republishes the
-// resolver snapshot (its table swap is atomic — safe off-thread).
-func importLearnedAsync(a *App) {
-	go func() {
-		var line string
-		path, err := learnedExportPath()
-		if err == nil {
-			var data []byte
-			if data, err = os.ReadFile(path); err == nil {
-				var n int
-				if n, err = a.d.Prefs.ImportLearnedJSON(data); err == nil {
-					a.d.Resolver.WarmFromPrefs()
-					line = fmt.Sprintf("Imported %d learned entries from %s", n, path)
-				}
-			}
-		}
-		if err != nil {
-			line = "Import failed: " + err.Error() + " (expected " + learnedExportFileName + " beside the exe)"
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// drawDownloaderSettings renders the opt-in single-asset downloader section:
-// the master toggle (OFF by default), the benefit explainer, the downloads
-// folder with open / add-to-mounts actions, and the live job status + Cancel.
-// Returns the next y. (Folds into its own tab when the settings screen is
-// tabbed.)
-func (a *App) drawDownloaderSettings(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-	on := a.d.Prefs.CharDownloaderEnabled()
-	if next := c.Checkbox(pad, y, "Built-in downloader (OFF by default) — grab one character or background straight from the server", on); next != on {
-		a.d.Prefs.SetCharDownloader(next)
-	}
-	y += 24
-	c.Label(pad+20, y, "Tired of a multi-GB pack download for one file? Turn this on and a Download button appears on each", ColTextDim)
-	y += 18
-	c.Label(pad+20, y, "character (char-select) and background (Background menu) cell. Characters also pull the sfx/blips their", ColTextDim)
-	y += 18
-	c.Label(pad+20, y, "char.ini references (those live outside the folder). Files save below — point \"Read assets from local", ColTextDim)
-	y += 18
-	c.Label(pad+20, y, "folders\" (above) at this folder to use them offline / in rehearsal.", ColTextDim)
-	y += 24
-
-	if on {
-		// Bandwidth cap (KiB/s; 0 = unlimited — the default, so grabs run full
-		// speed unless you throttle them). Average-rate, applied per grab.
-		capKBps := a.d.Prefs.DownloadCapKBps()
-		if next := a.numberRow(y, "Bandwidth cap", capKBps, 256, 0, 1<<20); next != capKBps {
-			a.d.Prefs.SetDownloadCapKBps(next)
-		}
-		c.Label(pad+270, y+4, "KiB/s — 0 = unlimited (full speed)", ColTextDim)
-		y += 30
-		root := downloadsRoot()
-		c.LabelClipped(pad+20, y+4, w-pad-360-scrollBarW, "Folder: "+root, ColText)
-		if c.Button(sdl.Rect{X: a.formX + a.formW - 340, Y: y, W: 150, H: btnH}, "Open folder") {
-			_ = exec.Command("explorer.exe", root).Start()
-		}
-		if c.Button(sdl.Rect{X: a.formX + a.formW - 180, Y: y, W: 180, H: btnH}, "Add to local mounts") {
-			mode := a.assetSourceMode()
-			_, mounts := a.d.Prefs.LocalAssets()
-			if !a.d.Prefs.SetLocalAssets(mode == assetSrcLocal, append(append([]string{}, mounts...), root)) {
-				settings.statusLine = "Up to " + strconv.Itoa(config.LocalMountCap) + " folders. Remove one in Asset source first."
-			} else if mode == assetSrcStream {
-				// Clicking a button named "Add to local mounts" right after downloading
-				// a character is unambiguous intent, and adding a mount that is never
-				// read is a silent dead end — so turn layering on and SAY so, rather
-				// than leaving the user to discover the extra step.
-				a.setAssetSourceMode(assetSrcLayered, append(append([]string{}, mounts...), root))
-				settings.statusLine = `Added the downloads folder and switched Asset source to "Use my folders first".`
-			} else {
-				a.rebuildAssetOrigin()
-				settings.statusLine = "Added the downloads folder to local mounts."
-			}
-		}
-		y += 30
-		if a.dl.active || len(a.dl.queue) > 0 {
-			status := a.dl.status
-			pauseLabel := "Pause"
-			if a.dlPaused.Load() {
-				pauseLabel = "Resume"
-				status = "Paused — " + status
-			}
-			c.LabelClipped(pad+20, y+4, w-pad-240-scrollBarW, status, ColAccent)
-			if c.Button(sdl.Rect{X: a.formX + a.formW - 218, Y: y, W: 100, H: btnH}, pauseLabel) {
-				a.dlPaused.Store(!a.dlPaused.Load())
-			}
-			if c.Button(sdl.Rect{X: a.formX + a.formW - 110, Y: y, W: 110, H: btnH}, "Cancel") {
-				a.cancelDownload()
-			}
-			y += 30
-		} else if a.dl.status != "" {
-			c.LabelClipped(pad+20, y+4, w-pad-40-scrollBarW, a.dl.status, ColTextDim)
-			y += 26
-		}
-	}
-	return y + 8
-}
-
-// casingRoles drives the per-role subscription checkboxes (wire order).
-var casingRoles = []struct {
-	bit   int
-	label string
-}{
-	{courtroom.CaseRoleDef, "def"},
-	{courtroom.CaseRolePro, "pro"},
-	{courtroom.CaseRoleJudge, "judge"},
-	{courtroom.CaseRoleJury, "jury"},
-	{courtroom.CaseRoleSteno, "steno"},
-}
-
-// drawCasingRow renders the case-announcement subscription (SETCASE roles);
-// changes re-subscribe live when connected. Returns the next y.
-func (a *App) drawCasingRow(y int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	enabled, roles := a.d.Prefs.Casing()
-	changed := false
-	if next := c.Checkbox(pad, y, "Case announcements (get notified when someone needs your role)", enabled); next != enabled {
-		enabled = next
-		changed = true
-	}
-	y += 26
-	if enabled {
-		x := pad + 20
-		for _, r := range casingRoles {
-			on := roles&r.bit != 0
-			if next := c.Checkbox(x, y, r.label, on); next != on {
-				roles ^= r.bit
-				changed = true
-			}
-			x += c.TextWidth(r.label) + 52
-		}
-		y += 26
-	}
-	if changed {
-		a.d.Prefs.SetCasing(enabled, roles)
-		a.sendCasingPrefs() // live re-subscribe (no-op when disconnected)
-	}
-	return y + 8
-}
-
-// --- theme picker -----------------------------------------------------------
-
-// drawThemePreview renders the applied theme's chatbox skin (or the flat
-// fallback panel) with sample text in the theme's colors — instant visual
-// proof of what the current pick actually changes. Returns the next y.
-func (a *App) drawThemePreview(y int32) int32 {
-	c := a.ctx
-	pad := a.formX // rebase into the settings content card
-	const prevW, prevH = 340, 70
-	prev := sdl.Rect{X: pad, Y: y, W: prevW, H: prevH}
-	skinned := false
-	if page, ok := a.themePage(themeStemChatbox); ok {
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &prev)
-		skinned = true
-	}
-	if !skinned {
-		c.Fill(prev, sdl.Color{R: 16, G: 16, B: 24, A: 215})
-		c.Border(prev, ColAccent)
-	}
-	// Same skin-gated color rule as the live chatbox (readability).
-	nameCol := ColAccent
-	if skinned && a.themeHasName {
-		nameCol = a.themeNameCol
-	}
-	msgCol := ColText
-	if skinned && a.themeHasMsg {
-		msgCol = a.themeMsgCol
-	}
-	c.Label(prev.X+8, prev.Y+6, "Showname", nameCol)
-	c.Label(prev.X+8, prev.Y+30, "Message text preview.", msgCol)
-	label := "preview: theme chatbox skin"
-	if !skinned {
-		label = "preview: no chatbox skin in this theme (flat panel)"
-	}
-	c.Label(prev.X+prevW+12, prev.Y+6, label, ColTextDim)
-	return y + prevH + 10
-}
-
-// drawThemeBindRow binds the PICKED theme to a chosen server: joining
-// that server applies the bound theme, leaving restores the global one.
-// Works for any known server (same picker as the login section).
-func (a *App) drawThemeBindRow(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-	names, keys := a.loginTargets()
-	if len(names) == 0 {
-		return y
-	}
-	cur := 0
-	if settings.themeBindKey == "" && a.serverKey != "" {
-		settings.themeBindKey = a.serverKey
-	}
-	for i, k := range keys {
-		if k == settings.themeBindKey {
-			cur = i
-			break
-		}
-	}
-	settings.themeBindKey = keys[cur]
-	c.Label(pad, y+4, "Bind theme to server:", ColText)
-	if next, changed := c.Dropdown("themebindsrv", sdl.Rect{X: pad + 170, Y: y, W: 260, H: btnH}, names, cur); changed {
-		settings.themeBindKey = keys[next]
-	}
-	bound := a.d.Prefs.ServerWarmInfoFor(settings.themeBindKey).Theme
-	if c.Button(sdl.Rect{X: pad + 440, Y: y, W: 150, H: btnH}, "Bind "+clampLine(settings.themeName)) {
-		a.d.Prefs.SetServerTheme(settings.themeBindKey, settings.themeName)
-		if settings.themeBindKey == a.serverKey && a.sess != nil {
-			a.themeBound = settings.themeName
-			a.ensureThemeForSession()
-		}
-		settings.statusLine = "Theme " + settings.themeName + " bound — that server always uses it now."
-	}
-	if bound != "" {
-		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Unbind") {
-			a.d.Prefs.SetServerTheme(settings.themeBindKey, "")
-			if settings.themeBindKey == a.serverKey && a.sess != nil {
-				a.themeBound = ""
-				a.ensureThemeForSession()
-			}
-			settings.statusLine = "Theme binding removed."
-		}
-		c.LabelClipped(pad+700, y+4, w-pad-700-scrollBarW, "bound: "+bound, ColAccent)
-	} else {
-		c.Label(pad+600, y+4, "no binding (uses the global theme)", ColTextDim)
-	}
-	return y + 32
-}
-
-// cycleTheme steps through the scanned theme list and persists the pick.
-func (a *App) cycleTheme(step int) {
-	list := settings.themeList
-	if len(list) == 0 {
-		return
-	}
-	idx := 0
-	for i, name := range list {
-		if name == settings.themeName {
-			idx = i
-			break
-		}
-	}
-	idx = (idx + step + len(list)) % len(list)
-	settings.themeName = list[idx]
-	a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
-	// #35: stepping the arrows is a deliberate pick, like the dropdown — arm the
-	// gen of the apply the step itself started. Also loads the chatbox skin +
-	// colors, so the pick shows live.
-	a.themeResizeArmGen = a.applyThemeAsync()
-}
-
-// themeDropdownID is the theme picker's widget id. Named because two places
-// need it now: the control itself, and the "is the picker open?" catalog
-// trigger that draws beside it.
-const themeDropdownID = "themedd"
-
-// subthemeDropdownID is the AO2 subtheme picker's widget id.
-const subthemeDropdownID = "subthemedd"
-
-// subthemeNoneLabel is the first row of the subtheme dropdown — the AO2 default
-// (Options::subTheme() unset). A named empty-ish choice rather than a blank row,
-// because a blank row in a list reads as a broken entry.
-const subthemeNoneLabel = "(none)"
-
-// subthemeMissingSuffix decorates the SYNTHESIZED row the dropdown grows when the
-// saved subtheme names a folder the active theme does not have. AO2 keeps the
-// subtheme across theme changes, so that state is normal, not an error — but a
-// dropdown that quietly fell back to "(none)" told the user their pick was gone
-// while the preference still held it (and would silently return the moment they
-// switched back). The row says both true things at once: the pick, and that this
-// theme has no such folder.
-const subthemeMissingSuffix = " (not in this theme)"
-
-// subthemeHint is the one-line explanation beside the dropdown. A const so the
-// row costs no allocation to draw.
-const subthemeHint = "a variant folder inside the theme — its files win over the theme's, and anything it leaves out still comes from the theme"
-
-// themeDropNote is the line under the write root when nothing is truncated.
-const themeDropNote = "drop a theme folder in here (or anywhere on this screen) and it shows up in the list above"
-
-// themeGetNote is the discovery row's one line. A const, so the row costs no
-// allocation to draw (the settings-text doctrine — see themeRowText).
-//
-// It used to name the COUNT and the two ways to fetch the files, because the
-// repository's themes/ folder held the only copy of fourteen hand-authored themes
-// and "go to the repo" on its own strands a non-developer (Code ▸ Download ZIP is
-// the path for someone who has never used git). That corpus has been retired, so
-// there is no download left to advertise and this says so rather than pointing at
-// a folder that is no longer there. What the repository still carries for a theme
-// author is the format reference, which is what this row is for now.
-const themeGetNote = "themes are not bundled with the client — the source repository carries the theme format reference (docs/THEME-FORMAT.md) if you want to write one"
-
-// themeRowLabelW is the label gutter shared by the catalog rows below, so
-// "Subtheme:" and "Your themes:" line their controls up with each other.
-const themeRowLabelW = 130
-
-// subthemeClearBtnW is the width of the "Clear" button that appears when a
-// subtheme is set but the ACTIVE theme has no such folder AND that theme ships no
-// variants at all — the one state where the pick has no row of its own to clear
-// from (a theme WITH variants grows the synthesized row above instead).
-const subthemeClearBtnW = 70
-
-const (
-	// themeBadgeW is the column the "kind · origin" badge owns before the theme's
-	// folder path starts. It fits the longest pair the two label sets can make
-	// ("no theme files · read-only") at the stock face.
-	themeBadgeW = 220
-	// themeBadgeGap keeps the badge from touching the path beside it when a big
-	// UI font pushes the text to the column's edge — the badge clips there rather
-	// than drawing over its neighbour.
-	themeBadgeGap = 8
-	// subthemeDropdownW is the variant picker's width: wide enough for a folder
-	// name plus subthemeMissingSuffix before the row clips.
-	subthemeDropdownW = 200
-	// subthemeHintGap separates that dropdown from the explanation beside it.
-	subthemeHintGap = 10
-	// subthemeClearGap keeps the "no such folder" line off the Clear button.
-	subthemeClearGap = 6
-	// themeFolderBtnsW is the strip on the right of the write-root row reserved
-	// for its two buttons ("Open folder" + "Refresh"), so the path label clips
-	// before it reaches them.
-	themeFolderBtnsW = 200
-	// themeOpenFolderBtnW / themeRefreshBtnW are those two buttons; Refresh is
-	// right-anchored, so its own width doubles as its offset from the edge.
-	themeOpenFolderBtnW = 110
-	themeRefreshBtnW    = 84
-	// themeGetBtnW is the "Open the repo" button on the discovery row above the
-	// write root; themeGetBtnsW is the strip it owns — the button plus the gap that
-	// keeps the sentence beside it from touching the button, so the text clips
-	// before it reaches one.
-	themeGetBtnW  = 130
-	themeGetBtnsW = 140
-)
-
-const (
-	// Row advances for the three catalog rows and the note under them. Named
-	// per row rather than shared, because they are not the same measurement: the
-	// badge and folder rows are plain label rows, the subtheme row carries a
-	// dropdown, and the note is a trailing hint line.
-	themeBadgeRowH    = 26
-	themeSubthemeRowH = 30
-	themeFolderRowH   = 26
-	themeNoteRowH     = 22
-	// themeGetRowH is the discovery row's advance. Same measurement as the folder
-	// row — a label, a sentence and a right-anchored button — and named separately
-	// for the same reason the others are: they are not one shared number.
-	themeGetRowH = 26
-	// themeFolderErrRowH is the advance of the write-root row when the location
-	// could not be resolved at all: that arm draws no note under it and RETURNS,
-	// so it carries the section's trailing gap itself.
-	themeFolderErrRowH = 30
-)
-
-// themeRowText memoizes every string drawThemeCatalogRows draws. Those rows are a
-// pure function of three inputs — the published catalog snapshot, the selected
-// theme name and the subtheme preference — none of which changes per frame, while
-// building them concatenates two labels, allocates an options slice and formats
-// the truncation note. Uncached that is four allocations on every frame the Theme
-// tab is up, which is exactly what the settings-text doctrine (see fmtOrderText)
-// exists to keep out.
-//
-// The validity key holds the catalog POINTER: the snapshot is immutable and
-// republished by pointer swap (themecatalog.go), so pointer identity is a
-// complete "did the answer change?" test — nil, the pre-first-scan state,
-// included. Render thread only, like the rest of settingsState.
-type themeRowText struct {
-	valid bool
-	cat   *themeCatalog
-	name  string
-	sub   string
-
-	// have reports that the catalog holds an entry for name; badge and dir are
-	// that entry's two label columns.
-	have  bool
-	badge string
-	dir   string
-
-	// subOpts is the subtheme dropdown's option list — subthemeNoneLabel, the
-	// theme's variants, and (when the saved pick is not one of them) the
-	// synthesized row at subStale. Empty when the theme ships no variants, which
-	// is the arm that draws subMsg and the Clear button instead.
-	subOpts  []string
-	subSel   int
-	subStale int // index of the synthesized row, -1 when there is none
-	subMsg   string
-
-	// root is the themes write root as this build resolved it; note is the line
-	// under it (truncation-aware).
-	root string
-	note string
-}
-
-// stale reports whether the memo has to be rebuilt for these inputs. Split from
-// the draw so the memo key is testable without a renderer.
-func (r *themeRowText) stale(cat *themeCatalog, name, sub string) bool {
-	return !r.valid || r.cat != cat || r.name != name || r.sub != sub
-}
-
-// rebuild recomputes the whole row set from the three inputs.
-func (r *themeRowText) rebuild(cat *themeCatalog, name, sub string) {
-	*r = themeRowText{valid: true, cat: cat, name: name, sub: sub, subStale: -1}
-	entry, have := cat.Entry(name)
-	r.have = have
-	if have {
-		r.badge = themeKindLabel(entry.Kind) + " · " + themeOriginLabel(entry.Origin)
-		r.dir = entry.Dir
-	}
-	switch {
-	case have && len(entry.Subthemes) > 0:
-		r.subOpts = make([]string, 0, len(entry.Subthemes)+2) // +2: "(none)" and the possible stale row
-		r.subOpts = append(r.subOpts, subthemeNoneLabel)
-		r.subOpts = append(r.subOpts, entry.Subthemes...)
-		for i, s := range entry.Subthemes {
-			if s == sub {
-				r.subSel = i + 1
-				break
-			}
-		}
-		if sub != "" && r.subSel == 0 {
-			// The saved pick belongs to another theme. Show it as itself rather
-			// than letting the control read "(none)" over a preference that is set.
-			r.subStale = len(r.subOpts)
-			r.subOpts = append(r.subOpts, sub+subthemeMissingSuffix)
-			r.subSel = r.subStale
-		}
-	case sub != "":
-		// No variants at all: there is no list to carry the pick, so the row says
-		// it in words and the Clear button beside it is the way out.
-		r.subMsg = "\"" + sub + "\" is set, but this theme has no such folder"
-	default:
-		r.subMsg = "this theme ships no variant folders"
-	}
-	if cat != nil {
-		r.root = cat.WriteRoot
-	}
-	if r.root == "" {
-		// Fallback for the frames before the first catalog publishes (and forever
-		// on a machine whose config location never resolves). config.UserThemesDir
-		// joins two memoized answers — ConfigBaseDir's probe and executableDir's
-		// EvalSymlinks walk — and BOTH are already warm here: prefs loading resolves
-		// them during boot, long before this screen can be drawn. Reached once per
-		// rebuild, never per frame. Do not "simplify" either memo away, and do not
-		// add a stat/exists check here (hard rule 2).
-		r.root = config.UserThemesDir()
-	}
-	r.note = themeDropNote
-	if cat != nil && cat.Truncated {
-		r.note = fmt.Sprintf("showing the first %d themes found — the rest are still on disk and still load by name", themeCatalogCap)
-	}
-}
-
-// drawThemeCatalogRows draws everything the off-thread theme catalog answers:
-// what the selected theme actually IS (its badge), which AO2 subtheme variant
-// to prefer, and — the single most support-load-reducing line in the feature —
-// WHERE the folder is that this client writes themes into, with a button that
-// opens it.
-//
-// Every value here comes from an atomic snapshot (themecatalog.go). Nothing in
-// this function touches the disk: "Open folder" and the scans are the only disk
-// work and both are goroutines (hard rule 2). Nothing here builds a string
-// either — every one of them comes from the themeRowText memo.
-func (a *App) drawThemeCatalogRows(y, w int32) int32 {
-	c := a.ctx
-	pad := a.formX // the settings-origin shadow rule: without this the row draws under the sidebar
-	cat := a.themeCatalogSnapshot()
-	sub := a.d.Prefs.Subtheme()
-	rows := &settings.themeRows
-	if rows.stale(cat, settings.themeName, sub) {
-		rows.rebuild(cat, settings.themeName, sub)
-	}
-
-	// --- badge: what this theme is, and whether it is ours to edit ----------
-	if c.onRow != nil {
-		c.onRow("Theme badge", y)
-	}
-	c.Label(pad, y+4, "This theme:", ColText)
-	switch {
-	case cat == nil:
-		c.Label(pad+themeRowLabelW, y+4, "reading your themes folder…", ColTextDim)
-	case !rows.have:
-		// The built-in default has no folder anywhere, and a bare-folder import
-		// (#21) resolves outside themes/ — neither is an error.
-		c.Label(pad+themeRowLabelW, y+4, "built in (no theme folder of its own)", ColTextDim)
-	default:
-		c.LabelClipped(pad+themeRowLabelW, y+4, themeBadgeW-themeBadgeGap, rows.badge, ColAccent)
-		c.LabelClipped(pad+themeRowLabelW+themeBadgeW, y+4, w-pad-themeRowLabelW-themeBadgeW-scrollBarW, rows.dir, ColTextDim)
-	}
-	y += themeBadgeRowH
-
-	// --- subtheme: AO2's own variant selector -------------------------------
-	if c.onRow != nil {
-		c.onRow("Subtheme", y)
-	}
-	c.Label(pad, y+4, "Subtheme:", ColText)
-	if len(rows.subOpts) > 0 {
-		if next, changed := c.Dropdown(subthemeDropdownID, sdl.Rect{X: pad + themeRowLabelW, Y: y, W: subthemeDropdownW, H: btnH}, rows.subOpts, rows.subSel); changed {
-			pick := ""
-			switch {
-			case next == rows.subStale:
-				// The synthesized row is the pick it already holds — re-picking it
-				// must not write the DECORATED label into the preference.
-				pick = sub
-			case next > 0:
-				pick = rows.subOpts[next]
-			}
-			a.d.Prefs.SetSubtheme(pick)
-			a.applyThemeAsync() // the variant changes rects, art and fonts: reload like a theme swap
-		}
-		c.LabelClipped(pad+themeRowLabelW+subthemeDropdownW+subthemeHintGap, y+4,
-			w-pad-themeRowLabelW-subthemeDropdownW-subthemeHintGap-scrollBarW, subthemeHint, ColTextDim)
-	} else {
-		msgW := w - pad - themeRowLabelW - scrollBarW
-		if sub != "" {
-			msgW -= subthemeClearBtnW + subthemeClearGap // leave the Clear button its own room
-		}
-		c.LabelClipped(pad+themeRowLabelW, y+4, msgW, rows.subMsg, ColTextDim)
-		if sub != "" {
-			if c.Button(sdl.Rect{X: w - subthemeClearBtnW - scrollBarW, Y: y, W: subthemeClearBtnW, H: btnH}, "Clear") {
-				a.d.Prefs.SetSubtheme("")
-				a.applyThemeAsync()
-			}
-		}
-	}
-	y += themeSubthemeRowH
-
-	// --- where to GET themes, which is the row nobody could find -----------
-	//
-	// THE DISCOVERY POINT, and it still is one even though it no longer sells
-	// anything. It used to advertise the fourteen hand-authored themes that lived
-	// in the source repository's themes/ folder and nowhere else (never in the
-	// release archives — they were content, not code), which is what made "drop a
-	// theme folder in here" two rows down a dead end for anyone with no theme
-	// folder to drop. That corpus has been retired, so the row now answers the
-	// same dead end with the one thing the repository can still give a theme
-	// author: the format reference.
-	//
-	// It STAYS rather than being deleted along with the corpus, because the
-	// question it exists for — "I have none, where do these come from?" — is
-	// exactly as real when the answer is "you write one". There is deliberately no
-	// count and no download instruction left in it.
-	//
-	// ABOVE the write root deliberately: this row draws even on the arm where the
-	// write root could not be resolved at all — the case where a user needs to
-	// know where themes come from MOST.
-	if c.onRow != nil {
-		c.onRow("Get themes", y)
-	}
-	c.Label(pad, y+4, "Get themes:", ColText)
-	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeGetBtnsW-scrollBarW, themeGetNote, ColTextDim)
-	if c.Button(sdl.Rect{X: w - themeGetBtnW - scrollBarW, Y: y, W: themeGetBtnW, H: btnH}, "Open the repo") {
-		// The About screen's own launcher, not a second copy of the per-OS shellout
-		// (about.go) — and aboutRepoURL, so the two surfaces can never drift to
-		// different repositories.
-		openBrowser(aboutRepoURL)
-	}
-	y += themeGetRowH
-
-	// --- THE AUTHORING CROSS-LINK ------------------------------------------
-	//
-	// Two rows used to sit here: "Import:" (the .aotheme browse, W8) and "Theme
-	// editor:" (W7). Both moved to the Theme editor tab, and this is the gap they
-	// left — the place a user who remembers seeing them will look. The cross-tab
-	// hint machinery is the tool for exactly that (drawThemeAuthoringHint).
-	y = a.drawThemeAuthoringHint(y, w)
-
-	// --- the write root, and the button that opens it ----------------------
-	if c.onRow != nil {
-		c.onRow("Your themes folder", y)
-	}
-	c.Label(pad, y+4, "Your themes:", ColText)
-	root := rows.root
-	if root == "" {
-		c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-scrollBarW,
-			"couldn't work out where to keep themes on this machine", ColTextDim)
-		y += themeFolderErrRowH
-		return y
-	}
-	c.LabelClipped(pad+themeRowLabelW, y+4, w-pad-themeRowLabelW-themeFolderBtnsW-scrollBarW, root, ColAccent)
-	if c.Button(sdl.Rect{X: w - themeFolderBtnsW - scrollBarW, Y: y, W: themeOpenFolderBtnW, H: btnH}, "Open folder") {
-		openThemesFolder(root)
-	}
-	if c.Button(sdl.Rect{X: w - themeRefreshBtnW - scrollBarW, Y: y, W: themeRefreshBtnW, H: btnH}, "Refresh") {
-		a.requestThemeCatalog(themeScanExplicit) // trigger 4: unconditional
-		// fromUser stays FALSE on purpose. It does not gate the rescan — the list
-		// refreshes either way — it arms the #35 window snap (pollThemeScan sets
-		// themeResizeArmGen), and ResizeWindow also RECENTERS, yanking a window the
-		// user had positioned. "Refresh" must only re-read the folder; the snap
-		// belongs to the deliberate acts that ask for a theme, i.e. "Apply & rescan",
-		// the folder picker and a drop.
-		a.scanThemes(false)
-	}
-	y += themeFolderRowH
-	c.LabelClipped(pad, y, w-pad-scrollBarW, rows.note, ColTextDim)
-	y += themeNoteRowH
-	return y
-}
-
-const (
-	// themeArtBarTrackW / themeArtBarTrackH are the budget meter's track. It sits
-	// in the label gutter's right-hand column like every other catalog row, so the
-	// three rows above it and this one line up.
-	themeArtBarTrackW = 220
-	themeArtBarTrackH = 10
-	// themeArtBarLabelGap keeps the "31.4 / 48.0 MiB · …" text off the track.
-	themeArtBarLabelGap = 10
-	// themeArtBarRowH / themeArtNoteRowH are the meter row and the hint under it.
-	themeArtBarRowH  = 24
-	themeArtNoteRowH = 22
-	// themeArtBarTrackYOff centres the 10 px track against the text baseline of the
-	// label beside it (btnH-tall rows put their text at +4).
-	themeArtBarTrackYOff = 5
-)
-
-// themeArtNote is the line under the meter. A const, so the row costs no
-// allocation to draw (the settings-text doctrine — see themeRowText).
-const themeArtNote = "images and generator tiles an AsyncAO theme declares; they are pinned, so this is memory the streaming cache never gets back. The allowance scales with Settings ▸ General ▸ Texture memory budget."
-
-// themeArtBarText memoizes the budget bar's label on the four numbers it is built
-// from. Without it, drawing the Theme tab would format a string every frame — the
-// exact cost the catalog rows above went to some length to avoid.
-//
-// Keyed on the VALUES rather than on a generation, because all four are already
-// integers the store and the plan publish: the label is a pure function of them, so
-// equality IS the validity test and there is no third thing to keep in step.
-type themeArtBarText struct {
-	valid         bool
-	bytes, budget int64
-	images, gens  int
-	label         string
-}
-
-// rebuild recomputes the label if any of the four inputs moved.
-func (r *themeArtBarText) refresh(bytes, budget int64, images, gens int) {
-	if r.valid && r.bytes == bytes && r.budget == budget && r.images == images && r.gens == gens {
-		return
-	}
-	*r = themeArtBarText{
-		valid: true, bytes: bytes, budget: budget, images: images, gens: gens,
-		label: themeArtBarLabel(bytes, images, gens, budget),
-	}
-}
-
-// drawThemeArtBudgetRow is design §Q2's budget bar: what the active theme's own art
-// is spending, out of what, permanently visible.
-//
-// PERMANENT, not shown-at-the-cap, and that is the whole design of it. A pinned
-// tier has no eviction — by construction, because eviction is the black-flash defect
-// UploadPinned exists to prevent — so the ONLY thing standing between a heavy theme
-// and a starved streaming cache is the user being able to see the number before
-// they hit it. A bar that appeared only once the budget was gone would name the
-// problem at the exact moment it was too late to avoid.
-//
-// Zero art draws it too: with no native theme applied the row reads
-// "0.0 MiB / 24.0 MiB", which is also where somebody finds out the feature exists.
-//
-// Both numbers come from internal/render by CALL — the store's live ledger and
-// ThemeMediaByteCap — never from a copy on this side, so the bar cannot quote a
-// budget the admission gate is not using.
-func (a *App) drawThemeArtBudgetRow(y, w int32) int32 {
-	c := a.ctx
-	pad := a.formX // the settings-origin shadow rule (see drawThemeCatalogRows)
-	if c.onRow != nil {
-		c.onRow("Theme art budget", y)
-	}
-	budget := render.ThemeMediaByteCap(a.d.Prefs.TexBudgetMiB())
-	// The store is nil in a headless App (and would be during the search index's
-	// harvest pass on one), and the row's HEIGHT must not depend on that: a settings
-	// row that sometimes advances y and sometimes does not is a scroll bug, and this
-	// one is also an index entry the search jumps to by offset. Zeros draw the same
-	// row the pre-first-theme case draws.
-	var bytes int64
-	var images, gens int
-	if a.d.Store != nil {
-		bytes, images, gens = a.d.Store.ThemeMediaBytes(), a.d.Store.ThemeMediaCount(), a.d.Store.ThemeGenCount()
-	}
-	settings.themeArt.refresh(bytes, budget, images, gens)
-
-	c.Label(pad, y+4, "Theme art:", ColText)
-	track := sdl.Rect{X: pad + themeRowLabelW, Y: y + themeArtBarTrackYOff, W: themeArtBarTrackW, H: themeArtBarTrackH}
-	c.Fill(track, ColPanel)
-	col := ColAccent
-	if themeArtOverWarnPct(bytes, budget) {
-		col = ColDanger
-	}
-	if budget > 0 && bytes > 0 {
-		// int64 throughout: bytes × track width overflows int32 at ~2 GiB of art,
-		// which the caps make impossible today and would make this silently negative
-		// the day somebody raised one.
-		fill := int32(bytes * int64(track.W) / budget)
-		if fill > track.W {
-			fill = track.W // a store over its own ceiling still draws a full bar, never a longer one
-		}
-		if fill < 1 {
-			fill = 1 // anything resident at all is visible: "0 px" and "nothing loaded" must not look alike
-		}
-		c.Fill(sdl.Rect{X: track.X, Y: track.Y, W: fill, H: track.H}, col)
-	}
-	labelX := track.X + track.W + themeArtBarLabelGap
-	c.LabelClipped(labelX, y+4, w-labelX-scrollBarW, settings.themeArt.label, col)
-	y += themeArtBarRowH
-	c.LabelClipped(pad, y, w-pad-scrollBarW, themeArtNote, ColTextDim)
-	return y + themeArtNoteRowH
-}
-
-// scanThemes lists themes/<name> directories under every root themeSearchRoots
-// names — the custom folder, the executable's directory and the config base, in
-// that order — off-thread; pollThemeScan picks up the result. It builds from the
-// same function the LOADER does on purpose: this list is the only source for the
-// theme dropdown and for cycleTheme's ◀ ▶, so a root the loader searches and this
-// one does not is a theme that resolves by name yet cannot be picked (the W2 bug
-// on every non-portable install). TestThemePickerAndLoaderSearchTheSameRoots.
-//
-// fromUser distinguishes a scan the user asked for from the Settings screen's
-// automatic first-open scan — see themeScan.fromUser.
-//
-// The intent is latched BEFORE the single-flight bail, so a request that arrives
-// while a scan is already running is not lost. Otherwise the in-flight scan
-// (typically the automatic first-open one) re-applies the theme with fromUser
-// false and the user's #35 auto-snap goes with no trace — see
-// settingsState.themeScanUserWant. The latch alone is not enough when the
-// dropped request also changed the theme FOLDER: that scan's answer is about the
-// old folder, so pollThemeScan re-issues it rather than re-labelling it.
-func (a *App) scanThemes(fromUser bool) {
-	if fromUser {
-		settings.themeScanUserWant = true
-	}
-	if settings.themeBusy {
-		return
-	}
-	settings.themeBusy = true
-	customRoot := strings.TrimSpace(settings.themeDir)
-	go func() {
-		root, pick := normalizeThemeRoot(customRoot)
-		// The custom root is passed even when the current theme is the stock
-		// "default": themeLoadRoots drops it for that ONE name (#87), but the picker
-		// lists every name there is, and a custom folder's other themes must appear.
-		roots := themeSearchRootsNow(root)
-		settings.themeRes <- themeScan{names: scanThemeDirs(roots, pick), root: root, pickName: pick, in: customRoot, fromUser: fromUser}
-	}()
-}
-
-func (a *App) pollThemeScan() {
-	select {
-	case res := <-settings.themeRes:
-		settings.themeBusy = false
-		settings.themeList = res.names
-		// A dropped request that also changed the theme FOLDER cannot be answered by
-		// re-labelling this result: the scan in flight carried the OLD folder, so its
-		// root would be written back over the folder the user just picked (below),
-		// and the latched intent would then arm a window snap for a theme root they
-		// never chose — while the folder they did choose is never scanned at all.
-		// Re-issue the request instead, keeping the latch for the landing that really
-		// answers it.
-		//
-		// It cannot spin: the re-issue is made with the CURRENT folder, so its own
-		// result matches unless the folder changed again, and every change is a fresh
-		// user action; the single-flight also guarantees only one scan is ever in
-		// flight, so no two landings can chase each other. themeBusy is already false
-		// above, so scanThemes issues rather than bailing.
-		if settings.themeScanUserWant && res.in != strings.TrimSpace(settings.themeDir) {
-			a.scanThemes(true)
-			return
-		}
-		// A request the single-flight dropped set the latch but could not set
-		// res.fromUser, so the two have to be OR'd.
-		fromUser := res.fromUser || settings.themeScanUserWant
-		// The scanner may have normalized the pasted path (the themes
-		// folder itself, or one theme inside it) into the root
-		// theme.Load expects — reflect and persist it.
-		if res.root != "" && res.root != strings.TrimSpace(settings.themeDir) {
-			settings.themeDir = res.root
-			settings.statusLine = "Theme folder normalized to " + res.root
-		}
-		if res.pickName != "" {
-			settings.themeName = res.pickName
-		}
-		if res.root != "" || res.pickName != "" {
-			a.d.Prefs.SetTheme(settings.themeName, settings.themeDir)
-			// #35: this is the import landing — the user pointed at a theme folder
-			// (picker, drag-drop or Apply & rescan) and it resolved. Note that
-			// pickName is EMPTY when they pointed at a themes/ parent, so the theme
-			// NAME often doesn't change here even though a real import happened;
-			// that is why the arming is explicit and not a name comparison.
-			// Arms, never disarms: an automatic scan landing must not swallow a
-			// pick the user made while it was in flight.
-			gen := a.applyThemeAsync()
-			if fromUser {
-				// Clear the latch HERE, on the one branch that consumes it. A landing
-				// that resolved no root and no pick (the default state: no custom
-				// theme folder at all, so "Apply & rescan" resolves nothing) takes no
-				// action, and clearing there would swallow the user's intent for a
-				// rescan that never happened.
-				settings.themeScanUserWant = false
-				a.themeResizeArmGen = gen
-			}
-		}
-	default:
-	}
-}
-
-// themeINIFiles marks a directory as a single theme folder.
-var themeINIFiles = []string{theme.DesignFileName, theme.FontsFileName, theme.SoundsFileName}
-
-// normalizeThemeRoot turns whatever the user pasted or dropped into the
-// root theme.Load expects (the folder CONTAINING themes/). Users paste
-// all three shapes — the root, the themes folder itself, or a single
-// theme inside it (returned as pickName and auto-selected). Runs off the
-// render thread (it stats directories).
-func normalizeThemeRoot(path string) (root, pickName string) {
-	// Explorer's "Copy as path" wraps in quotes — strip them or every
-	// stat below misses and the root never normalizes.
-	path = strings.Trim(strings.TrimSpace(path), `"'`)
-	if path == "" {
-		return "", ""
-	}
-	path = filepath.Clean(path)
-	// A single theme folder? Its name is the pick. The root is two up when the
-	// folder really sits under a themes/ dir (…/root/themes/<name> → …/root); it
-	// is ONE up otherwise, because a theme downloaded as a zip unpacks to a bare
-	// folder with no themes/ parent, and inventing one made theme.Load probe a
-	// directory that never existed — literally the import path in issue #21's
-	// title. theme.Load's flat tier resolves <root>/<name> for that case.
-	for _, ini := range themeINIFiles {
-		if _, err := os.Stat(filepath.Join(path, ini)); err != nil {
-			continue
-		}
-		parent := filepath.Dir(path)
-		if strings.EqualFold(filepath.Base(parent), theme.ThemesDirName) {
-			return filepath.Dir(parent), filepath.Base(path)
-		}
-		return parent, filepath.Base(path)
-	}
-	// The themes folder itself → its parent is the root.
-	if strings.EqualFold(filepath.Base(path), theme.ThemesDirName) {
-		return filepath.Dir(path), ""
-	}
-	return path, ""
-}
-
-// volumeWheelStep is how many percent one wheel tick nudges a volume row (#52):
-// fine enough for precise tuning, coarse enough that a flick crosses the 0–100
-// range in a handful of ticks. It's the volume analog of sliderRow's per-call
-// step; a value row without an explicit step needs a named one here.
-const volumeWheelStep = 2
-
-// volumeRow draws one "<name>  [====slider====] NN%" control and returns the
-// value. A draggable slider (click/drag anywhere on the track) instead of
-// +/- buttons — far nicer to set than stepping a button. Continuous 0–100.
-// Mousewheel over the row steps by volumeWheelStep (numberRow/sliderRow parity,
-// #52) and the row joins the settings gather-search index like every other row.
-func (a *App) volumeRow(y int32, name string, value int) int {
-	c := a.ctx
-	pad := a.formX
-	if c.onRow != nil {
-		c.onRow(name, y) // gather-search: "master volume" & friends are now findable/flash-jumpable (#52)
-	}
-	c.Label(pad, y+4, name+":", ColText)
-	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}
-	value = int(c.Slider(name, track, int32(value), 100))
-	// Wheel-over-row stepping (#52): the whole label+track band owns the wheel so
-	// a hover-scroll fine-tunes instead of paging the settings list.
-	row := sdl.Rect{X: pad, Y: y, W: track.X + track.W - pad, H: 26}
-	if c.hovering(row) && c.wheelY != 0 {
-		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
-		value += int(c.wheelY) * volumeWheelStep
-		if value < 0 {
-			value = 0
-		}
-		if value > 100 {
-			value = 100
-		}
-	}
-	c.Label(track.X+track.W+12, y+4, fmt.Sprintf("%3d%%", value), ColAccent)
-	return value
-}
-
-// numberRow is volumeRow for arbitrary units/steps/bounds (spinbox-style:
-// −/+ plus mousewheel over the row).
-func (a *App) numberRow(y int32, label string, value, step, min, max int, tip ...string) int {
-	c := a.ctx
-	pad := a.formX
-	if c.onRow != nil {
-		c.onRow(label, y) // gather-search: number rows are findable like sliders/checkboxes (#52)
-	}
-	c.Label(pad, y+4, label+":", ColText)
-	if c.Button(sdl.Rect{X: pad + 130, Y: y, W: 24, H: 24}, "-") && value-step >= min {
-		value -= step
-	}
-	c.Label(pad+162, y+4, fmt.Sprintf("%5d", value), ColAccent)
-	if c.Button(sdl.Rect{X: pad + 224, Y: y, W: 24, H: 24}, "+") && value+step <= max {
-		value += step
-	}
-	row := sdl.Rect{X: pad, Y: y, W: 252, H: 26}
-	if c.hovering(row) && c.wheelY != 0 {
-		c.wheelTaken = true // a hovered spinbox owns the wheel — no page scroll
-		next := value + int(c.wheelY)*step
-		if next >= min && next <= max {
-			value = next
-		}
-	}
-	settingTip(c, row, tip) // #19: optional "what's this" hover explanation
-	return value
-}
-
-// settingTip shows a value row's "what's this" tooltip (#19) when one was passed — a hover
-// explanation for the terse slider / number controls that can't carry a full inline label like the
-// (already self-documenting) checkboxes do.
-func settingTip(c *Ctx, row sdl.Rect, tip []string) {
-	if len(tip) > 0 && tip[0] != "" {
-		c.Tooltip(row, tip[0])
-	}
-}
-
-// sliderRow is numberRow drawn as a draggable slider (same signature, so it's
-// a drop-in): label, a slider track, then the live value — all left of the
-// pad+270 help text the settings rows use. Drag for coarse; mousewheel over
-// the row still fine-tunes by ±step (numberRow parity). The result snaps to
-// the step grid and clamps to [min, max].
-func (a *App) sliderRow(y int32, label string, value, step, min, max int, tip ...string) int {
-	c := a.ctx
-	pad := a.formX
-	if c.onRow != nil {
-		c.onRow(label, y) // gather-search: slider rows are findable like checkboxes
-	}
-	c.Label(pad, y+4, label+":", ColText)
-	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 90, H: 16}
-	if span := max - min; span > 0 {
-		value = min + int(c.Slider(label, track, int32(value-min), int32(span)))
-	}
-	if c.hovering(sdl.Rect{X: pad, Y: y, W: 252, H: 26}) && c.wheelY != 0 {
-		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
-		value += int(c.wheelY) * step
-	}
-	if value < min {
-		value = min
-	}
-	if value > max {
-		value = max
-	}
-	if step > 1 { // snap to the step grid for clean values, then re-clamp
-		value = ((value-min+step/2)/step)*step + min
-		if value > max {
-			value = max
-		}
-	}
-	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%d", value), ColAccent)
-	settingTip(c, sdl.Rect{X: pad, Y: y, W: 252, H: 26}, tip) // #19: optional "what's this" hover explanation
-	return value
-}
-
-// uiScaleSliderID is the manual UI-scale slider's drag id (== the label passed to
-// sliderRow), used to detect the drag for commit-on-release.
-const uiScaleSliderID = "UI scale %"
-
-// drawManualUIScale draws the manual UI-scale control. Applying the scale LIVE
-// rescales the whole UI — this very slider included — so a live drag chases the
-// cursor (the "super hard to use" report). Fix: the slider COMMITS ON RELEASE
-// (preview the number while dragging, apply on mouse-up), and a row of preset
-// chips gives a one-click path that never fights the cursor. Returns the new y.
-func (a *App) drawManualUIScale(y int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	// While a drag is armed, feed the PENDING value back in: on the release
-	// frame the Slider no longer tracks the mouse and echoes whatever it was
-	// passed, so passing uiScalePct made the thumb (and worse, `next`) revert.
-	shown := a.uiScalePct
-	if a.uiScaleDragging {
-		shown = a.uiScalePending
-	}
-	next := a.sliderRow(y, uiScaleSliderID, shown, config.UIScaleStepPercent,
-		config.MinUIScalePercent, config.MaxUIScalePercent,
-		"Zooms the WHOLE interface. Drag to preview, release to apply (applying mid-drag would rescale this slider under your cursor); or click a preset below.")
-	switch {
-	// The mouseDown guard is load-bearing: BeginFrame clears dragID only on a
-	// frame that STARTS with the button up, so on the release frame itself
-	// dragID still names this slider while mouseDown is already false. Without
-	// the guard this case fired one extra frame and clobbered uiScalePending
-	// with the un-applied base value — the release then committed a no-op and
-	// the slider "snapped back to 100%" (the playtest report).
-	case c.dragID == uiScaleSliderID && c.mouseDown:
-		// Dragging: remember the value but DON'T rescale yet (that's the feedback loop).
-		a.uiScaleDragging = true
-		a.uiScalePending = next
-	case a.uiScaleDragging:
-		// Released → apply once, on the release frame.
-		a.uiScaleDragging = false
-		a.applyManualUIScale(a.uiScalePending)
-	case next != a.uiScalePct:
-		// Wheel or click-to-set (no drag) — discrete, no feedback loop.
-		a.applyManualUIScale(next)
-	}
-	y += 30
-
-	// Preset chips: a no-drag, one-click path (the easy way to land 150/175% on a
-	// big screen). A click is instantaneous, so it can't chase the cursor.
-	cx := pad + 130
-	for _, p := range []int{100, 125, 150, 175, 200} {
-		r := sdl.Rect{X: cx, Y: y, W: 46, H: btnH}
-		if c.Button(r, fmt.Sprintf("%d%%", p)) {
-			a.applyManualUIScale(p)
-		}
-		if a.uiScalePct == p {
-			c.Border(r, ColAccent) // mark the active preset
-		}
-		cx += 52
-	}
-	return y + 34
-}
-
-// applyManualUIScale commits a manual UI scale: clamp, store, push to the kit
-// (mouse unprojection) and persist. The single chokepoint for the slider's
-// release, the wheel, and the preset chips.
-func (a *App) applyManualUIScale(pct int) {
-	pct = clampInt(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
-	if pct == a.uiScalePct {
-		return
-	}
-	a.uiScalePct = pct
-	a.ctx.SetUIScale(a.UIScale())
-	a.d.Prefs.SetUIScale(pct)
-}
-
-// drawViewportSizeRow is the precise stage-size control. The AO stage art is
-// 256×192, so the stage stays sharp at integer multiples and softens at the
-// %-of-window sizes that fall between them. Preset chips pick the crisp
-// multiples, a slider / mouse-wheel step through them, and an entry box takes an
-// exact px width for power users; 0 px = "Fit" (size by the View % knob / edge
-// drag, the prior behaviour). The entry buffer is written only on edit / commit
-// / chip / slider — never reseeded per frame — so it stays freely editable.
-// Settings screen only; off the courtroom hot path.
-func (a *App) drawViewportSizeRow(y int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	cur := a.d.Prefs.ViewportExactWidth()
-	set := func(px int) { // apply + resync the entry buffer to the clamped result
-		a.d.Prefs.SetViewportExactWidth(px)
-		cur = a.d.Prefs.ViewportExactWidth()
-		if cur == 0 {
-			a.vpExactBuf = ""
-		} else {
-			a.vpExactBuf = strconv.Itoa(cur)
-		}
-	}
-
-	c.Label(pad, y+4, "Stage size:", ColText)
-	x := pad + 130
-	chip := func(label string, px int) {
-		bw := c.TextWidth(label) + 16
-		r := sdl.Rect{X: x, Y: y, W: bw, H: btnH}
-		if c.Button(r, label) {
-			set(px)
-		}
-		if cur == px {
-			c.Border(r, ColAccent) // the active size
-		}
-		x += bw + 5
-	}
-	chip("Fit", 0)
-	for m := 1; m <= 4; m++ {
-		chip(fmt.Sprintf("%d×", m), m*config.ViewportArtW)
-	}
-	y += 30
-
-	// Slider + wheel step in art-multiples (so every slider stop is a crisp size);
-	// 0 = the leftmost stop = Fit.
-	maxM := config.MaxViewportExactPx / config.ViewportArtW
-	curM := cur / config.ViewportArtW
-	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 160, H: 16}
-	newM := int(c.Slider("vpexact", track, int32(curM), int32(maxM)))
-	if c.hovering(sdl.Rect{X: track.X - 6, Y: y, W: track.W + 12, H: 26}) && c.wheelY != 0 {
-		c.wheelTaken = true // hovered control owns the wheel — no page scroll
-		newM = curM + int(c.wheelY)
-	}
-	if newM < 0 {
-		newM = 0
-	}
-	if newM > maxM {
-		newM = maxM
-	}
-	if newM != curM {
-		set(newM * config.ViewportArtW) // 0 ⇒ Fit
-	}
-
-	// Exact-px entry for "specific numbers" (commit on Enter; mirrors the
-	// window-size inputs — no live filtering, Atoi just ignores junk on submit).
-	box := sdl.Rect{X: track.X + track.W + 14, Y: y, W: 64, H: fieldH}
-	next, submitted := c.TextField("vpexactpx", box, a.vpExactBuf, "px")
-	a.vpExactBuf = next
-	if submitted {
-		if v, err := strconv.Atoi(strings.TrimSpace(a.vpExactBuf)); err == nil {
-			set(v)
-		}
-	}
-
-	rx := box.X + box.W + 12
-	if cur == 0 {
-		c.LabelClipped(rx, y+4, a.formX+a.formW-rx, "Fit window (sized by the View % knob / edge drag)", ColTextDim)
-	} else {
-		hh := cur * config.ViewportArtH / config.ViewportArtW
-		if cur%config.ViewportArtW == 0 {
-			c.Label(rx, y+4, fmt.Sprintf("%d×%d  ·  %d× — sharp", cur, hh, cur/config.ViewportArtW), ColAccent)
-		} else {
-			c.Label(rx, y+4, fmt.Sprintf("%d×%d  ·  off-grid — may blur", cur, hh), ColTierYellow)
-		}
-	}
-	y += 28
-	c.LabelClipped(pad, y, a.formW, "Integer multiples of 256×192 stay sharp; for pixel-perfect scaling also turn Smooth texture scaling off.", ColTextDim)
-	return y + 20
-}
-
-// previewDelayRow draws the sprite-preview hover dwell as a draggable slider
-// with a seconds readout (the value is stored in milliseconds; a raw "5000"
-// would be opaque). Bounds mirror the config clamp — SetPreviewHoverMs is
-// authoritative — and the result snaps to the half-second grid.
-func (a *App) previewDelayRow(y int32, ms int) int {
-	c := a.ctx
-	pad := a.formX
-	const (
-		minMs  = 500   // == config.minPreviewHoverMs (setter is authoritative)
-		maxMs  = 15000 // == config.maxPreviewHoverMs
-		stepMs = 500   // half-second grid
-	)
-	c.Label(pad, y+4, "Preview after hovering:", ColText)
-	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
-	if span := maxMs - minMs; span > 0 {
-		ms = minMs + int(c.Slider("previewdelay", track, int32(ms-minMs), int32(span)))
-	}
-	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
-		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
-		ms += int(c.wheelY) * stepMs
-	}
-	if ms < minMs {
-		ms = minMs
-	}
-	if ms > maxMs {
-		ms = maxMs
-	}
-	ms = ((ms-minMs+stepMs/2)/stepMs)*stepMs + minMs // snap to the grid
-	if ms > maxMs {
-		ms = maxMs
-	}
-	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%.1f s", float64(ms)/1000), ColAccent)
-	return ms
-}
-
-// emoteNameDelayRow draws the emote-name hover dwell as a draggable slider with
-// a seconds readout (mirrors previewDelayRow; the value is stored in ms). Bounds
-// mirror the config clamp — SetEmoteHoverNamesMs is authoritative — and the
-// result snaps to the half-second grid.
-func (a *App) emoteNameDelayRow(y int32, ms int) int {
-	c := a.ctx
-	pad := a.formX
-	const (
-		minMs  = 500   // == config.minEmoteHoverNamesMs (setter is authoritative)
-		maxMs  = 10000 // == config.maxEmoteHoverNamesMs
-		stepMs = 500   // half-second grid
-	)
-	c.Label(pad, y+4, "Name after hovering:", ColText)
-	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
-	if span := maxMs - minMs; span > 0 {
-		ms = minMs + int(c.Slider("emotenamedelay", track, int32(ms-minMs), int32(span)))
-	}
-	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
-		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
-		ms += int(c.wheelY) * stepMs
-	}
-	if ms < minMs {
-		ms = minMs
-	}
-	if ms > maxMs {
-		ms = maxMs
-	}
-	ms = ((ms-minMs+stepMs/2)/stepMs)*stepMs + minMs // snap to the grid
-	if ms > maxMs {
-		ms = maxMs
-	}
-	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%.1f s", float64(ms)/1000), ColAccent)
-	return ms
-}
-
-// emoteGridGapRow draws the emote-grid icon-spacing slider and returns the picked
-// gap in LOGICAL px. Same shape as emoteNameDelayRow (slider + wheel-over-the-row
-// nudge + a live readout), and it shadows pad from a.formX like every settings
-// draw helper must — without that shadow the row renders under the sidebar.
-//
-// The range starts at 0 on purpose (icons flush against each other) and the value
-// is NOT snapped to a step, unlike the half-second grid on the delay row above:
-// this setting is specified in pixels, so every pixel in range must be reachable.
-func (a *App) emoteGridGapRow(y int32, gap int) int {
-	c := a.ctx
-	pad := a.formX
-	c.Label(pad, y+4, "Emote icon spacing:", ColText)
-	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
-	if span := config.MaxEmoteGridGapPx - config.MinEmoteGridGapPx; span > 0 {
-		gap = config.MinEmoteGridGapPx + int(c.Slider("emotegridgap", track,
-			int32(gap-config.MinEmoteGridGapPx), int32(span)))
-	}
-	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
-		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
-		gap += int(c.wheelY)
-	}
-	if gap < config.MinEmoteGridGapPx {
-		gap = config.MinEmoteGridGapPx
-	}
-	if gap > config.MaxEmoteGridGapPx {
-		gap = config.MaxEmoteGridGapPx
-	}
-	c.Label(track.X+track.W+8, y+4, strconv.Itoa(gap)+" px", ColAccent)
-	return gap
-}
-
-// browseForFolder shells the native Windows THEME-folder picker on a goroutine;
-// the chosen path lands on folderRes (empty = cancelled, dropped). Returns
-// false when a dialog is already open (busy) so the caller can say so. This is
-// the last native shell-out picker: it's a FOLDER picker the in-app file browser
-// (demobrowser.go) doesn't replace today. If this one ever fails foreground live
-// the same way the old .demo file dialog did, the in-app browser is the proven
-// escalation path (extend it to pick directories).
-func browseForFolder() bool {
-	if settings.browseBusy {
-		return false
-	}
-	settings.browseBusy = true
-	go func() {
-		// A shown-and-activated TopMost owner form: a merely-CREATED owner proved
-		// insufficient live, so it's Show()n (invisible: Opacity 0, no taskbar) and
-		// Activate()d first so the modal dialog inherits real foreground z-order.
-		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
-			`$d = New-Object System.Windows.Forms.FolderBrowserDialog; ` +
-			`$d.Description = 'Pick the folder that CONTAINS themes\<name>'; ` +
-			`$o = New-Object System.Windows.Forms.Form; $o.TopMost = $true; $o.ShowInTaskbar = $false; $o.Opacity = 0; $o.Show(); $o.Activate(); ` +
-			`if ($d.ShowDialog($o) -eq 'OK') { Write-Output $d.SelectedPath }`
-		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
-		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
-		// Start → donate foreground rights → Wait: a CREATE_NO_WINDOW child can't
-		// activate its own dialog, so we hand it OUR foreground-activation rights.
-		var outBuf bytes.Buffer
-		cmd.Stdout = &outBuf
-		if err := cmd.Start(); err != nil {
-			settings.folderRes <- pickFailed
-			return
-		}
-		winexec.AllowSetForeground(cmd.Process.Pid)
-		err := cmd.Wait()
-		path := strings.TrimSpace(outBuf.String())
-		if err != nil {
-			settings.folderRes <- pickFailed // failure ≠ cancel
-			return
-		}
-		if path == "" {
-			settings.folderRes <- ""
-			return
-		}
-		settings.folderRes <- path
-	}()
-	return true
-}
-
-// resolveDroppedFolder turns an SDL drop path into a directory off-thread
-// (a dropped file means "its folder") and feeds the same channel as Browse.
-func resolveDroppedFolder(path string) {
-	go func() {
-		st, err := os.Stat(path)
-		if err != nil {
-			settings.folderRes <- ""
-			return
-		}
-		if !st.IsDir() {
-			path = filepath.Dir(path)
-		}
-		settings.folderRes <- path
-	}()
-}
-
-func (a *App) pollFolderPick() {
-	select {
-	case path := <-settings.folderRes:
-		settings.browseBusy = false
-		if path == "" {
-			return // user cancelled — silence is correct
-		}
-		if path == pickFailed {
-			settings.statusLine = "Couldn't open the folder picker — drop the folder onto this window instead."
-			return
-		}
-		settings.themeDir = path
-		a.d.Prefs.SetTheme(settings.themeName, path)
-		a.scanThemes(true) // the user picked/dropped this folder — a real import (#35)
-		// Trigger 4: an import just landed. Unconditional — the floor exists to
-		// stop idle polling, not to make a user wait after their own action.
-		a.requestThemeCatalog(themeScanAfterDrop)
-		settings.statusLine = "Theme folder set: " + path
-	default:
-	}
-}
-
-// pickFailed marks a native-picker shell-out FAILURE on folderRes, distinct from
-// "" (user cancelled). NUL can never be a real path, so it can't collide. Used by
-// browseForFolder (the THEME folder picker); the .demo picker moved fully in-app
-// (demobrowser.go) after the native dialog's foreground fragility failed live, so
-// this is now the theme picker's alone.
-const pickFailed = "\x00"
-
-// themePickerCap bounds the theme dropdown's list (hard rule 4). It is derived
-// from themeCatalogCap, not a second number: the picker and the browser answer
-// the same question about the same directories, and a name in one but not the
-// other is the W2 class of bug where a theme resolves yet cannot be picked.
-// Past it the list stops and the row says so — the themes are still on disk and
-// still load by name, which is what the truncation note tells the user.
-//
-// The +1 is the seed, and it is what makes "same question" true. scanThemeDirs
-// starts the list with the built-in "default" NAME before it reads a single
-// directory (theme.Load falls back to it even when no themes/ folder exists),
-// while the catalog counts directories only. At a plain themeCatalogCap the seed
-// would spend a directory's slot: a machine with exactly themeCatalogCap real
-// themes got 128 catalog entries and 127 picker rows — one theme the browser
-// lists and the dropdown cannot reach, i.e. precisely the bug above.
-const themePickerCap = themeCatalogCap + 1 // +1: the "default" seed is a name, not a directory
-
-// scanThemeDirs collects theme names across roots, "default" always first
-// (the built-in fallback theme.Load uses even when no folder exists). BLOCKING
-// (os.ReadDir per root) — goroutine only, never a draw path.
-//
-// pick is the bare-folder import normalizeThemeRoot just resolved (#21). It has
-// no themes/ parent, so the ReadDir below can never find it; without appending
-// it the theme applies once and then vanishes from the dropdown, and stepping
-// the ◀ ▶ arrows would walk off it with no way back. It is appended even at the
-// cap — a theme the user just picked must never be the one entry the bound drops,
-// or the pick becomes unreachable the moment it is made.
-//
-// Dedup keys on the FOLDED name, matching the catalog scan: on Windows and macOS
-// "Nocturne" and "nocturne" are one directory, and keying case-sensitively listed
-// it twice in the dropdown while the catalog held one entry for it. The name kept
-// is the first spelling seen, which is the one the first root actually holds.
-//
-// On a case-SENSITIVE filesystem (Linux) those are two real directories, and
-// folding costs the second SPELLING ENCOUNTERED its dropdown row (root order,
-// then directory order, decides which). That is deliberate, not an oversight:
-// the catalog scan folds too
-// (themecatalog.go), so the picker and the browser stay one list, and the price
-// is paid by a collection that keeps two themes whose names differ only in case.
-// The hidden one is not lost — theme.Load takes the name as spelled, so a
-// preferences file or a drag-and-drop import still resolves it.
-func scanThemeDirs(roots []string, pick string) []string {
-	names := []string{theme.DefaultThemeName}
-	seen := map[string]bool{strings.ToLower(theme.DefaultThemeName): true}
-	for _, root := range roots {
-		entries, err := os.ReadDir(filepath.Join(root, theme.ThemesDirName))
-		if err != nil {
-			continue // missing themes/ dir is normal
-		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			key := strings.ToLower(e.Name())
-			if seen[key] {
-				continue
-			}
-			if len(names) >= themePickerCap {
-				return appendThemePick(names, seen, pick)
-			}
-			seen[key] = true
-			names = append(names, e.Name())
-		}
-	}
-	return appendThemePick(names, seen, pick)
-}
-
-// appendThemePick adds the bare-folder import to the list unless a root already
-// produced it. Split out so the cap's early return and the normal end of the walk
-// cannot forget it — the #21 vanishing-theme bug is exactly that omission.
-func appendThemePick(names []string, seen map[string]bool, pick string) []string {
-	if pick != "" && !seen[strings.ToLower(pick)] {
-		names = append(names, pick)
-	}
-	return names
-}
-
-// themeListTruncated reports whether the picker list may be a prefix of what is
-// on disk. Derived rather than returned alongside the list, because the list is
-// carried across a channel to the render thread and one slice is the whole
-// message; a list at the cap is reported as possibly-truncated, which overstates
-// by one collection-size exactly (a machine with EXACTLY themePickerCap themes),
-// always in the honest direction.
-func themeListTruncated(names []string) bool { return len(names) >= themePickerCap }
-
-// themeFoundText is the "(N found)" line beside the picker, memoized on the count
-// it was built from: it draws every frame the Theme tab is up, and a per-frame
-// fmt.Sprintf on a settings row is the allocation the settings-text doctrine
-// exists to keep out. Render thread only (settingsState).
-func themeFoundText(names []string) string {
-	n := len(names)
-	if settings.themeCountFor == n && settings.themeCountText != "" {
-		return settings.themeCountText
-	}
-	settings.themeCountFor = n
-	if themeListTruncated(names) {
-		// At the bound the list IS a prefix: say so rather than implying these are
-		// all the themes there are. They still load by name — only the dropdown
-		// stops here.
-		settings.themeCountText = fmt.Sprintf("(first %d — more are on disk and still load by name)", themePickerCap)
-	} else {
-		settings.themeCountText = fmt.Sprintf("(%d found)", n)
-	}
-	return settings.themeCountText
-}
-
-// Per-character sprite filtering (#21 label 15). Indices MUST match
-// config.SpriteScaling* — the pref is mirrored straight into the dropdown row.
-const (
-	spriteScaleDDX = 110 // dropdown x, past the "Sprite filtering:" label
-	spriteScaleDDW = 230 // wide enough for the longest label below
-)
-
-var spriteScalingLabels = [...]string{
-	config.SpriteScalingAuto:   "Auto (recommended)",
-	config.SpriteScalingSmooth: "Always smooth",
-	config.SpriteScalingPixel:  "Always crisp pixels",
-}
-
-// One line of plain why-would-I-pick-this under the row. Short and factual —
-// settings text stays descriptive, never chatty.
-var spriteScalingHints = [...]string{
-	config.SpriteScalingAuto:   "Follows each character's own char.ini, and keeps small pixel-art sprites crisp when they're enlarged.",
-	config.SpriteScalingSmooth: "Blurs enlarged pixel art. Ignores what characters ask for.",
-	config.SpriteScalingPixel:  "Crisp everywhere, including art that was drawn to be smooth.",
+// TextureScaleMode is the texture filter for "Smooth texture scaling": linear when on, nearest when off.
+func TextureScaleMode(smooth bool) sdl.ScaleMode {
+	if smooth {
+		return sdl.ScaleModeLinear
+	}
+	return sdl.ScaleModeNearest
 }

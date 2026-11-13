@@ -4,7 +4,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/pprof"
 	"strings"
 	"testing"
 )
@@ -68,6 +71,12 @@ const (
 // A non-zero return therefore means every one of allocGateWindows windows was
 // dirty, which is a per-frame cost and not a warm-up. Callers keep their own
 // failure messages: what they assert has not changed.
+//
+// BLIND SPOT: AllocsPerRun truncates its integer division, so any leak under one
+// allocation per frame reads 0 — an every-4th-frame alloc (0.25/op) or a
+// race-mode sync.Pool drop at ~25% passes forever. Only a constant ≥1-alloc/frame
+// cost is caught. Tightening to an exact runtime.MemStats count is a deliberate
+// decision, not made here.
 func allocsPerFrame(frames int, budget float64, draw func()) float64 {
 	var lowest float64
 	for i := 0; i < allocGateWindows; i++ {
@@ -80,6 +89,33 @@ func allocsPerFrame(frames int, budget float64, draw func()) float64 {
 		}
 	}
 	return lowest
+}
+
+// gateZeroAlloc runs a zero-alloc draw gate: allocsPerFrame at budget 0, and on
+// a dirty window dumps the goroutine stacks and the allocation sites so a
+// recurrence names itself. The characterization tests (which intentionally
+// allocate) call allocsPerFrame directly and never reach the diagnostic.
+func gateZeroAlloc(draw func()) float64 {
+	n := allocsPerFrame(allocGateFrames, 0, draw)
+	if n != 0 {
+		dumpAllocDiagnostic(draw)
+	}
+	return n
+}
+
+// dumpAllocDiagnostic prints the goroutine stacks and the allocation sites seen
+// in a short burst of draw, so a recurrence self-diagnoses: the goroutine dump
+// names any leaked worker and the MemProfileRate=1 alloc profile names the
+// allocating line.
+func dumpAllocDiagnostic(draw func()) {
+	_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+	prev := runtime.MemProfileRate
+	runtime.MemProfileRate = 1
+	for i := 0; i < 3; i++ {
+		draw()
+	}
+	_ = pprof.Lookup("allocs").WriteTo(os.Stderr, 1)
+	runtime.MemProfileRate = prev
 }
 
 // allocGateSink keeps the contract tests' allocations escaping and alive.

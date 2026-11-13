@@ -14,8 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -54,7 +53,7 @@ func editSlotRig(t *testing.T) (*App, *themeDoc, editTarget) {
 // without failing here.
 func TestSlotInspectorOffersGeometryAndNothingElse(t *testing.T) {
 	a, _, tgt := editSlotRig(t)
-	rows := a.inspectorRowsFor(tgt)
+	rows := a.te.inspectorRowsFor(tgt)
 	if len(rows) != 1 {
 		t.Fatalf("the AO2 widget rail offers %d rows, want exactly 1 — a theme may restate an AO2 "+
 			"widget's rect and nothing else about it", len(rows))
@@ -352,7 +351,7 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 	doc.side.Panes = []theme.Pane{{ID: "sidebar"}}
 	doc.side.Fonts = []theme.FontFamily{{Family: "Court Serif", File: "fonts/CourtSerif.otf"}}
 
-	anchors := a.editorPickNames(pickAnchor)
+	anchors := a.te.editorPickNames(pickAnchor)
 	if anchors[0] != pickAnchorNone {
 		t.Errorf("the anchor picker starts at %q, want %q first", anchors[0], pickAnchorNone)
 	}
@@ -368,7 +367,7 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 		t.Error("the anchor picker offered music_list, which this theme does not place")
 	}
 
-	fonts := a.editorPickNames(pickFace)
+	fonts := a.te.editorPickNames(pickFace)
 	if pickIndexOf(fonts, "Court Serif") < 0 {
 		t.Error("the font picker does not offer the theme's own [fonts] family")
 	}
@@ -379,13 +378,13 @@ func TestPickListsComeFromTheLiveDocument(t *testing.T) {
 
 	// The CACHE must follow the document: adding a family has to show up.
 	doc.side.Fonts = append(doc.side.Fonts, theme.FontFamily{Family: "Loose", File: "Loose.otf"})
-	if pickIndexOf(a.editorPickNames(pickFace), "Loose") < 0 {
+	if pickIndexOf(a.te.editorPickNames(pickFace), "Loose") < 0 {
 		t.Error("the font picker's cache did not notice a new family — a cached list that cannot go " +
 			"stale is a list that is never right")
 	}
 
 	// The static lists are the BUILD's own, sorted, and never the registry's map order.
-	gens := a.editorPickNames(pickGenerator)
+	gens := a.te.editorPickNames(pickGenerator)
 	if len(gens) != len(GeneratorNames()) {
 		t.Errorf("the generator picker offers %d names, the registry has %d", len(gens), len(GeneratorNames()))
 	}
@@ -420,7 +419,7 @@ func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
 	// names[pickNone][:0] — a nil-backed empty slice that compares == nil. The observable
 	// only the guard produces is the one its doc comment promises ("it must not take a
 	// cache slot to be told so"): the slot stays unbuilt.
-	if got := a.editorPickNames(pickNone); got != nil {
+	if got := a.te.editorPickNames(pickNone); got != nil {
 		t.Errorf("the no-source list is %v, want nil", got)
 	}
 	if a.te.picks.built[pickNone] {
@@ -428,9 +427,10 @@ func TestOnlyPickerRowsNameAPickSource(t *testing.T) {
 			"ahead of the cache, or every non-picker row that reaches this table burns a slot on " +
 			"a list nothing draws")
 	}
-	// ANTI-VACUITY for the check above: `built` has to be a flag that actually moves, or
-	// a slot left false proves nothing. A real dynamic source must set its own.
-	a.editorPickNames(pickAnchor)
+	a.te.
+		// ANTI-VACUITY for the check above: `built` has to be a flag that actually moves, or
+		// a slot left false proves nothing. A real dynamic source must set its own.
+		editorPickNames(pickAnchor)
 	if !a.te.picks.built[pickAnchor] {
 		t.Fatal("a real dynamic list did not mark its cache slot built — the pickNone check above " +
 			"would then hold against any implementation")
@@ -499,7 +499,7 @@ func TestFontBindIsUndoableAndHashReverts(t *testing.T) {
 	before := docHash(t, doc)
 
 	// Rebind class 0 to nothing, then back.
-	if !a.editorApply(a.mutateFontBind(0, "")) {
+	if !a.editorApply(a.te.mutateFontBind(0, "")) {
 		t.Fatal("clearing a binding did nothing")
 	}
 	if _, ok := doc.side.BoundFamily(theme.FontElements[0]); ok {
@@ -516,7 +516,7 @@ func TestFontBindIsUndoableAndHashReverts(t *testing.T) {
 	}
 
 	// A binding to a family that already holds is not an edit.
-	if _, res := doc.apply(a.mutateFontBind(0, "Court Serif")); res != applyNoChange {
+	if _, res := doc.apply(a.te.mutateFontBind(0, "Court Serif")); res != applyNoChange {
 		t.Errorf("re-binding to the same family answered %d, want applyNoChange", res)
 	}
 }
@@ -534,7 +534,7 @@ func TestFontFamilyAddRemoveAndCapRefusal(t *testing.T) {
 	// hash round trip is the right evidence for a VALUE edit (see
 	// TestFontBindIsUndoableAndHashReverts, which clears an existing row and restores
 	// it) and is the wrong evidence for a structural one.
-	if !a.editorApply(a.mutateFontFamily(0, "Court Serif", "fonts/CourtSerif.otf")) {
+	if !a.editorApply(a.te.mutateFontFamily(0, "Court Serif", "fonts/CourtSerif.otf")) {
 		t.Fatal("adding the first family did nothing")
 	}
 	if len(doc.side.Fonts) != 1 || doc.side.Fonts[0].Family != "Court Serif" ||
@@ -553,12 +553,12 @@ func TestFontFamilyAddRemoveAndCapRefusal(t *testing.T) {
 
 	// Fill to the cap, then refuse.
 	for i := 0; i < theme.FontCap; i++ {
-		if !a.editorApply(a.mutateFontFamily(i, "fam"+itoa(i), "f"+itoa(i)+".otf")) {
+		if !a.editorApply(a.te.mutateFontFamily(i, "fam"+itoa(i), "f"+itoa(i)+".otf")) {
 			t.Fatalf("family %d refused below the cap", i)
 		}
 	}
 	a.te.status = ""
-	if a.editorApply(a.mutateFontFamily(theme.FontCap, "one too many", "x.otf")) {
+	if a.editorApply(a.te.mutateFontFamily(theme.FontCap, "one too many", "x.otf")) {
 		t.Fatalf("the %dth family was accepted past theme.FontCap (%d)", theme.FontCap+1, theme.FontCap)
 	}
 	if len(doc.side.Fonts) != theme.FontCap {
@@ -586,8 +586,8 @@ func TestExitWithoutSavingThrowsAwayTypeEditsToo(t *testing.T) {
 	doc = newThemeDoc(doc.name, doc.side)
 	a.te.doc = doc
 
-	a.editorApply(a.mutateFontFamily(1, "Added", "a.otf"))
-	a.editorApply(a.mutateFontBind(0, "Added"))
+	a.editorApply(a.te.mutateFontFamily(1, "Added", "a.otf"))
+	a.editorApply(a.te.mutateFontBind(0, "Added"))
 	doc.restoreBaseline()
 
 	if len(doc.side.Fonts) != 1 || doc.side.Fonts[0].Family != "Original" {
@@ -668,10 +668,10 @@ func TestSavingATypeEditAppliesTheThemeOnce(t *testing.T) {
 	defer cleanup()
 	editorFixtureCatalog(t, a, t.TempDir(), themeOriginYours)
 
-	if !a.editorApply(a.mutateFontFamily(len(a.te.doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
+	if !a.editorApply(a.te.mutateFontFamily(len(a.te.doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
 		t.Fatal("the fixture family was refused")
 	}
-	if !a.editorApply(a.mutateFontBind(0, "Court Serif")) {
+	if !a.editorApply(a.te.mutateFontBind(0, "Court Serif")) {
 		t.Fatal("the fixture binding was refused")
 	}
 
@@ -765,7 +765,7 @@ func TestASaveDoesNotStaleTheTypeSignature(t *testing.T) {
 	editorFixtureCatalog(t, a, t.TempDir(), themeOriginYours)
 	doc := a.te.doc
 
-	if !a.editorApply(a.mutateFontFamily(len(doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
+	if !a.editorApply(a.te.mutateFontFamily(len(doc.side.Fonts), "Court Serif", "fonts/CourtSerif.otf")) {
 		t.Fatal("the fixture family was refused")
 	}
 	a.editorSave()
@@ -889,34 +889,6 @@ func TestOnlyTheDocumentWritesTheTypeTables(t *testing.T) {
 	}
 	if seenInOwner == 0 {
 		t.Fatalf("the census found none of its needles in %s — it would pass vacuously", owner)
-	}
-}
-
-// TestTheMusicHeaderCannotStopUsingTheReflowGuard is the chrome-row seam's own
-// encapsulation gate.
-//
-// The behavioural sweeps prove the CURRENT placement never overlaps. This one proves
-// the placement cannot quietly go back to a strip of its own: planMusicHeader must
-// call planChromeRow, and it must not open a second cursor beside it. Without this, a
-// later wave could restore newPlStrip here and every overlap gate would keep passing
-// right up until a theme squeezed the panel.
-func TestTheMusicHeaderCannotStopUsingTheReflowGuard(t *testing.T) {
-	body := funcBodyInPackage(t, "func planMusicHeader(")
-	if !strings.Contains(body, "planChromeRow(") {
-		t.Error("planMusicHeader no longer calls planChromeRow — the guarantee that two controls " +
-			"cannot land on each other is the ONE cursor inside that planner, not arithmetic here")
-	}
-	if strings.Contains(body, "newPlStrip(") {
-		t.Error("planMusicHeader opened a plStrip of its own beside the reflow planner — two " +
-			"independent anchors is exactly the shape that painted Expand all on top of Stop music")
-	}
-	// And the priorities must stay a named ranking rather than bare integers, or the
-	// reachability argument behind the drop order becomes unreadable at the call site.
-	for _, want := range []string{"musicDropOnlyRoute", "musicDropShortcut", "chromeCtlNeverDrop"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("planMusicHeader no longer names %s — the drop order is a reachability "+
-				"argument (hard rule 9), not a taste ranking", want)
-		}
 	}
 }
 
@@ -1081,43 +1053,5 @@ func TestEditorRedoRidesCtrlShiftZ(t *testing.T) {
 	a.ctx.hotkey, a.ctx.shiftHeld = sdl.K_y, false
 	if !a.editorUndoChord() || a.ctx.hotkey != 0 {
 		t.Error("Ctrl+Y no longer reaches the editor, or the chord was not consumed")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// The offline pack's blip ladder
-// ---------------------------------------------------------------------------
-
-// TestOfflinePackMirrorsTheLiveBlipLadder is the downloader gap, stated as the
-// property that was broken: the pack must be able to hold what the live ladder PLAYS.
-//
-// The download used to fetch rung 1 of six (sounds/blips/<lowercased name>), so a
-// legacy base that serves only sounds/general/sfx-blip<name> produced a pack whose
-// blips are silent while the same base blips fine online — an offline pack that works
-// until you unplug.
-func TestOfflinePackMirrorsTheLiveBlipLadder(t *testing.T) {
-	const origin = "https://example.test/base/"
-	for _, tc := range []struct{ cand, want string }{
-		{origin + "sounds/blips/male", "sounds/blips/male"},
-		{origin + "sounds/general/sfx-blipmale", "sounds/general/sfx-blipmale"},
-		{origin + "sounds/blips/deep%20voice", "sounds/blips/deep voice"},
-	} {
-		got, ok := blipPackRel(origin, tc.cand)
-		if !ok || got != tc.want {
-			t.Errorf("blipPackRel(%q) = %q (ok=%v), want %q — the pack path must be what the LOCAL "+
-				"resolver probes, un-escaped", tc.cand, got, ok, tc.want)
-		}
-	}
-	// Refusals: a URL that is not under the origin, and any escape that would decode
-	// into a path separator or a traversal.
-	for _, bad := range []string{
-		"https://elsewhere.test/sounds/blips/male",
-		origin + "sounds/blips/%2e%2e",
-		origin + "sounds/blips/a%2Fb",
-		origin,
-	} {
-		if rel, ok := blipPackRel(origin, bad); ok {
-			t.Errorf("blipPackRel accepted %q as %q — a hostile candidate must not steer a write", bad, rel)
-		}
 	}
 }

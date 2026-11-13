@@ -1,0 +1,31 @@
+# Frees a branch's or PR's build caches once they can't be used again.
+name: Cache cleanup
+
+on:
+  delete:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  clean:
+    # A fork's PR gets a read-only token, and its caches expire on their own.
+    if: >-
+      (github.event_name == 'delete' && github.event.ref_type == 'branch') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The deleted branch or the closed PR's merge ref may no longer exist.
+          ref: ${{ github.event.repository.default_branch }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF: ${{ github.event_name == 'delete' && format('refs/heads/{0}', github.event.ref) || format('refs/pull/{0}/merge', github.event.number) }}
+        run: bash scripts/clean-caches.sh "$REF"

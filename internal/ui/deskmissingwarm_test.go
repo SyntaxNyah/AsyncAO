@@ -27,7 +27,7 @@ func TestWarmKeeperSkipsAConclusivelyMissingDesk(t *testing.T) {
 
 	newRoom := func(t *testing.T) (*App, *render.TextureStore) {
 		t.Helper()
-		store, err := render.NewTextureStore(ren)
+		store, err := render.NewTextureStoreBudget(ren, 0)
 		if err != nil {
 			t.Skipf("texture store unavailable: %v", err)
 		}

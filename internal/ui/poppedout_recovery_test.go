@@ -10,7 +10,9 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -22,13 +24,23 @@ import (
 // advance tries twice here.
 func TestAutoReconnectIdempotentInDueWindow(t *testing.T) {
 	a := froomApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
+	a.d.Prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			AutoReconnect =
+
+			true
+
+	})
 	a.screen = ScreenLobby // the retry fires only from the lobby (v1.70.0 behaviour)
 	a.connErr = "connection closed"
 	a.autoReconnectTries = 0
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
 	a.pollAutoReconnect()
+	awaitDial(t, a)
 	firstTries := a.autoReconnectTries
 	if firstTries == 0 {
 		t.Fatal("the first poll must fire the due retry")
@@ -62,7 +74,7 @@ func TestPinnedPaneDeathSurfacesWarning(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, err := protocol.Dial(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"))
+	conn, err := protocol.Dial(context.Background(), netproxy.Direct(), "ws"+strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

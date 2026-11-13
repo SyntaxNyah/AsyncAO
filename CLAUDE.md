@@ -7,13 +7,17 @@ touching anything.
 > spec (PROMPT.md), removed from the working tree at project completion.
 > Read it any time with: `git show fab9392:PROMPT.md`
 
+> **Restructuring in progress.** The App split / SDL3 move follows the approved
+> plan in `docs/RESTRUCTURING_PLAN.md`. Read its **Status** section before any
+> structural change and continue at the first unchecked step.
+
 ## What this is
 
 AsyncAO is a **maximum-performance Attorney Online 2 client in Go** (CGO for
-SDL2 + libwebp). Two pillars: **zero-fallback asset streaming** (exactly one
+SDL3 + libwebp). Two pillars: **zero-fallback asset streaming** (exactly one
 network probe per asset by default, learned formats per server) and **every
 millisecond counts** (lock-free hot paths, three cache tiers, zero-allocation
-render loop, 256 MiB memory budget). Plus full AO2 ≥ 2.6/2.8 **pairing**.
+render loop, every cache capped). Plus full AO2 ≥ 2.6/2.8 **pairing**.
 
 WebSocket-only. **Legacy raw-TCP AO servers are deliberately unsupported** —
 the lobby shows them black, pinned to the bottom, with an upgrade note. Never
@@ -21,55 +25,81 @@ add TCP framing back.
 
 ## Hard rules (violations get rejected — spec §17, kept in force)
 
-1. **No SDL calls off the render thread.** Only `internal/render`, `internal/ui`
-   and `cmd/asyncao` may import go-sdl2, and everything there runs on the
-   locked main thread. `internal/assets`' decoder outputs plain `image.RGBA`.
+1. **SDL calls follow SDL's documented thread safety.** A call may run off the
+   main thread when SDL documents it as thread-safe and it does not interfere
+   with another thread's use of the same object; off-thread rendering is allowed
+   on those terms. A call SDL documents as main-thread-only stays on the locked
+   main thread. SDL is reached through our own binding packages, `internal/sdl`,
+   `internal/ttf` and `internal/mix`, the only cgo code that includes SDL headers.
+   Only `internal/platform/host`, `internal/render`, `internal/ui` and
+   `cmd/asyncao` may import the binding.
+   `internal/assets`' decoder outputs plain `image.RGBA`.
 2. **No synchronous disk I/O** on render/decode/resolver paths. Preferences
    use the debounced saver; the disk cache has one async writer goroutine.
 3. **No per-asset preference writes** — learning marks dirty, the saver flushes.
 4. **No unbounded** goroutines, channels, queues, or caches. Everything has a
    named cap.
-5. **No mutex on the resolver read path** — `atomic.Pointer` snapshot only;
-   writes are copy-on-write + CAS.
+5. *(Removed; the number stays so other rules keep theirs.)*
 6. **Never re-probe a cached 404** inside its TTL; singleflight collapses
    duplicate in-flight fetches.
-7. **Results are never dropped or stolen.** Backpressure sheds *speculative
-   jobs* (oldest low-priority), and every accepted job's `Run(stale)` is
-   invoked exactly once.
+7. *(Removed; the number stays so other rules keep theirs.)*
 8. **Race-detector clean.** `go test -race ./...` must pass before any commit.
-9. **No magic numbers.** Every constant is named and commented.
+9. **No magic numbers, ever** — production and test code alike. Every number
+   is a named `const` (or an `iota` enum when the values form a set), never a
+   variable; local `const` when one function uses it. Exemptions, and only
+   these: `0`, `1`, `-1` as structural values (empty, start, offset, sentinel);
+   `2` for halving/doubling in geometry (`(w-tw)/2`); values inside a named
+   data table or struct literal whose table and field names already say what
+   they mean (theme preset RGB rows, AO-spec index tables). Enforced by
+   golangci-lint's `mnd` linter, opted in per package: a package joins the
+   enforced set once clean and never leaves it.
 10. **No push, no PRs from automation.** Local commits only; the user pushes.
-11. **Structural changes are analysed against the common OO design
-    principles, in Go terms, and every new seam ships encapsulation tests.**
-    The implementer's report names each principle and either passes it or
-    justifies the deviation:
-    - *Single responsibility* — one concern per type/file; a file that
-      needs "and" in its one-line description is two files.
-    - *Open–closed* — what the seam is OPEN to (name the concrete future
-      call sites) and CLOSED against (unchanged test expectations are the
-      evidence; a rewritten assertion is a behavior change until proven
-      otherwise).
-    - *Substitutability* — anything satisfying an interface honours the
-      full contract its consumers assume, including the undocumented parts
-      a test pins.
-    - *Interface segregation* — interfaces are consumer-defined and
-      minimal; a fat interface is a dependency magnet.
-    - *Dependency direction* — imports point at abstractions; a package
-      never reaches into a sibling's internals or re-implements them.
-    Encapsulation tests are a GENERAL requirement — every new abstraction
-    in any package, feature and refactor alike: constructing or driving it
-    outside the sanctioned path must not compile or must fail loudly, and
-    a test must prove the seam cannot be bypassed or deleted while the
-    suite stays green. Mirror-tests that re-implement the seam's logic
-    instead of driving it do not count — the sidecar `[overrides]` tier
-    shipped parsed-but-never-applied through four waves behind exactly such
-    a mirror; `TestThemeApplyRunsTheOverridesTier` is the model for what
-    does count.
+11. **Tests prove behaviour through the public API.** No `go/ast` or
+    source-scanning tests: a test that parses this package's own files to
+    pin where, or in what order, production code calls something is pinning
+    implementation, not behaviour, and is rejected. Invariants are enforced by
+    compiler boundaries (`internal/`, unexported types, and compile-time checks
+    `var _ I = (*T)(nil)`) or behavioural tests — never by a test that parses
+    source. No comment cites a test file by name; such a citation rots and is
+    deleted with the test it points at.
+
+    **Permanent exception — the HDID privacy gate** (`internal/ui/hdidgate_test.go`):
+    the per-server HDID is derived from the address being dialled, at the call;
+    every wrong answer is a well-shaped id, so no behavioural test can distinguish
+    it. It is keyed by function name for any receiver, and is removed the day the
+    id becomes a value the session constructor is handed. Keep the HDID derivation
+    inside `internal/ui` so this gate keeps seeing it.
+
+    **Legacy, being retired:** five more source-scan tests still exist
+    (`srcgate_test.go`, the `allocgate_test.go` census, `themeeditorseam_test.go`,
+    `themeeditorpreview_test.go`, `zerowidthlanes_test.go`). Each is converted to a
+    behavioural test or deleted before the restructuring step that would break it;
+    no new ones may be added.
+
+12. **KISS, DRY, dependency injection** — for every type in every package.
+    A type exists only if it owns behaviour or is plain data with one meaning;
+    no forwarding methods; no interface with a single implementation unless it
+    crosses a package boundary or breaks a cycle. One implementation per concept:
+    shared value coercion and parsing live in `internal/helper/<category>`
+    (`value`, `text`, `parse`); Go `slices`/`maps` replace hand-rolled loops; a
+    config range is clamped in `normalizeSettings` only. DI is constructor
+    injection where an object has ≥2 implementations (test fakes count) or
+    crosses a boundary; no setters after construction except documented cycle
+    breaks; no mutable package globals (`sync.Once` registries, constant
+    tables, and registries filled only while packages initialise and never
+    changed afterwards, such as config keys, excepted); `cmd/asyncao/main.go`
+    is the single composition root.
+13. **Common names only.** Identifiers, comments, commit messages and docs use
+    the plain words a developer new to the project would expect — no invented
+    jargon or metaphors (not "seam", "lift", "ratchet", "latch", "census",
+    "teeth", "oracle", "slot", "mailbox"). The preferred-term table lives in
+    `docs/RESTRUCTURING_PLAN.md` (Part 2c). Existing jargon is renamed when its
+    code is touched anyway, never in a rename-only sweep.
 
 ## Build & test commands (Windows dev box)
 
 ```powershell
-# one-time deps (MSYS2 UCRT64 + SDL2 + libwebp)
+# one-time deps (MSYS2 UCRT64 + SDL3, SDL3_ttf, SDL3_mixer + libwebp)
 powershell -ExecutionPolicy Bypass -File scripts\setup-deps.ps1
 # build + stage DLLs
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1 -Release
@@ -91,26 +121,44 @@ go test -run=NONE -bench=. -benchmem ./...         # alloc gates (see docs/BENCH
 gofmt -w . && go vet ./...                         # before every commit
 ```
 
-Pure-Go packages test with `CGO_ENABLED=0`; SDL packages use the dummy video
-driver headlessly (they skip if SDL is unavailable).
+Pure-Go leaf packages (cache, config, network, protocol, theme, …) test with
+`CGO_ENABLED=0`, but `assets` (libwebp/libavif decode) and everything that
+imports it — `courtroom`, `logbrowser`, `archive`, `render`, `ui` — needs cgo.
+SDL packages use the dummy video driver headlessly (`SDL_VIDEODRIVER=dummy`;
+they skip if SDL is unavailable).
+
+AsyncAO needs SDL 3.4 or newer (per-renderer default texture scale mode).
+MSYS2, Homebrew, Fedora and Arch package it; Debian/Ubuntu build it with
+`scripts/build-sdl3.sh`, and CI's Linux/macOS jobs use the cached
+`.github/actions/setup-build` build with the same versions and mixer options.
+SDL3_mixer loads some codecs on demand, so no import table names them: the
+Windows build scripts stage `libopusfile-0.dll` explicitly. A test that opens
+an SDL3_mixer device must close it before `sdl.Quit`, or the process dies with
+heap corruption.
 
 ## Package map
 
 | Package | Role | SDL? |
 |---|---|---|
 | `internal/safepath` | the ONE copy of the zip-slip / symlink / `..` / depth guards (shared by mounts and theme bundles) | no |
-| `internal/config` | preferences + debounced atomic saver; favorites; local mounts | no |
+| `internal/netproxy` | the socket factory: opens every outbound connection (direct or through an HTTP proxy) by the one configuration | no |
+| `internal/config` | preferences + debounced atomic saver; favorites; local mounts; the Wardrobe's `wardrobe.json` | no |
 | `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
-| `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), priority worker pool with epoch cancellation, master list + tiers + direct connect | no |
-| `internal/assets` | AssetType enum, lock-free resolver (learned formats), tier-walking manager, decode pool (magic-byte sniffing), WebP CGO binding + fallback, local mounts, Markov prefetcher | no (decoder is SDL-free by rule) |
+| `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), request priority, master list + tiers + direct connect | no |
+| `internal/assets` | AssetType enum, lock-free resolver (learned formats), `Manager` over `internal/media` (the bridge), the player's folders as a media source, decode pool (magic-byte sniffing), WebP/AVIF CGO binding + fallback, Markov prefetcher | no (decoder is SDL-free by rule) |
+| `internal/media` | the media system every asset request goes through: `Manager` owns every table on one goroutine, `Get` is safe from any thread, pools run single steps; sources memory → disk cache → `Folders` (the player's folders and .zip packs) → web | no |
 | `internal/protocol` | AO wire (delegated to aolib-go: FantaCode + JSON), MS 2.6/2.8 parse/build, pairing semantics, FeatureSet, WebSocket conn | no |
-| `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, VS_*/MS both-wire codecs | no |
+| `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, MS both-wire codec | no |
 | `internal/courtroom` | session handshake reducer, message lifecycle state machine, typewriter pacing, URL conventions, char.ini | no |
 | `internal/theme` | AO2 theme INIs (design/fonts/sounds), asset lookup ladder | no |
 | `internal/metrics` | 1 Hz sampler (heap, GC p99, hit rates), cold-load report | no |
-| `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL_mixer audio | **yes** |
+| `internal/sdl`, `ttf`, `mix` | our cgo binding to SDL3, SDL3_ttf and SDL3_mixer (Go-style names, Rect/event/display conversion at the boundary) | **yes** |
+| `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL3_mixer audio | **yes** |
 | `internal/ui` | immediate-mode kit + screens (lobby/phone book, char select, courtroom, settings, about) | **yes** |
-| `cmd/asyncao` | flags, GOMEMLIMIT, LockOSThread, SDL init, main loop | **yes** |
+| `internal/ui/wardrobe` | what the Wardrobe window lists: filtering, sorting and grouping saved characters, and parsing the server's `iniswaps.ini` | no |
+| `internal/platform`, `platform/host` | what the machine is and can do (no SDL); process setup, SDL startup, hardware and shutdown (host only) | host only |
+| `internal/platform/toast` | desktop notifications: WinRT toasts under AsyncAO's own AppUserModelID and icon on Windows, none elsewhere until SDL 3.6 | no |
+| `cmd/asyncao` | flags, composition root, main loop | **yes** |
 
 ## Reference repos (read-only, sibling directories)
 
@@ -161,17 +209,12 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
 
 ## Environment gotchas (this dev machine)
 
-- The AV intercepts TLS (pacman needed `curl -k`) and sometimes blocks
-  freshly-built test exes (`fork/exec ... Access is denied`) — just re-run.
-- The AV also throttles PARALLEL loopback httptest servers: running several
-  test packages at once can stall one for minutes. **On this machine always
-  test with `go test -p 1 ./...`** (CI runners don't need it).
-- The AV has also quarantined `C:\msys64\ucrt64\bin\ld.exe` mid-session:
-  CGO linking then fails with `collect2: cannot find 'ld'`. Fix:
-  `pacman -S mingw-w64-ucrt-x86_64-binutils`. On any sudden CGO link
-  failure, check ld.exe exists before debugging anything else.
-- `go.mod` pins `go 1.24` and `golang.org/x/sync v0.17.0`; **don't let
-  `go get` bump x/sync** to a version requiring Go 1.25.
+- If CGO linking suddenly fails with `collect2: cannot find 'ld'`, check
+  that `C:\msys64\ucrt64\bin\ld.exe` exists. If binutils went missing,
+  restore it with `pacman -S mingw-w64-ucrt-x86_64-binutils`.
+- `go.mod` pins `go 1.25.0` and `golang.org/x/sync v0.20.0`, and
+  `.github/actions/setup-build` must use the same Go minor version; don't let
+  `go get` bump either without bumping the other.
 - devkitPro's MSYS2 at `C:\devkitPro\msys2` belongs to other projects — never
   touch it; AsyncAO uses `C:\msys64`.
 - WebP test fixtures were generated with msys2's `cwebp`/`img2webp`,
@@ -189,10 +232,25 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
 
 ## Conventions
 
-- Comments explain *why*; protocol behavior cites the AO2-Client source spot.
+- Comments are the exception: none when the code says it, one line otherwise,
+  more only for a real trap. Keep what code cannot show: an invariant, a reason
+  something must or must not happen, an OS or library quirk, the AO2-Client source
+  spot for protocol behavior. Doc comments are one sentence. Bug stories, playtest
+  reports, what the code used to do and how it got here belong in commit messages.
+  Trim by content, never by length: length-based rounds lost the reasons and were
+  reverted (47e3f7d7).
 - Every `Prefetch` call site carries an `// AssetType: X` comment.
 - Tests pin behavior, including performance gates (`testing.AllocsPerRun`).
 - Cache keys are full URLs (host included) — per-server separation is
   structural. Never key by bare path.
 - New dependencies require a written justification in docs/ARCHITECTURE.md.
 - Milestone-sized local commits; never push.
+- Naming: name length is proportional to scope. Receivers are 1–2 letters,
+  identical for every method of a type, and never shadowed by params.
+  Single-letter locals are allowed only within ~15 lines of their declaration
+  or from the conventional set (`i`, `j`, `k`, `n`, `err`, `ok`, `t`, `b`,
+  `x`, `y`, `w`, `h` in geometry, `r`/`w` for `io.Reader`/`io.Writer`). In
+  functions over ~60 lines, anything referenced across more than ~15 lines gets
+  a descriptive name. The same short name means the same type throughout a
+  package; struct fields and package-level names are descriptive. Prefer
+  splitting a long function to renaming inside it.

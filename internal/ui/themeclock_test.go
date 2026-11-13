@@ -21,11 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -87,7 +86,7 @@ func fxTestConditional(a *App, k theme.EffectKind) bakedElement {
 func fxTestStore(t *testing.T) *render.TextureStore {
 	t.Helper()
 	ren, cleanup := newCaptureHarness(t)
-	store, err := render.NewTextureStore(ren)
+	store, err := render.NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		cleanup()
 		t.Skipf("texture store unavailable: %v", err)
@@ -691,7 +690,7 @@ func TestElementEffectsAreAllocFreeAtCap(t *testing.T) {
 		t.Fatalf("seeded %d live effects, want %d", live, theme.ElementCap)
 	}
 
-	if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+	if n := gateZeroAlloc(draw); n != 0 {
 		t.Fatalf("a settled themed frame with %d LIVE effects allocates %.1f/op, want 0 — "+
 			"the motion path is charging per frame (fix it, don't shrink the fixture)", theme.ElementCap, n)
 	}
@@ -1097,7 +1096,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	restore := captureElementPaints(t, &seen)
 	defer restore()
 
-	prefs.SetReduceMotion(true)
+	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
 	a.themeAt = time.Now()
 	a.beginThemeFXPass()
 	if !a.themeFXFrozen {
@@ -1144,7 +1143,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 	// the courtroom, put there by the accessibility option. Freezing resolves amp 0,
 	// and amp 0 on a wash is nothing at all.
 	seen = seen[:0]
-	prefs.SetReduceMotion(true) // already on; restated so the block reads on its own
+	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true }) // already on; restated so the block reads on its own
 	a.beginThemeFXPass()
 	plate := fxTestElement(theme.FXFade)
 	plate.wash = true
@@ -1160,7 +1159,7 @@ func TestReduceMotionFreezesEveryElement(t *testing.T) {
 
 	// And turning it back off restores the motion: the branch overrules, it must never
 	// rewrite anything.
-	prefs.SetReduceMotion(false)
+	prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 	a.beginThemeFXPass()
 	el := fxTestElement(theme.FXPulse)
 	a.themeAt = time.Now().Add(-time.Duration(fxTestPeriodMs) * time.Millisecond / 4)
@@ -1297,8 +1296,8 @@ func TestHandAuthoredClockSidecarAnimatesEndToEnd(t *testing.T) {
 		if prefs == nil {
 			t.Skip("the fixture has no preferences — the accessibility branch cannot be measured")
 		}
-		prefs.SetReduceMotion(true)
-		defer prefs.SetReduceMotion(false)
+		prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = true })
+		defer prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 		// The BASELINE first, with the elements switched off: anything still noting
 		// then is the client's own chrome, and the element model cannot be isolated
 		// over it. Measured rather than assumed, because the census is a whole-frame

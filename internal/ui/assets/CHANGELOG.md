@@ -4,6 +4,292 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.0-rc.7-hotfix1 - 2026-11-13
+
+Fixes for characters from your own folders and for wearing a character from
+Character Select.
+
+### Fixed
+- **Characters in your folders load in any format**: a server's format list
+  (its `extensions.json`) now only decides what's asked of the server. Your
+  folders and .zip packs are searched in every format again, so a PNG
+  character works on a server that lists only WebP. Since rc.1 such a
+  character had no sprites or emote buttons.
+- **Wearing a character from Character Select keeps its emotes**: the
+  character you were given could replace the worn character's emote list,
+  so every message showed the missing-sprite placeholder.
+- **The selected emote button shows its picture**: a character with no
+  `_on` button art showed an empty button for the emote you entered on,
+  until you picked another one.
+- **Sprites sit where AO2 puts them**: a sprite's width is now rounded the
+  way AO2 rounds it, so at some window sizes it no longer sits one pixel to
+  the right.
+
+## v2.1.0-rc.7 - 2026-11-11
+
+The seventh pre-release of v2.1.0, with Wardrobe changes players asked for.
+
+### Wardrobe
+- **Reverse a sort**: click the sort that's already on (Custom, Name, Last
+  worn or Folder) to turn the order around. An arrow on the button shows the
+  direction. When the sort is a dropdown, the arrow button beside it does the
+  same.
+- **Your own order is safe**: sorting only changes what's shown, so clicking
+  Custom brings back the order you dragged the cards into.
+- **Name above the icon**: Settings ▸ General ▸ Wardrobe ▸ Name ▸ **Above
+  icon** moves the name over the icon on Grid cards. The List view keeps it
+  beside the icon.
+- **Open it from Character Select**: the **Wardrobe** button is back, next to
+  Privacy, or in the top-right corner under an AO2 theme.
+- **Wear from Character Select**: before you've picked a character, wearing a
+  saved character as an iniswap takes the first free character and enters
+  the courtroom wearing it. If every character is taken, it tells you.
+
+## v2.1.0-rc.6 - 2026-11-09
+
+The sixth pre-release of v2.1.0, with a rebuilt Wardrobe.
+
+### Before you update
+- **Your favourites are now shared by every server.** On first start, each
+  server's saved characters merge into one list and their folders come along.
+  Folders made on the server you're on show a green ✓.
+- **Gone from the Wardrobe:** the Backgrounds tab (the Background picker keeps
+  your starred backgrounds), Quick-swap (Ctrl+J), character key binds, number
+  keys for filing, the "From your base" list, the Iniswap chip in the menu bar,
+  and cycling a character's emotes in the hover preview.
+- **The theme's iniswap dropdown** now lists only your own character and the
+  one you're wearing.
+- **The server's list is now `iniswaps.ini`**, the name AO2 uses, instead of
+  `iniswap.txt`. Server owners who published `iniswap.txt` should rename it.
+- **The Jukebox has its own window**: Extras ▸ Jukebox… in the menu bar, the
+  Extras box, or Ctrl+7.
+
+### Wardrobe
+- **Open it** from Extras ▸ Wardrobe… in the menu bar, the Wardrobe button in
+  the courtroom, the Extras box, or Ctrl+6.
+- **User / Server**: your own favourites, or the characters the server lists.
+  **Grid or List** view.
+- **Folders** on the left. A character can be in **several folders**. Hover a
+  folder to rename it, delete it, or give it an icon, a colour or your own
+  image (drop a PNG, WebP or GIF on it). Drag folders to reorder them.
+- **Click selects, double-click wears**: it switches to the character when the
+  slot is free and wears it as an iniswap otherwise, and tells you which.
+  Iniswaps carry a small yellow tag.
+- **Nicknames** show instead of a character's name, with the real name under
+  it; only you see them.
+- **Sort** by your own order (drag cards), name, last worn, or folder.
+- **Add** characters by typing their folder names, or tick them from the
+  server's list.
+- **Character Select's ★** saves a character to the Wardrobe again, and removes
+  it with a second click.
+- **Settings ▸ General ▸ Wardrobe**: font (with suggestions from your installed
+  fonts), text size, icon size and highlight colour.
+
+### Settings
+- **Pick where the disk cache lives**: Settings ▸ Assets ▸ Cache ▸ Disk ▸
+  **Change…**.
+  The cache moves right away, and you choose whether the files already cached
+  move with it or are deleted. **Use default** moves it back.
+- Every font box in Theme ▸ Font and size per panel now suggests your installed
+  fonts as you type.
+
+### Fixes
+- The cache sliders and the learned formats' buttons in Settings ▸ Assets no
+  longer run off the edge of a narrow window.
+
+## v2.1.0-rc.5 - 2026-11-09
+
+The fifth pre-release of v2.1.0, for graphics drivers that freeze.
+
+### Graphics
+- When the graphics driver freezes while drawing, AsyncAO notices after a few
+  seconds and restarts itself drawing on the CPU, instead of staying a black
+  "Not responding" window. It remembers this for later launches.
+- **Draw on the CPU (for graphics drivers that freeze)** in Settings → Power
+  user switches it back after a driver update. It takes effect on restart.
+- `-renderer=sdl` starts with SDL's own renderer (Direct3D 11 on Windows)
+  instead of Vulkan. Add `-software-gpu` to draw on the CPU.
+
+### Troubleshooting
+- `-debug` also writes everything AsyncAO logs to `asyncao-debug.log` next
+  to the program, so a report needs no console. After a restart caused by the
+  graphics driver, both runs are in the same file.
+
+### Fixes
+- Notices at the bottom of the server list, such as a reset settings file, no
+  longer draw over the last servers.
+
+## v2.1.0-rc.4 - 2026-11-08
+
+The fourth pre-release of v2.1.0, reworking the Assets settings and removing
+features few players used.
+
+### Before you update
+- **The single-asset downloader is gone**, with its download badges on
+  characters and backgrounds.
+- **Predictive prefetch is gone**, with **Preload a character's whole sprite
+  set** and its hotkey. Your own character's first emotes still load ahead.
+- **The connection ping chip**, its hotkey and the **missing-asset warnings**
+  chip are gone. Missing assets are still listed in Debug ▸ Log.
+- **Loop preanimations is gone**: preanimations play once, as in AO2.
+- **Sprite thumbnails are gone.** The `cache/thumbs` folder is left on disk;
+  delete it if you like.
+- **Disk cache compression is gone.** Files it compressed are downloaded again
+  the first time they're needed.
+
+### Assets
+- **Asset source** is one list of everywhere AsyncAO looks, searched top to
+  bottom: your folders and .zip packs, the packages folder, then the server
+  and its mirrors. Move your folders up or down with ▲ ▼; the buttons show on
+  the row under the mouse.
+- **Use my folders and packs** and **Stream from the web** replace the three
+  modes. Pick the server whose mirrors you're editing on the Stream line.
+- Add a folder, a .zip or a mirror's https:// address in one field, pick
+  folders with **Add folders…**, pick .zip packs with **Add packs…**, or drag
+  a folder or .zip onto the Assets tab.
+- Each folder is checked when added. The arrow by its kind shows what it holds
+  (Characters, Backgrounds, Sounds, Evidence, Misc); a folder with none of
+  those says **Not an AO base**, with a button for the right folder when you
+  picked one level too high or too deep.
+- The **Use my own AO files…** setup window is gone; the list does its job.
+- Edits to your files show by themselves when you switch back to AsyncAO, so
+  **Check folders now** is gone. Only files you changed are reloaded.
+- The packages folder has its own **Use packages** switch above its row,
+  separate from **Use my folders and packs**: either can be on without the
+  other. Packages alone can now be used; the folder switch used to stay greyed
+  out without a folder of your own, so they were never read.
+- **Stream from the web** is never greyed out. Switching it off switches your
+  folders and packages on, and switching both of those off brings streaming
+  back.
+- **Only use my folders** from earlier versions carries over: your folders stay
+  switched on with streaming off.
+- **Cache** lists each cache with what it holds now: art and files in memory,
+  the disk cache, missing assets and learned formats, each with its Clear or
+  Retry and its settings under its arrow. The texture memory budget, how long
+  a missing asset is remembered and the learned-format tools moved here.
+- **Missing sprites** has a **Use a custom image** switch, a path field and a
+  **Browse…** button.
+- Card order: Asset source, Cache, Missing sprites. The "Image & audio
+  formats" pointer is gone; Formats has its own tab.
+
+### Settings
+- **Updates** sits above **Reset** in the sidebar.
+- The sidebar no longer has an empty extra tab at the bottom.
+- The Windows build no longer shows "(modified)" beside its commit in
+  **Updates**: the release build marked itself modified while stamping its
+  version, though it was built from the commit as published.
+
+## v2.1.0-rc.3 - 2026-11-08
+
+The third pre-release of v2.1.0, fixing how pre-releases update.
+
+### Updates
+- A pre-release turns on **Include pre-releases** the first time it starts, so
+  it no longer offers to go back to the last stable release right away. If you
+  turn it off, it stays off until you run a different pre-release.
+- A pre-release is offered the newest stable release that is the same version
+  or newer: v2.1.0-rc.3 updates to v2.1.0 once it is out, or straight to a
+  later release such as v2.2.0.
+- Turning off **Include pre-releases** on a pre-release now offers the latest
+  stable release, even when its version number is lower.
+- Stable releases are only ever offered newer versions, with or without
+  **Include pre-releases**.
+
+## v2.1.0-rc.2 - 2026-11-08
+
+The second pre-release of v2.1.0. Pre-releases reach only players who turned on
+**Include pre-releases** in Settings → Updates; turn it off to go back to
+stable releases once v2.1.0 is out.
+
+### Updates
+- A new **Updates** tab at the bottom of Settings shows the version you're
+  running with the commit and the date it was built, and the newest version on
+  offer, marked **Release** or **Pre-release**. **Check for updates** checks
+  again at any time, and **Patch notes & install…** opens the patch notes.
+- The update options moved there: **Check for updates on launch** (from
+  General) and **Include pre-releases**, which replaces the "experimental test
+  builds" option from Power user. Your choice carries over.
+- The window title shows the version.
+- The banner that stayed in the top-right corner while an update was on offer
+  is gone; the patch notes open once, and the Updates tab opens them again.
+- The patch notes' install button is now **Download & Install…**.
+- A failed update check is shown in the Updates tab instead of passing silently.
+
+## v2.1.0-rc.1 - 2026-11-07
+
+A test build of the next release. AsyncAO moves from SDL2 to SDL3 and draws
+through the GPU, and a lot changed underneath. Expect rough edges and report
+what breaks. Only players with test builds switched on get this update.
+Switching them off afterwards keeps you on this build until v2.1.0 is out.
+
+### Before you update
+- **Video export is gone.** The 🎥 Video button, its sound mixing and the
+  subtitle files are removed with the ffmpeg dependency they needed. GIF, WebP
+  and Comic exports stay and need no extra program.
+- **Voice chat is gone.**
+- **The Discord-free builds are gone.** Players on one are moved to the regular
+  build. Rich Presence is on by default there; turn it off in Settings.
+- **PAC and SOCKS5 proxies are no longer supported**, and the server list no
+  longer pings each lobby. HTTP proxies still work for all traffic, including
+  the proxy set in Windows or macOS.
+- **Packed-room catch-up is now off by default**, and turned off once if it was
+  on, so the courtroom plays every message in order like the original client.
+- **Your asset folders no longer win over the server's cached copy.** A file
+  AsyncAO already downloaded and keeps in its cache is used before the same
+  file in your folders; clear the cache to make yours show for it. Files the
+  cache doesn't hold still come from your folders first.
+- **Clients from v1.95.1 or older can't update themselves to this.** They open
+  the release page instead; download the bundle from there.
+- The Windows download is larger, because it ships a software renderer for PCs
+  whose graphics driver can't run the GPU renderer.
+
+### SDL3 and the GPU renderer
+- Everything draws through SDL3's GPU API: Vulkan where the driver supports it,
+  a software renderer where it doesn't.
+- If the graphics driver resets, AsyncAO restarts itself instead of freezing.
+- File and folder pickers are the operating system's own dialogs, and you can
+  add several asset folders at once where the dialog allows it.
+
+### Text and emoji
+- Every label falls back glyph by glyph to a font that has the character, the
+  way Qt does, so mixed scripts and symbols no longer turn into boxes.
+- Colour emoji show in every label, and fallback glyphs sit on the line with
+  the text around them.
+
+### Courtroom
+- A speaker's whole animation plays before their message starts.
+- The Pos dropdown lists the positions the background defines, and moving
+  between them slides across the panorama, as in AO2.
+- The desk is the one that belongs to the background that actually loaded.
+- webAO mode no longer starts a message on the previous sprite.
+- Streamed music picks up its loop points.
+
+### Assets and connections
+- Assets load through a new media system that asks file names in AO2's order,
+  follows the order in the server's extensions.json, and tries a server's extra
+  asset hosts after its own. The debug panel shows whether each host's format
+  list was read.
+- Connecting runs in the background, so the window never freezes while a server
+  answers.
+- Your asset folders and .zip packs are read a folder at a time, when a file in
+  them is first needed, instead of all at once. New files are found by
+  themselves, and again whenever you come back to the AsyncAO window. **Rescan
+  folders** is now **Check folders now**: press it after changing a file the
+  game is already showing.
+
+### Desktop notifications
+- On Windows, notifications come from AsyncAO with its own name and icon, not
+  from Windows PowerShell.
+
+## v2.0.2 - 2026-10-31
+
+- Emoji and symbols fall back to a font that has them in more places.
+- The desktop notification for a group invite is now opt-in, off by default.
+
+## v2.0.1 - 2026-10-06
+
+- Fixed the address of the Umineko master server list.
+
 ## v2.0.0 - 2026-10-06
 
 AsyncAO 2.0. The headline this time is the wire: every packet now goes through

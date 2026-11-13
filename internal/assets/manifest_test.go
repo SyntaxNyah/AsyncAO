@@ -36,33 +36,6 @@ func TestManifestParseSanitizes(t *testing.T) {
 	}
 }
 
-// TestBundledVanillaManifest pins the shipped official-vanilla example: it parses
-// and carries the AO defaults — PNG for char icons / emote buttons / backgrounds,
-// .apng-first for emote sprites — and seeds without error.
-func TestBundledVanillaManifest(t *testing.T) {
-	m := BundledVanillaManifest()
-	if len(m.Background) != 1 || m.Background[0] != config.ExtPNG {
-		t.Errorf("vanilla background = %v, want [.png]", m.Background)
-	}
-	if len(m.CharIcon) != 1 || m.CharIcon[0] != config.ExtPNG {
-		t.Errorf("vanilla charicon = %v, want [.png]", m.CharIcon)
-	}
-	if len(m.Emotions) != 1 || m.Emotions[0] != config.ExtPNG {
-		t.Errorf("vanilla emotions = %v, want [.png]", m.Emotions)
-	}
-	if len(m.Emote) == 0 || m.Emote[0] != config.ExtAPNG {
-		t.Errorf("vanilla emote = %v, want .apng first", m.Emote)
-	}
-	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer prefs.Close()
-	if n := m.SeedLearned(prefs, "vanilla.example"); n == 0 {
-		t.Error("bundled vanilla manifest seeded nothing")
-	}
-}
-
 // TestManifestSeedLearned pins the seeding fan-out: emote art covers
 // sprites + shout bubbles (NOT misc — extensions.json has no misc key, and
 // live mirrors ship png misc art beside webp emotes), backgrounds cover desk
@@ -92,7 +65,7 @@ func TestManifestSeedLearned(t *testing.T) {
 	if n := m.SeedLearned(prefs, host); n != 5 {
 		t.Fatalf("seeded %d, want 5 (desks follow by default, misc never)", n)
 	}
-	snap := prefs.LearnedSnapshot()
+	snap := prefs.Load().LearnedSnapshot()
 	// The emote class declares TWO formats, so sprites and shout bubbles must
 	// carry both — .webp first (probed), .gif behind it (the recovery ladder).
 	checks := map[string][]string{
@@ -125,12 +98,22 @@ func TestManifestSeedLearned(t *testing.T) {
 	// Opt out: pin desks to WebP; the manifest may no longer touch DeskOverlay.
 	// The clear mirrors what the Settings toggle does, so the pin is observable
 	// as an ABSENT entry rather than a stale seeded one.
-	prefs.SetDeskFollowManifest(false)
+	prefs.Update(func(
+		sn *config.
+			Settings) {
+
+		sn.
+			DeskFollowManifest =
+
+			false
+
+	})
+
 	prefs.ClearLearnedType(config.TypeDeskOverlay)
 	if n := m.SeedLearned(prefs, host); n != 4 {
 		t.Fatalf("seeded %d with the WebP pin on, want 4 (desk exempt)", n)
 	}
-	if got, ok := prefs.LearnedSnapshot()[config.LearnedKey(host, config.TypeDeskOverlay)]; ok {
+	if got, ok := prefs.Load().LearnedSnapshot()[config.LearnedKey(host, config.TypeDeskOverlay)]; ok {
 		t.Errorf("DeskOverlay seeded from the manifest despite the WebP pin: %v", got)
 	}
 }
@@ -162,7 +145,7 @@ func TestManifestSeedLearnedAudio(t *testing.T) {
 	if n := m.SeedLearned(prefs, host); n != 2 {
 		t.Fatalf("seeded %d, want 2 (sfx + blip only; image classes absent)", n)
 	}
-	snap := prefs.LearnedSnapshot()
+	snap := prefs.Load().LearnedSnapshot()
 	if got := snap[config.LearnedKey(host, config.TypeSFX)]; len(got) != 2 || got[0] != config.ExtOpus || got[1] != config.ExtOgg {
 		t.Errorf("learned[SFX] = %v, want [.opus .ogg]", got)
 	}

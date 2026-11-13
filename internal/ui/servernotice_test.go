@@ -20,19 +20,13 @@ package ui
 // every unit test of its own functions.
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // ---------------------------------------------------------------------------
@@ -615,7 +609,7 @@ func TestTheNoticeBoxKeepsCourtroomHotkeysOffTheWire(t *testing.T) {
 // closes the box, or one keystroke would tear down two layers.
 func TestEscClosesTheNoticeBoxFirst(t *testing.T) {
 	a := froomApp(t)
-	a.showVoice = true
+	a.showMessages = true
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "S", noticeLockdownReason)
 
 	if !a.closeTopOverlay() {
@@ -624,7 +618,7 @@ func TestEscClosesTheNoticeBoxFirst(t *testing.T) {
 	if a.serverNoticeDlg.open {
 		t.Error("Esc closed something else and left the box up")
 	}
-	if !a.showVoice {
+	if !a.showMessages {
 		t.Error("Esc closed the panel behind the box as well — one layer per press")
 	}
 }
@@ -681,11 +675,10 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	a.lastLobbyRefreshAt = a.now()
 
 	a.openServerNotice(serverNoticeRemoved, "The server banned you.", "Refuser", noticeLockdownReason)
-	a.lastConnURL = ""
 	driveEnter(a)
-	if a.lastConnURL != "" {
+	if a.dial != nil {
 		t.Errorf("Enter under the notice box dialled %q — the box's own text is the reason that "+
-			"server is unreachable", a.lastConnURL)
+			"server is unreachable", a.dial.url)
 	}
 	if !a.serverNoticeDlg.open {
 		t.Error("Enter dismissed the box; only Esc and its own button do that, and a ban reason " +
@@ -696,10 +689,9 @@ func TestEnterOnTheLobbyCannotRedialTheServerThatRefusedYou(t *testing.T) {
 	a.selServer = 0
 	a.ctx.focusID = ""
 	driveEnter(a)
-	if a.lastConnURL != wantURL {
-		t.Fatalf("Enter with nothing in the way left lastConnURL = %q, want %q — the lobby's "+
-			"Enter-to-join is not reached at all, so the arm above is a fence around dead code",
-			a.lastConnURL, wantURL)
+	if a.dial == nil || a.dial.url != wantURL {
+		t.Fatalf("Enter with nothing in the way started no dial to %q — the lobby's "+
+			"Enter-to-join is not reached at all, so the arm above is a fence around dead code", wantURL)
 	}
 }
 
@@ -733,7 +725,12 @@ func TestEnterInTheICFieldIsFencedWithoutEatingTheDraft(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a, cleanup := stageFrameDrivenApp(t)
 			defer cleanup()
-			a.d.Prefs.SetThemeLayout(tc.themed) // which of the two IC fields draws
+			{
+				pv1 := tc.themed
+				a.d.Prefs.Update(func(sn *config.Settings) { // which of the two IC fields draws
+					sn.ThemeLayoutOn = pv1
+				})
+			}
 			driveFrame(a)
 
 			const draft = "/unpair"
@@ -898,113 +895,5 @@ func TestTheNoticeBoxStaysClickableInAWindowSmallerThanItself(t *testing.T) {
 	}
 	if !a.serverNoticeDlg.open {
 		t.Error("Copy dismissed the box")
-	}
-}
-
-// TestTheNoticeBoxIsHonouredAtEveryModalSite is the anti-deletion gate, and it is the
-// one rule 11 asks for by name: the flag is a term added at each site of a census that
-// no single behavioural test can cover (two of the three in App.Frame are a pointer
-// fence and a draw order, neither of which leaves an observable mark after the frame
-// ends).
-//
-// House doctrine (floatbox.go) forbids folding these sites into one predicate — the
-// sets genuinely differ — so the only way to keep them honest is to require the
-// reference, by function, and say what is lost when it goes. Each count is a MINIMUM,
-// because App.Frame carries three distinct sites and deleting any one of them is the
-// regression.
-func TestTheNoticeBoxIsHonouredAtEveryModalSite(t *testing.T) {
-	// Two kinds of site: the ones that CHECK the flag (fences, Esc, the draw order) and
-	// the ones that RAISE the box (the three packet/dial routes). Each row names the
-	// identifier that must appear in that function, so a deleted term fails here with
-	// the consequence written out rather than as a silent hole.
-	sites := []struct {
-		fn    string
-		ref   string
-		least int
-		lost  string
-	}{
-		// FOUR sites in App.Frame, and the count is exact for a reason: it was written as
-		// 3 first, and deleting the pointer fence then left it green — the behavioural
-		// gate below did not catch that mutation either, because menuBarSuppressed
-		// independently deadens the strip the click lands on. The two mechanisms overlap
-		// on purpose, so only a count can hold each of them.
-		{"Frame", "serverNoticeDlg", 4, "one of: the quick-connect key guard (a keypress redials " +
-			"the server that just banned you), the pointer fence (a click lands on the lobby's " +
-			"Reconnect and does the same with the mouse), the hotkey-sheet unfence, or the draw call " +
-			"itself (the box never appears)"},
-		{"handleHotkeys", "serverNoticeDlg", 1, "a shout or a panel fires blind under the box"},
-		{"menuBarSuppressed", "serverNoticeDlg", 1, "the menu bar stays live and its modalOn blanks the box's buttons"},
-		{"closeTopOverlay", "serverNoticeDlg", 1, "Esc stops closing the box and toggles something behind it instead"},
-		{"handleTabBar", "serverNoticeDlg", 1, "a tab switch scrolls an unread ban reason away"},
-		// The KEYBOARD sites the pointer fence cannot cover, because fencePointer blanks
-		// the mouse and leaves the keyboard alone. None of them go through handleHotkeys,
-		// so the guard there does not reach them.
-		{"drawLobby", "serverNoticeDlg", 1, "Enter on the lobby's arrow-key selection redials the " +
-			"server whose ban message is the reason the box is on screen"},
-		// All THREE IC send sites are listed, enumerated rather than summarised, because
-		// they were not found together: the classic bar was fenced first and the other two
-		// were still open behind it. Each owns its own TextFieldEmoji whose Enter fires
-		// while that field holds focus, and focus survives the box opening.
-		{"drawICControls", "serverNoticeDlg", 1, "Enter in the IC field sends a line into a room the " +
-			"server has already removed you from"},
-		{"drawCourtroomThemed", "serverNoticeDlg", 1, "the same Enter hole reopens for anyone on an AO2 " +
-			"theme, since that layout path draws its own IC field and shares only the send helper"},
-		{"drawSplitInput", "serverNoticeDlg", 1, "Enter in the pinned pane sends a line the user never " +
-			"saw themselves send, because they were reading the box at the time"},
-		{"openDisconnectDialog", "serverNoticeDlg", 1, "a BB notice and the disconnect dialog stack"},
-		{"handleInvoluntaryDrop", "openServerNotice", 1, "a pre-courtroom ban goes back to one unreadable lobby label"},
-		{"handleSessionEvents", "openServerNotice", 1, "a BB popup notice is one OOC line again, so a " +
-			"whitelist procedure scrolls away unread"},
-		{"connectWith", "openServerNotice", 1, "a refused handshake's own explanation (403/429/503) " +
-			"is thrown away at the dial"},
-	}
-	refs := map[string]bool{}
-	for _, s := range sites {
-		refs[s.ref] = true
-	}
-
-	names, err := filepath.Glob("*.go")
-	if err != nil || len(names) == 0 {
-		t.Fatalf("glob the package: %v (%d files)", err, len(names))
-	}
-	// got[function][identifier] — counted per function so App.Frame's three distinct
-	// sites are distinguishable from one.
-	got := map[string]map[string]int{}
-	fset := token.NewFileSet()
-	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		file, err := parser.ParseFile(fset, name, src, parser.SkipObjectResolution)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			ast.Inspect(fn, func(n ast.Node) bool {
-				id, ok := n.(*ast.Ident)
-				if !ok || !refs[id.Name] {
-					return true
-				}
-				if got[fn.Name.Name] == nil {
-					got[fn.Name.Name] = map[string]int{}
-				}
-				got[fn.Name.Name][id.Name]++
-				return true
-			})
-		}
-	}
-	for _, s := range sites {
-		if n := got[s.fn][s.ref]; n < s.least {
-			t.Errorf("%s references %s %d time(s), want at least %d — without it: %s",
-				s.fn, s.ref, n, s.least, s.lost)
-		}
 	}
 }

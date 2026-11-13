@@ -10,7 +10,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -61,7 +60,7 @@ func (a *audioRecorder) StopMusic() { a.stops++ }
 // newCourtroomRig builds a courtroom over a no-network manager (local mounts
 // pointing at an empty dir — prefetches resolve to warnings, which the
 // lifecycle ignores).
-func newCourtroomRig(t *testing.T) (*Courtroom, *Session, *sentRecorder, *audioRecorder) {
+func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioRecorder) {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
@@ -78,15 +77,15 @@ func newCourtroomRig(t *testing.T) (*Courtroom, *Session, *sentRecorder, *audioR
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	pool := network.NewPool(2)
-	t.Cleanup(pool.Close)
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	local := assets.NewLocalFetcher([]string{t.TempDir()})
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
-		Source: local, LocalMode: true, Pool: pool, Decoder: decoder,
+		Source: local, Decoder: decoder,
 	})
+	t.Cleanup(mgr.CloseMedia)
+	mgr.SetFolders(local.Mounts(), nil)
 
 	rec := &sentRecorder{}
 	sess := NewSession(rec.send, "test-hdid")
@@ -271,11 +270,6 @@ func TestDeskVisiblePhaseMatrix(t *testing.T) {
 // TestDeskModExHidesPairPerPhase pins the #16 mods 4/5 behaviour against AO2's two
 // switch statements (play_preanim courtroom.cpp:4076-4082 / start_chat_ticking
 // :4135-4146). Pair-hide and offset-zero are DECOUPLED and asymmetric.
-//
-// Mod 4 (EMOTE_ONLY_EX): preanim hides the sideplayer + move(0,0); talk restores ONLY
-// the offset (set_self_offset) and never re-shows the sideplayer — so the pair stays
-// HIDDEN through both phases, offset zeroed in preanim, restored in talk.
-//
 // Mod 5 (PRE_ONLY_EX): the inverse for the offset — pair+offset shown in the preanim,
 // both hidden/zeroed in talk.
 func TestDeskModExHidesPairPerPhase(t *testing.T) {
@@ -522,10 +516,6 @@ func TestAdditiveOutgoingLeadingSpace(t *testing.T) {
 // spans over the space-LESS visible text, then prepends a space and shifts each
 // span's Start by +1 before encoding the invisible frame; this test simulates that
 // sender output (space-prefixed fragment + already-+1'd spans) and asserts begin()
-// lands the effect over the intended visible runes on an AsyncAO receiver — both for
-// a first fragment (empty accumulator) and a continuation (non-empty prefix, where
-// the receiver's own prefix shift composes on top). The ui send lines themselves are
-// out of this package's compile fence; they're verified by inspection.
 func TestAdditiveOutgoingSpanShift(t *testing.T) {
 	// The sender emits this for a `[shake]Wow[/shake]!` typed with the additive box
 	// on: visible "Wow!" → space-prefixed " Wow!"; the [shake] span over runes 0..3
@@ -875,23 +865,14 @@ func TestKFOCompatDetect(t *testing.T) {
 	}
 }
 
-func TestPositionSceneTable(t *testing.T) {
-	cases := map[string][2]string{
-		"def":    {"defenseempty", "defensedesk"},
-		"pro":    {"prosecutorempty", "prosecutiondesk"},
-		"wit":    {"witnessempty", "stand"},
-		"jud":    {"judgestand", "judgedesk"},
-		"hld":    {"helperstand", "helperdesk"},
-		"hlp":    {"prohelperstand", "prohelperdesk"},
-		"jur":    {"jurystand", "jurydesk"},
-		"sea":    {"seancestand", "seancedesk"},
-		"":       {"witnessempty", "stand"},
-		"podium": {"podium", "podium_overlay"}, // 2.8 unique pos
-	}
-	for pos, want := range cases {
-		bg, desk := PositionScene(pos)
-		if bg != want[0] || desk != want[1] {
-			t.Errorf("PositionScene(%q) = %s/%s, want %s/%s", pos, bg, desk, want[0], want[1])
+func TestEachLegacyBackgroundBringsItsDesk(t *testing.T) {
+	for bg, desk := range map[string]string{
+		"defenseempty": "defensedesk", "prosecutorempty": "prosecutiondesk", "witnessempty": "stand",
+		"judgestand": "judgedesk", "helperstand": "helperdesk", "prohelperstand": "prohelperdesk",
+		"jurystand": "jurydesk", "seancestand": "seancedesk", "podium": "podium_overlay", "wit": "wit_overlay",
+	} {
+		if got := DeskOf(bg, nil); got != desk {
+			t.Errorf("DeskOf(%q) = %q, want %q", bg, got, desk)
 		}
 	}
 }
@@ -1499,7 +1480,7 @@ func TestPairedMessageSceneState(t *testing.T) {
 	if !strings.HasSuffix(sc.Pair.IdleBase, "characters/edgeworth/(a)thinking") {
 		t.Errorf("pair idle base = %q", sc.Pair.IdleBase)
 	}
-	if !strings.HasSuffix(sc.BackgroundBase, "background/gs4/defenseempty") {
+	if !strings.HasSuffix(sc.BackgroundBase, "background/gs4/def") {
 		t.Errorf("background base = %q", sc.BackgroundBase)
 	}
 	if sc.ShownameText != "Nick" {
@@ -1641,10 +1622,10 @@ func TestBlipVolumeScalesSpeaker(t *testing.T) {
 	setupReadySession(t, sess)
 
 	var gotChar string
-	room.BlipVolumeFor = func(char string) int {
+	room.Blips = blipFake{vol: func(char string) int {
 		gotChar = char
 		return 30
-	}
+	}}
 	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "Quiet")})
 	if gotChar != "Phoenix" {
 		t.Errorf("BlipVolumeFor got char %q, want the speaker %q", gotChar, "Phoenix")
@@ -1876,11 +1857,6 @@ func TestMissingPreanimSkipsInsteadOfTimeout(t *testing.T) {
 // async re-probe's Warning drains. The fix skips the preanim SYNCHRONOUSLY at
 // entry: PhasePreanim is never entered, Active is never the missing preanim base
 // at ANY observable point, and the message goes straight to talking.
-//
-// AO2-Client parity: it stats the preanim locally and skips a missing one before
-// it draws (courtroom.cpp play_preanim) — a base we already know is absent is the
-// same certainty. This is distinct from TestMissingPreanimSkipsInsteadOfTimeout,
-// which covers the 404 landing DURING the wait; here it is known BEFORE entry.
 func TestKnownMissingPreanimNeverStagesPlaceholder(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)
@@ -1943,8 +1919,6 @@ func TestKnownMissingImmediatePreanimNeverStages(t *testing.T) {
 // left a one-frame placeholder flash on draw drivers that draw without first
 // calling this room's Update (the audio-paced present cycle skips Update but still
 // draws; a minimized→restored frame; a split/replay/maker room on its own cadence).
-// The synchronous swap closes that window; Update still runs startTalking on its
-// own tick with no double-effect.
 func TestMissingPreanimSwapIsSynchronous(t *testing.T) {
 	// Blocking preanim (PhasePreanim).
 	room, sess, _, _ := newCourtroomRig(t)
@@ -2072,27 +2046,7 @@ func immediatePreanimMsg(text string) *protocol.ChatMessage {
 // freeze on the last preanim frame); when the TEXT finishes first the message
 // SETTLES on schedule while the animation plays on, and the speaker drops to
 // idle only when the animation itself ends.
-//
-// DELIBERATE BEHAVIOR CHANGE, authored by this lane (field report: immediate
-// still holds the queue for the preanim's length). The second half of this test
-// used to assert the opposite — that text completion kept PhaseTalking until the
-// preanim finished. Under hard rule 11 a rewritten assertion is a behavior
-// change until proven otherwise, so here is the proof: three spots in
 // ../AO2-Client/src/courtroom.cpp.
-//
-//	:4273-4275  chat_tick sets text_state = 2 the moment tick_pos reaches the
-//	            end of the message. anim_state is neither consulted nor touched,
-//	            and an immediate preanim is anim_state 4 throughout
-//	            (play_preanim, :4093-4095).
-//	:2442       the gate for taking the stage is `text_state >= 2 &&
-//	            !text_queue_timer->isActive()` — TEXT state, never anim_state.
-//	:4332-4338  chat_tick arms text_queue_timer (the queue advance) right there
-//	            at text completion; the blank-post arm at :4208-4213 is the same
-//	            code again.
-//
-// So in canon occupancy ends at text completion with the animation still
-// running. Holding the queue for the animation is exactly what ticking
-// "immediate" asks the client not to do.
 func TestImmediatePreanimTransitions(t *testing.T) {
 	// Preanim finishes mid-text → talk sprite.
 	room, _, _, _ := newCourtroomRig(t)
@@ -2138,7 +2092,6 @@ func TestImmediatePreanimTransitions(t *testing.T) {
 // TestImmediateDoesNotHoldTheQueueForThePreanim is the field report itself: with
 // a LONG immediate preanim still playing, the next message must take the stage
 // at TEXT completion + TextStay, not at preanim completion.
-//
 // The room is given a decoded 5 s preanim (NotifyPreanimStarted) and a zero
 // TextStay, so the only thing that could delay the second message is the
 // animation. AO2 arms text_queue_timer from chat_tick regardless of anim_state
@@ -2173,14 +2126,10 @@ func TestImmediateDoesNotHoldTheQueueForThePreanim(t *testing.T) {
 // settle site — the one a message reaches when its text is already complete the
 // instant it takes the stage, so PhaseTalking never runs a tick. A blank post
 // with an immediate preanim is exactly that message.
-//
 // It is pinned separately because a mutant that makes THIS site wait on the
 // animation survives the two tests above: they all call Update at least once,
 // and the PhaseTalking arm would then settle the message one tick later, hiding
-// the difference. The difference is real all the same — canon settles a blank
-// post synchronously inside start_chat_ticking, arming the queue timer in the
 // empty-message arm at ../AO2-Client/src/courtroom.cpp:4183-4213 with the
-// preanim still playing (anim_state 4).
 func TestBlankImmediatePostSettlesWithoutWaitingForThePreanim(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
 	room.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("")})
@@ -2203,14 +2152,6 @@ func TestBlankImmediatePostSettlesWithoutWaitingForThePreanim(t *testing.T) {
 // base forever — PreanimTimeout releases it to idle — while a decoded long
 // preanim that DOES report its duration (NotifyPreanimStarted) still plays in
 // full.
-//
-// Its assertions were rewritten by this lane too, from Phase() to PlayOnce, and
-// they ride the same proof: the bound now guards the SPRITE, because the phase
-// it used to guard no longer waits on the animation at all. Same three citations
-// as TestImmediatePreanimTransitions. Note what did NOT change — both halves
-// still assert exactly what they did before (unbounded preanim is released;
-// a decoded 5 s preanim survives the plain timeout and ends on its own report),
-// only on the field that still carries the animation's state.
 func TestImmediatePreanimBounded(t *testing.T) {
 	// Never reports done: bounded release, no permanently frozen sprite.
 	room, _, _, _ := newCourtroomRig(t)
@@ -2858,20 +2799,6 @@ func TestTypewriterSpacesDontBlipByDefault(t *testing.T) {
 	}
 }
 
-// TestSessionPing pins the CH keepalive (AO2-Client keepalive_timer,
-// 45 s): servers idle-kick silent clients — minimized sessions died
-// before the app pinged on its own.
-func TestSessionPing(t *testing.T) {
-	rec := &sentRecorder{}
-	s := NewSession(rec.send, "h")
-	feed(t, s, "PV#1#CID#7#%")
-	s.Ping()
-	last := rec.packets[len(rec.packets)-1]
-	if last.Header != "CH" || last.Field(0) != "7" {
-		t.Errorf("ping sent %s#%s, want CH#7", last.Header, last.Field(0))
-	}
-}
-
 // TestTextStayConfigurable pins the user-tunable linger duration.
 func TestTextStayConfigurable(t *testing.T) {
 	room, _, _, _ := newCourtroomRig(t)
@@ -3031,7 +2958,7 @@ func TestMCLoopingAndEffectsParse(t *testing.T) {
 		t.Errorf("absent effects field must default to 0, got %d", ev[0].MusicEffects)
 	}
 
-	// Malformed effects field degrades to 0 (atoiOr fallback), doesn't drop the event.
+	// Malformed effects field degrades to 0 (parse.AtoiOr fallback), doesn't drop the event.
 	ev = feed(t, s, "MC#Reminiscence.opus#2#DJ#1#0#garbage#%")
 	if len(ev) != 1 || ev[0].MusicEffects != 0 {
 		t.Errorf("malformed effects → events=%+v, want one with Effects=0", ev)

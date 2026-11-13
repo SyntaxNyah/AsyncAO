@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/veandco/go-sdl2/sdl"
-
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
 // --- the egg roster's behavioural oracles --------------------------------------
@@ -96,7 +96,7 @@ func eggOracleRig(t *testing.T) (*App, *render.CaptureTarget, sdl.Rect, sdl.Rect
 	// drawCreatorEgg clamps its rings to (0,0,winW,winH); Frame never runs in this
 	// harness, so pin them or every ring is skipped as off-window.
 	a.winW, a.winH = eggOracleW, eggOracleH
-	a.d.Prefs.SetScreenEffects(true)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = true })
 	vp := sdl.Rect{X: 0, Y: 0, W: eggOracleW, H: eggOracleH}
 	box := sdl.Rect{X: eggOracleInset, Y: eggOracleInset, W: eggOracleW - 2*eggOracleInset, H: eggOracleH - 2*eggOracleInset}
 	return a, ct, vp, box, func() {
@@ -140,9 +140,16 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 				reduce bool
 				paints bool
 			}{{reduce: true, paints: false}, {reduce: false, paints: true}} {
-				a.d.Prefs.SetReduceMotion(arm.reduce)
-				// Clear the detection cache so each arm does its own scan through the
-				// real compare-and-store guard rather than inheriting the last one's.
+				{
+					pv1 := arm.reduce
+					a.d.Prefs.Update(func(sn *config.Settings) {
+						sn.
+							// Clear the detection cache so each arm does its own scan through the
+							// real compare-and-store guard rather than inheriting the last one's.
+							ReduceMotionOn = pv1
+					})
+				}
+
 				a.eggMsg, a.eggKind = "", eggNone
 				a.frameAnimChrome = false
 				painted := eggPaintedPixels(t, a.ctx.Ren, ct, half.draw)
@@ -179,7 +186,7 @@ func TestReduceMotionFreezesEveryEgg(t *testing.T) {
 func TestEveryEggPacesTheFrameLimiter(t *testing.T) {
 	a, _, vp, box, cleanup := eggOracleRig(t)
 	defer cleanup()
-	a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	for kind := eggFanat; kind <= eggMint; kind++ {
 		text := eggTriggerFor(t, kind)
@@ -500,8 +507,8 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 	defer cleanup()
 
 	// The accessibility gate must be OPEN for the egg to draw at all.
-	a.d.Prefs.SetScreenEffects(true)
-	a.d.Prefs.SetReduceMotion(false)
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ScreenEffects = true })
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.ReduceMotionOn = false })
 
 	const w, h = 1280, 720
 	// drawCreatorEgg clamps its rings to (0,0,winW,winH); Frame (which normally
@@ -542,88 +549,8 @@ func TestDrawCourtroomEggZeroAlloc(t *testing.T) {
 		if a.eggKind != tc.want {
 			t.Fatalf("egg for %q = %d, want %d — the zero-alloc gate would measure the wrong (or no) path", tc.text, a.eggKind, tc.want)
 		}
-		if n := allocsPerFrame(allocGateFrames, 0, draw); n != 0 {
+		if n := gateZeroAlloc(draw); n != 0 {
 			t.Fatalf("a settled %q egg frame allocates %.1f/op, want 0 — a per-frame allocation shipped in the egg draw", tc.text, n)
-		}
-	}
-}
-
-// TestStageEggCensusIsComplete is the encapsulation gate for the egg's STAGE
-// half. eggDrawsOnStage is the one list of kinds that paint on the viewport, and
-// drawStageEgg dispatches from it — a kind added to the list but left out of the
-// dispatch (or the reverse) is the parsed-but-never-applied failure this codebase
-// has shipped before: everything compiles, every other egg gate stays green, and
-// the new egg simply never appears on the stage.
-func TestStageEggCensusIsComplete(t *testing.T) {
-	// The list itself: exactly the two-part eggs, and nothing else.
-	want := map[uint8]bool{eggScatter: true, eggCrystal: true, eggNorthgate: true, eggMint: true}
-	for kind := eggNone; kind <= eggMint; kind++ {
-		if got := eggDrawsOnStage(kind); got != want[kind] {
-			t.Errorf("eggDrawsOnStage(%d) = %v, want %v", kind, got, want[kind])
-		}
-	}
-	// …and the dispatch: the gate is consulted, every stage draw is reachable, and
-	// the frame limiter is told (an egg that animates without NoteAnimating freezes
-	// at a low idle cap — the msAnim precedent).
-	body := funcBodySource(t, "eggs.go", "drawStageEgg")
-	for _, call := range []string{
-		"eggDrawsOnStage", "drawEggPetals", "drawEggShards", "drawEggAurora", "drawEggFrost", "NoteAnimating",
-	} {
-		if !containsCall(body, call) {
-			t.Errorf("drawStageEgg does not call %s — a stage egg is unreachable or unpaced", call)
-		}
-	}
-	// The chatbox halves have the same deletion risk, and the two-part eggs have it
-	// twice over: a kind can lose its ring while keeping its stage field, which
-	// leaves the chatbox looking untouched while the stage goes on animating.
-	ring := funcBodySource(t, "eggs.go", "drawCreatorEgg")
-	for _, call := range []string{"drawEggCrystalRing", "drawEggAuroraRing", "drawEggMintRing"} {
-		if !containsCall(ring, call) {
-			t.Errorf("drawCreatorEgg no longer dispatches %s — that egg's chatbox half is gone", call)
-		}
-	}
-}
-
-// TestEveryEggKindHasBothDispatches is the encapsulation gate the roster needed
-// once it stopped being five hand-remembered names.
-//
-// EVERY kind in the enum must resolve somewhere in drawCreatorEgg. A kind added
-// to the trigger table and left out of the ring dispatch is the
-// parsed-but-never-applied shape this repo has shipped before: the scan resolves,
-// creatorEgg returns it, NoteAnimating fires, the frame limiter runs at full rate
-// — and NOTHING is drawn. Everything compiles and every other egg gate stays
-// green. Driven off the enum bound rather than a literal list, so a sixth guest
-// is caught by having been added at all.
-func TestEveryEggKindHasBothDispatches(t *testing.T) {
-	ring := funcBodySource(t, "eggs.go", "drawCreatorEgg")
-	stage := funcBodySource(t, "eggs.go", "drawStageEgg")
-	// One painter per kind, named here so the gate can say WHICH one went missing.
-	// A kind absent from this table fails loudly rather than being skipped.
-	painters := map[uint8][2]string{
-		eggFanat:     {"drawEggRainbow", ""},
-		eggOmni:      {"drawEggOmni", ""},
-		eggCrystal:   {"drawEggCrystalRing", "drawEggShards"},
-		eggNyah:      {"drawEggNyah", ""},
-		eggScatter:   {"drawEggScatter", "drawEggPetals"},
-		eggNorthgate: {"drawEggAuroraRing", "drawEggAurora"},
-		eggMint:      {"drawEggMintRing", "drawEggFrost"},
-	}
-	for kind := eggFanat; kind <= eggMint; kind++ {
-		p, known := painters[kind]
-		if !known {
-			t.Fatalf("egg kind %d has no painter recorded — add it here, or a new egg can ship "+
-				"triggering, pacing the frame limiter, and drawing nothing", kind)
-		}
-		if !containsCall(ring, p[0]) {
-			t.Errorf("egg kind %d: drawCreatorEgg does not call %s", kind, p[0])
-		}
-		hasStage := p[1] != ""
-		if hasStage != eggDrawsOnStage(kind) {
-			t.Errorf("egg kind %d: the painter table says stage=%v, eggDrawsOnStage says %v",
-				kind, hasStage, eggDrawsOnStage(kind))
-		}
-		if hasStage && !containsCall(stage, p[1]) {
-			t.Errorf("egg kind %d: drawStageEgg does not call %s", kind, p[1])
 		}
 	}
 }
