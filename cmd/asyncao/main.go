@@ -79,6 +79,9 @@ func main() {
 	}
 }
 
+// redrawLogEvery is how often --debug logs why recent frames were drawn, so a profile can be read against it.
+const redrawLogEvery = 5 * time.Second
+
 // logSamples prints the 1 Hz profiler snapshot in --debug mode.
 func logSamples(p *metrics.Profiler) {
 	ticker := time.NewTicker(metrics.SampleInterval)
@@ -369,6 +372,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 			app.RequestRelaunch(gpuRecoveryArgs(recovery, masterURL, gpuOpts, gpuRecoveries, debugMode), true)
 		}
 	}
+	var lastRedrawLog time.Time
 	for running {
 		now := time.Now()
 		dt := now.Sub(last)
@@ -506,6 +510,10 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 			app.Frame(dt, lw, lh)
 		}
 		recoverGPU(gpuWatcher.Observe(ren.Present()))
+		if debugMode && now.Sub(lastRedrawLog) >= redrawLogEvery {
+			log.Printf("redraws: %s", app.RedrawSummary())
+			lastRedrawLog = now
+		}
 		preview.Present()
 		stalls.FrameDone()
 		// A click's state change only appears on the next frame, so force one.

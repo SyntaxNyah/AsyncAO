@@ -96,7 +96,7 @@ func TestPartialRedraw(t *testing.T) {
 
 	a.NoteRedraw(true, focused, noEvent)
 	a.NoteRedraw(false, focused, sawEvent)
-	if got := a.redrawSummary(); !strings.Contains(got, "1 partial") || !strings.Contains(got, "input 1") {
+	if got := a.RedrawSummary(); !strings.Contains(got, "1 partial") || !strings.Contains(got, "input 1") {
 		t.Errorf("redraw summary = %q, want one partial frame and one full frame for input", got)
 	}
 }

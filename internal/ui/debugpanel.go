@@ -227,7 +227,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Goroutines: %d", runtime.NumGoroutine()), ColTextDim)
 	y += debugLineH
 
-	c.LabelClipped(r.X, y, r.W, a.redrawSummary(), ColTextDim)
+	c.LabelClipped(r.X, y, r.W, a.RedrawSummary(), ColTextDim)
 	y += debugLineH
 
 	// Pacer: the last FramePace tier and why. focusSuffix reads focus now while the tier was stamped last frame,
@@ -427,8 +427,8 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 	}
 }
 
-// redrawSummary counts the frame ring: how many frames redrew one region alone, and why the others drew in full.
-func (a *App) redrawSummary() string {
+// RedrawSummary counts the frame ring: how many frames redrew one region alone, and why the others drew in full.
+func (a *App) RedrawSummary() string {
 	var counts [reasonCount]int
 	partial := 0
 	for i, r := range a.frameReasons {
