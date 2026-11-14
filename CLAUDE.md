@@ -142,6 +142,7 @@ heap corruption.
 |---|---|---|
 | `internal/safepath` | the ONE copy of the zip-slip / symlink / `..` / depth guards (shared by mounts and theme bundles) | no |
 | `internal/netproxy` | the socket factory: opens every outbound connection (direct or through an HTTP proxy) by the one configuration | no |
+| `internal/saver` | the one background file writer: a change schedules one whole-file replace (temp file + rename) | no |
 | `internal/config` | preferences + debounced atomic saver; favorites; local mounts; the Wardrobe's `wardrobe.json` | no |
 | `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
 | `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), request priority, master list + tiers + direct connect | no |

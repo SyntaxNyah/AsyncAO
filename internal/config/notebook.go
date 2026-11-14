@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/saver"
 )
 
 const (
@@ -26,12 +28,11 @@ const (
 	notebookKeyMax = 48
 )
 
-// Notebook is safe for concurrent use; the flush goroutine is the only disk writer.
+// Notebook is safe for concurrent use; its saver is the only disk writer.
 type Notebook struct {
+	*saver.Saver
 	mu    sync.Mutex
-	path  string
 	lines []string
-	timer *time.Timer
 	// rev bumps on every mutation so the UI can cache its Lines() snapshot instead of copying per frame.
 	rev int64
 }
@@ -43,16 +44,13 @@ func (n *Notebook) Rev() int64 {
 	return n.rev
 }
 
-// Clear also stops the pending flush, which would otherwise recreate the file WipeNotebooks deletes.
+// Clear also drops the waiting write, which would otherwise recreate the file WipeNotebooks deletes.
 func (n *Notebook) Clear() {
 	n.mu.Lock()
 	n.lines = nil
-	if n.timer != nil {
-		n.timer.Stop()
-		n.timer = nil
-	}
 	n.rev++
 	n.mu.Unlock()
+	n.Discard()
 }
 
 // notebookJSON is the on-disk shape.
@@ -111,7 +109,8 @@ func LoadNotebook(serverKey string) (*Notebook, error) {
 
 // loadNotebookFile treats an absent or corrupt file as a fresh notebook.
 func loadNotebookFile(path string) *Notebook {
-	n := &Notebook{path: path}
+	n := &Notebook{}
+	n.Saver = saver.New(path, notebookSaveDelay, n.encode)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return n
@@ -141,7 +140,7 @@ func (n *Notebook) Add(line string) {
 		n.lines = n.lines[len(n.lines)-notebookLineCap:]
 	}
 	n.rev++
-	n.flushSoonLocked()
+	n.Changed()
 	n.mu.Unlock()
 }
 
@@ -151,7 +150,7 @@ func (n *Notebook) Remove(i int) {
 	if i >= 0 && i < len(n.lines) {
 		n.lines = append(n.lines[:i], n.lines[i+1:]...)
 		n.rev++
-		n.flushSoonLocked()
+		n.Changed()
 	}
 	n.mu.Unlock()
 }
@@ -172,41 +171,10 @@ func (n *Notebook) Len() int {
 	return len(n.lines)
 }
 
-// flushSoonLocked rearms the debounce timer; the caller holds n.mu.
-func (n *Notebook) flushSoonLocked() {
-	if n.timer != nil {
-		n.timer.Stop()
-	}
-	n.timer = time.AfterFunc(notebookSaveDelay, func() { _ = n.Flush() })
-}
-
-// Flush writes atomically (tmp + rename); also called on disconnect so nothing rides only on the debounce.
-func (n *Notebook) Flush() error {
+// encode snapshots the pins for the saver.
+func (n *Notebook) encode() ([]byte, error) {
 	n.mu.Lock()
 	snapshot := notebookJSON{Lines: append([]string(nil), n.lines...)}
-	path := n.path
 	n.mu.Unlock()
-
-	data, err := json.MarshalIndent(snapshot, jsonMarshalPrefix, jsonMarshalIndent)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), prefsDirPerm); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return json.MarshalIndent(snapshot, jsonMarshalPrefix, jsonMarshalIndent)
 }

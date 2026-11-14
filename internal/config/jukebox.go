@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
+	"github.com/SyntaxNyah/AsyncAO/internal/saver"
 )
 
 const (
@@ -44,12 +45,11 @@ type Playlist struct {
 	Entries []JukeboxEntry `json:"entries,omitempty"`
 }
 
-// Jukebox is safe for concurrent use; the flush goroutine is the only disk writer.
+// Jukebox is safe for concurrent use; its saver is the only disk writer.
 type Jukebox struct {
+	*saver.Saver
 	mu        sync.Mutex
-	path      string
 	playlists []Playlist
-	timer     *time.Timer
 	// rev bumps on every mutation so the UI can cache its snapshot and search index instead of copying per frame.
 	rev int64
 }
@@ -81,7 +81,8 @@ func OpenJukebox(path string) *Jukebox { return loadJukeboxFile(path) }
 
 // loadJukeboxFile treats an absent or corrupt file as a fresh library.
 func loadJukeboxFile(path string) *Jukebox {
-	j := &Jukebox{path: path}
+	j := &Jukebox{}
+	j.Saver = saver.New(path, jukeboxSaveDelay, j.encode)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return j
@@ -453,55 +454,16 @@ func totalEntries(pls []Playlist) int {
 
 func (j *Jukebox) totalLocked() int { return totalEntries(j.playlists) }
 
-// touchLocked bumps the revision and rearms the debounced flush; the caller holds j.mu.
+// touchLocked bumps the revision and schedules a write; the caller holds j.mu.
 func (j *Jukebox) touchLocked() {
 	j.rev++
-	if j.timer != nil {
-		j.timer.Stop()
-	}
-	j.timer = time.AfterFunc(jukeboxSaveDelay, func() { _ = j.Flush() })
+	j.Changed()
 }
 
-// Flush writes atomically (tmp + rename); also called on exit so nothing rides only on the debounce.
-func (j *Jukebox) Flush() error {
+// encode snapshots the library for the saver.
+func (j *Jukebox) encode() ([]byte, error) {
 	j.mu.Lock()
 	snapshot := jukeboxJSON{Playlists: clonePlaylists(j.playlists)}
-	path := j.path
 	j.mu.Unlock()
-	if path == "" {
-		return nil
-	}
-	data, err := json.MarshalIndent(snapshot, jsonMarshalPrefix, jsonMarshalIndent)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), prefsDirPerm); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
-}
-
-// Close stops the debounce timer and writes any pending change; the caller guards against nil.
-func (j *Jukebox) Close() error {
-	j.mu.Lock()
-	if j.timer != nil {
-		j.timer.Stop()
-		j.timer = nil
-	}
-	j.mu.Unlock()
-	return j.Flush()
+	return json.MarshalIndent(snapshot, jsonMarshalPrefix, jsonMarshalIndent)
 }
