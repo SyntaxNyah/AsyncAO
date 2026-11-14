@@ -15,10 +15,13 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
-// DiskSource answers from an index of the cache's file names, so a miss never touches the disk.
+// DiskSource answers from an index of the cache's file names, so once the index is scanned a miss never touches the
+// disk.
 type DiskSource struct {
 	disk  *cache.DiskCache
 	index map[string]struct{}
+	// scanned is set by the first Adopt; before it, a file outside the index may still be on disk.
+	scanned bool
 }
 
 // NewDiskSource starts with an empty index; Adopt fills it from ScanDiskIndex.
@@ -49,6 +52,7 @@ func (s *DiskSource) Adopt(keys []string) {
 	for _, k := range keys {
 		s.add(k)
 	}
+	s.scanned = true
 }
 
 // Keep queues bytes for the disk writer and indexes them; a dropped write heals through a failed read.
@@ -65,10 +69,14 @@ func (s *DiskSource) add(key string) {
 	s.index[key] = struct{}{}
 }
 
-// Has answers from the index.
+// Has answers from the index; until the first scan lands, a file outside it is Unknown, so the disk is asked before
+// the web.
 func (s *DiskSource) Has(f File) Answer {
 	if _, ok := s.index[cache.Key(string(f))]; ok {
 		return Yes
+	}
+	if !s.scanned {
+		return Unknown
 	}
 	return No
 }
