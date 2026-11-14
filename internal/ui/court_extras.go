@@ -1392,7 +1392,7 @@ func (a *App) drawEvidenceCompare(rect sdl.Rect) {
 // drawEvidenceDescriptionLine draws one wrapped description line, rendering URLs as clickable links like the OOC log.
 func (a *App) drawEvidenceDescriptionLine(x, y, maxW int32, line string) {
 	c := a.ctx
-	links := extractURLs(line, oocLinksPerParagraphMax)
+	links := extractURLs(line, linksPerParagraphMax)
 	if len(links) == 0 {
 		c.LabelClipped(x, y, maxW, line, ColText)
 		return

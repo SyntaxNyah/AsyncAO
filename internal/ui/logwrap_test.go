@@ -83,7 +83,7 @@ func TestLogHangingIndent(t *testing.T) {
 // wrapped-across-rows case), row 5 holds two distinct links side by side.
 func TestOOCHoverSpan(t *testing.T) {
 	a := testTabApp(t)
-	a.oocWrapLink = []oocLinkSpan{
+	a.oocWrapLink = []linkSpan{
 		{row: 1, x0: 0, x1: 100, link: 0, url: "u1"},
 		{row: 2, x0: 0, x1: 100, link: 0, url: "u1"},
 		{row: 3, x0: 0, x1: 40, link: 0, url: "u1"},
