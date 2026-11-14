@@ -25,6 +25,20 @@ Character Select.
   way AO2 rounds it, so at some window sizes it no longer sits one pixel to
   the right.
 
+### Changed
+- **AsyncAO draws with Direct3D 11 on Windows and Metal on macOS**, not
+  Vulkan. It uses about half the memory, and `-renderer=sdl` is no longer
+  needed for graphics drivers that hung on Vulkan (it is still accepted).
+  If the graphics device resets, AsyncAO restarts and reopens your tabs.
+- **The CPU renderer is about eight times faster**: when your graphics
+  driver can't be used, the courtroom keeps each sprite, background and desk
+  already scaled to its size on screen instead of rescaling it every frame,
+  and solid panels no longer blend. A busy room in a maximised 2560×1334
+  window went from about 15 to 120 frames per second, on less than half of
+  one CPU core.
+- **The Windows download is about 160 MB smaller**: the bundled software
+  Vulkan driver (lavapipe) and the Vulkan loader are gone.
+
 ## v2.1.0-rc.7 - 2026-11-11
 
 The seventh pre-release of v2.1.0, with Wardrobe changes players asked for.
