@@ -317,8 +317,12 @@ func TestDiskIndexHealsAndScans(t *testing.T) {
 	}
 	defer disk.Close()
 	src := NewDiskSource(disk)
+	if src.Has("http://x/a") != Unknown {
+		t.Fatal("before the first scan the disk must still be asked")
+	}
+	src.Adopt(nil)
 	if src.Has("http://x/a") != No {
-		t.Fatal("empty index answered yes")
+		t.Fatal("a scanned empty index answered other than no")
 	}
 	src.Keep("http://x/a", []byte("data"))
 	if src.Has("http://x/a") != Yes {
@@ -339,6 +343,42 @@ func TestDiskIndexHealsAndScans(t *testing.T) {
 	src.Adopt(keys)
 	if src.Has("http://x/a") != Yes {
 		t.Fatal("a scanned file is not in the index")
+	}
+}
+
+// Before the disk index is scanned, a cached file is read from the disk rather than downloaded again.
+func TestCachedFileBeforeTheScanComesFromDisk(t *testing.T) {
+	disk, err := cache.NewDiskCache(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer disk.Close()
+	const cached = testOrigin + "c/e.webp"
+	disk.Put(cached, []byte("x"))
+	waitUntil(t, func() bool { _, ok := disk.Get(cached); return ok })
+
+	fetch := &fakeFetcher{files: map[string][]byte{cached: []byte("x")}}
+	builder := NewCandidateBuilder()
+	remote := NewRemoteSource(context.Background(), fetch, testShortTTL, time.Now)
+	diskP := NewPool("disk", testWorkers, 0)
+	net := NewPool("network", testRemotePool, 0)
+	compute := NewPool("compute", testWorkers, 1)
+	m := NewManager(Config{
+		Chains: map[Place]*Chain{PlaceServer: NewChain(
+			Entry{Source: NewDiskSource(disk), Pool: diskP}, Entry{Source: remote, Pool: net})},
+		Formats:    map[Kind]Format{KindImage: &fakeFormat{}},
+		Candidates: builder.Build,
+		Compute:    compute,
+	})
+	defer func() { m.Close(); diskP.Close(); net.Close(); compute.Close() }()
+
+	a := m.Get(sprite("c/e"), Now, 0)
+	waitFinal(t, a)
+	if !a.Ready() {
+		t.Fatalf("state %d err %v", a.State(), a.Err())
+	}
+	if asked := fetch.askedFor(); len(asked) != 0 {
+		t.Errorf("downloaded %v though the disk held it", asked)
 	}
 }
 
