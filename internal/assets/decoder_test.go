@@ -746,3 +746,53 @@ func TestDownscaleKeepsSourceFrames(t *testing.T) {
 			keptFrames-1, identity)
 	}
 }
+
+// TestDecoderMarksOpaqueFrames pins the Opaque flag: set only when every pixel has full alpha, so a renderer can copy
+// the frames without blending, and cleared by a single transparent pixel.
+func TestDecoderMarksOpaqueFrames(t *testing.T) {
+	const (
+		side  = 16
+		solid = 255
+		faint = 254
+	)
+	pool := NewDecoderPool(1)
+	defer pool.Close()
+	decode := func(data []byte) *Decoded {
+		t.Helper()
+		done := make(chan *Decoded, 1)
+		if !pool.Submit(DecodeRequest{URL: "x", Data: data, Type: AssetTypeBackground,
+			OnDone: func(_ string, d *Decoded, err error) {
+				if err != nil {
+					t.Errorf("decode failed: %v", err)
+				}
+				done <- d
+			}}) {
+			t.Fatal("submit refused")
+		}
+		select {
+		case d := <-done:
+			return d
+		case <-time.After(managerWait):
+			t.Fatal("decode timed out")
+			return nil
+		}
+	}
+
+	opaque := decode(encodePNG(t, side, side, color.RGBA{R: 1, G: 2, B: 3, A: solid}))
+	if opaque == nil || !opaque.Opaque {
+		t.Error("a fully opaque image was not marked Opaque")
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, side, side))
+	for i := range img.Pix {
+		img.Pix[i] = solid
+	}
+	img.SetRGBA(side-1, side-1, color.RGBA{R: solid, G: solid, B: solid, A: faint})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	if d := decode(buf.Bytes()); d == nil || d.Opaque {
+		t.Error("an image with one translucent pixel was marked Opaque")
+	}
+}

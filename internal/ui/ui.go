@@ -1785,9 +1785,17 @@ func (c *Ctx) unfencePointer() {
 
 // Fill draws a solid rect.
 func (c *Ctx) Fill(r sdl.Rect, col sdl.Color) {
+	const opaque = 255
 	_ = c.Ren.SetDrawColor(col.R, col.G, col.B, col.A)
 	c.cgoRect = r // &local would escape through cgo and heap-allocate per call
+	if col.A != opaque {
+		_ = c.Ren.FillRect(&c.cgoRect)
+		return
+	}
+	// SDL's software renderer blends every pixel even at full alpha, about 14 times the cost of a plain fill.
+	_ = c.Ren.SetDrawBlendMode(sdl.BLENDMODE_NONE)
 	_ = c.Ren.FillRect(&c.cgoRect)
+	_ = c.Ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 }
 
 // gradientSteps bounds the strips a vertical gradient draws.

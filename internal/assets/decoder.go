@@ -523,14 +523,38 @@ func (p *DecoderPool) SetTextureCompression(mode int) {
 	}
 }
 
-// compressIfEnabled compresses in place when a DXT mode is active and the canvas is 4-aligned; idempotent.
-func (p *DecoderPool) compressIfEnabled(d *Decoded) {
+// prepareForUpload marks fully opaque frames, then compresses in place when a DXT mode is active and the canvas is
+// 4-aligned; idempotent, as compressing releases the frames the opaque check reads.
+func (p *DecoderPool) prepareForUpload(d *Decoded) {
 	if d == nil {
 		return
+	}
+	if len(d.Frames) > 0 {
+		d.Opaque = framesOpaque(d.Frames)
 	}
 	if f := p.texCompress.Load(); f != 0 {
 		d.compress(f)
 	}
+}
+
+// framesOpaque reports whether every pixel of every frame has full alpha; it stops at the first one that hasn't.
+func framesOpaque(frames []*image.RGBA) bool {
+	const (
+		alphaOffset = 3
+		opaqueAlpha = 0xff
+	)
+	for _, f := range frames {
+		rowBytes := f.Rect.Dx() * rgbaBytesPerPixel
+		for y := 0; y < f.Rect.Dy(); y++ {
+			row := f.Pix[y*f.Stride : y*f.Stride+rowBytes]
+			for i := alphaOffset; i < len(row); i += rgbaBytesPerPixel {
+				if row[i] != opaqueAlpha {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // fit downscales to the ceiling: fixed-cell types to a square, others to the sprite cap or the animated cap when set.
@@ -644,7 +668,7 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 					first = fitEstablishingPrefix(first, req.Data, p.fullSizeMaxH(req.Type))
 				}
 				first = p.fit(req.Type, first)
-				p.compressIfEnabled(first)
+				p.prepareForUpload(first)
 				first.Partial = true
 				if streamable {
 					// Streaming pages grow frame by frame; frame 0 is the first chunk.
@@ -669,7 +693,7 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		p.failed.Add(1)
 	} else {
 		d = p.fit(req.Type, d)
-		p.compressIfEnabled(d)
+		p.prepareForUpload(d)
 		p.decoded.Add(1)
 		foldEWMA(&p.decodeNsEWMA, time.Since(start))
 	}
@@ -751,7 +775,7 @@ func (p *DecoderPool) streamAnimated(req DecodeRequest) {
 
 	emit := func(chunk *Decoded) {
 		chunk = p.fit(req.Type, chunk)
-		p.compressIfEnabled(chunk)
+		p.prepareForUpload(chunk)
 		req.OnDone(req.URL, chunk, nil)
 	}
 
@@ -776,7 +800,7 @@ func (p *DecoderPool) streamAnimated(req DecodeRequest) {
 			p.failed.Add(1)
 		} else {
 			d = p.fit(req.Type, d)
-			p.compressIfEnabled(d)
+			p.prepareForUpload(d)
 			p.decoded.Add(1)
 			foldEWMA(&p.decodeNsEWMA, time.Since(start))
 		}

@@ -95,6 +95,8 @@ type Decoded struct {
 	Compressed [][]byte
 	// DXTFormat is the FOURCC of Compressed (0 = raw RGBA).
 	DXTFormat uint32
+	// Opaque reports that every pixel of every frame has full alpha, so the frames can be copied without blending.
+	Opaque bool
 
 	// pooledPix tracks pool-drawn frame buffers to return on Release.
 	pooledPix []*[]byte

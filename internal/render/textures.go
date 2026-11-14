@@ -59,9 +59,11 @@ type TexturePage struct {
 	// Stilled marks a page reduced to frame 0: ContainsAnimated treats it as absent, Get still draws it.
 	Stilled bool
 	// File is the file the page was decoded from; a stream's frames from another file never join it.
-	File  string
-	W, H  int32
-	bytes int64
+	File string
+	W, H int32
+	// Opaque marks frames with full alpha everywhere, which a copy can skip blending for.
+	Opaque bool
+	bytes  int64
 	// scaleMode/scaleModeSet memoise the filter, as the cgo call and flush must not run per frame per draw.
 	scaleMode    sdl.ScaleMode
 	scaleModeSet bool
@@ -337,6 +339,7 @@ func (s *TextureStore) holdSceneryFrame(base string, page *TexturePage) {
 		Delays: []time.Duration{0}, // a single frozen frame — never scheduled
 		W:      page.W,
 		H:      page.H,
+		Opaque: page.Opaque,
 		bytes:  int64(page.W) * int64(page.H) * texBytesPerPixel,
 	}
 	page.Frames[0] = nil // stolen: the page's destroy() skips nil frames
@@ -513,6 +516,7 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 		File:         d.File,
 		W:            int32(d.Width),
 		H:            int32(d.Height),
+		Opaque:       d.Opaque,
 	}
 	frames, bytes, err := s.buildFrames(d)
 	if err != nil {
@@ -715,6 +719,7 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 		}
 		page.Frames = append(page.Frames, frames...)
 		page.Delays = append(page.Delays, d.Delays...)
+		page.Opaque = page.Opaque && d.Opaque
 		page.bytes += added
 		s.oversizedMu.Lock()
 		s.oversizedBytes += added
