@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,6 +39,9 @@ const (
 
 const (
 	winnerSep = "\t"
+	// decimal and byteBits parse a line's byte-sized numbers.
+	decimal  = 10
+	byteBits = 8
 	// pathUnder: the path is stored after its host's prefix; pathOfOrigin: the key's Origin is the host, path as is;
 	// pathWhole: stored whole.
 	pathUnder    = "0"
@@ -162,20 +164,22 @@ func readWinner(group, line string) (Key, File, bool) {
 	if len(parts) != winnerFields {
 		return Key{}, "", false
 	}
-	var nums [fieldHow]int
-	for i := range nums {
-		n, err := strconv.Atoi(parts[i])
-		if err != nil || n < 0 {
+	// The byte fields parse at 8 bits, so a value past 255 fails here rather than wrapping in a conversion.
+	var small [fieldSize]uint8
+	for _, i := range []int{fieldPlace, fieldKind, fieldClass} {
+		n, err := strconv.ParseUint(parts[i], decimal, byteBits)
+		if err != nil {
 			return Key{}, "", false
 		}
-		nums[i] = n
+		small[i] = uint8(n)
 	}
-	if nums[fieldPlace] > math.MaxUint8 || nums[fieldKind] > math.MaxUint8 || nums[fieldClass] > int(ClassBlips) ||
-		nums[fieldTag] > math.MaxUint8 {
+	tag, err := strconv.ParseUint(parts[fieldTag], decimal, byteBits)
+	size, sizeErr := strconv.Atoi(parts[fieldSize])
+	if err != nil || sizeErr != nil || size < 0 || Class(small[fieldClass]) > ClassBlips {
 		return Key{}, "", false
 	}
-	k := Key{Place: Place(nums[fieldPlace]), Kind: Kind(nums[fieldKind]), Class: Class(nums[fieldClass]),
-		Size: nums[fieldSize], Tag: uint8(nums[fieldTag])}
+	k := Key{Place: Place(small[fieldPlace]), Kind: Kind(small[fieldKind]), Class: Class(small[fieldClass]),
+		Size: size, Tag: uint8(tag)}
 	path, file := parts[fieldPath], parts[fieldFile]
 	switch parts[fieldHow] {
 	case pathUnder:
