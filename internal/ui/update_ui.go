@@ -16,9 +16,19 @@ import (
 )
 
 const (
-	// updateModalW/H size the What's New panel.
-	updateModalW int32 = 560
-	updateModalH int32 = 420
+	// updateModalW/H are the What's New panel's smallest size; it grows with the window up to updateModalMaxW/H.
+	updateModalW    int32 = 560
+	updateModalH    int32 = 420
+	updateModalMaxW int32 = 760
+	updateModalMaxH int32 = 640
+	// updateModalMargin keeps the panel off the window edges.
+	updateModalMargin int32 = 40
+	// updateModalInset is the panel's inner margin.
+	updateModalInset int32 = 16
+	// updateNotesTop is the notes' offset below the panel top, under the title and "What's new:".
+	updateNotesTop int32 = 66
+	// updateButtonsH is the button row's height plus the gap and status line above it.
+	updateButtonsH int32 = 60
 	// updateNotesLineH is the patch-notes line pitch.
 	updateNotesLineH int32 = 18
 	// updateNotesMaxBlocks bounds the patch notes' headings, bullets and paragraphs; the overflow is on the release page.
@@ -243,11 +253,15 @@ func (a *App) RelaunchRequest() ([]string, bool) { return a.relaunchArgs, a.rela
 
 // updateModalRects lays out the What's New panel, shared by the input pass and the overlay draw.
 func updateModalRects(w, h int32) (panel, notes, getBtn, laterBtn sdl.Rect) {
-	panel = sdl.Rect{X: (w - updateModalW) / 2, Y: (h - updateModalH) / 2, W: updateModalW, H: updateModalH}
-	notes = sdl.Rect{X: panel.X + pad, Y: panel.Y + 60, W: panel.W - 2*pad, H: panel.H - 60 - 48}
-	btnY := panel.Y + panel.H - 38
-	getBtn = sdl.Rect{X: panel.X + pad, Y: btnY, W: 220, H: btnH}
-	laterBtn = sdl.Rect{X: panel.X + panel.W - pad - 100, Y: btnY, W: 100, H: btnH}
+	pw := min(max(w-2*updateModalMargin, updateModalW), updateModalMaxW)
+	ph := min(max(h-2*updateModalMargin, updateModalH), updateModalMaxH)
+	panel = sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
+	inner := panel.W - 2*updateModalInset
+	notes = sdl.Rect{X: panel.X + updateModalInset, Y: panel.Y + updateNotesTop, W: inner - scrollBarW - scrollBarGap,
+		H: panel.H - updateNotesTop - updateButtonsH}
+	btnY := panel.Y + panel.H - updateModalInset - btnH
+	getBtn = sdl.Rect{X: panel.X + updateModalInset, Y: btnY, W: 220, H: btnH}
+	laterBtn = sdl.Rect{X: panel.X + panel.W - updateModalInset - 100, Y: btnY, W: 100, H: btnH}
 	return panel, notes, getBtn, laterBtn
 }
 
@@ -320,8 +334,8 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	if a.updateRel.Prerelease {
 		kind = "Pre-release "
 	}
-	c.Heading(panel.X+pad, panel.Y+10, kind+a.updateRel.Version+" available", ColText)
-	c.Label(panel.X+pad, panel.Y+38, "What's new:", ColAccent)
+	c.Heading(notes.X, panel.Y+updateModalInset, kind+a.updateRel.Version+" available", ColText)
+	c.Label(notes.X, panel.Y+updateModalInset+30, "What's new:", ColAccent)
 
 	// The release notes are the changelog's markdown: headings bold, bullets with a hanging indent, bold runs inline.
 	blocks := a.updateNotesBlocks()
@@ -336,26 +350,25 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 			return c.markdownHeight(b.text, ColText, notes.W)
 		}
 	}
-	contentH := int32(0)
-	for _, b := range blocks {
-		if b.afterBlank {
-			contentH += updateNotesGap
+	gapBefore := func(i int) int32 {
+		switch {
+		case blocks[i].afterBlank:
+			return updateNotesGap
+		case blocks[i].bullet && i > 0 && blocks[i-1].bullet:
+			return changelogBulletGap
 		}
-		contentH += blockH(b)
+		return 0
 	}
-	maxScroll := contentH - notes.H
-	if maxScroll < 0 {
-		maxScroll = 0
+	contentH := int32(0)
+	for i, b := range blocks {
+		contentH += gapBefore(i) + blockH(b)
 	}
-	if a.updateScroll > maxScroll {
-		a.updateScroll = maxScroll
-	}
+	track := sdl.Rect{X: notes.X + notes.W + scrollBarGap, Y: notes.Y, W: scrollBarW, H: notes.H}
+	a.updateScroll = c.VScrollbar("updatenotesbar", track, a.updateScroll, contentH, notes.H)
 	clipPrev, clipHad := c.pushClip(notes)
 	y := notes.Y - a.updateScroll
-	for _, b := range blocks {
-		if b.afterBlank {
-			y += updateNotesGap
-		}
+	for i, b := range blocks {
+		y += gapBefore(i)
 		if y > notes.Y+notes.H {
 			break
 		}
@@ -378,11 +391,11 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	statusY := getBtn.Y - 20
 	switch {
 	case a.updateErr != "":
-		c.LabelClipped(panel.X+pad, statusY, panel.W-2*pad, a.updateErr, ColDanger)
+		c.LabelClipped(notes.X, statusY, panel.W-2*updateModalInset, a.updateErr, ColDanger)
 	case a.updateStaged:
-		c.LabelClipped(panel.X+pad, statusY, panel.W-2*pad, "Installed - restart AsyncAO to finish updating.", ColAccent)
+		c.LabelClipped(notes.X, statusY, panel.W-2*updateModalInset, "Installed - restart AsyncAO to finish updating.", ColAccent)
 	case a.updateBusy:
-		c.Label(panel.X+pad, statusY, "Downloading and installing...", ColTextDim)
+		c.Label(notes.X, statusY, "Downloading and installing...", ColTextDim)
 	}
 	getLabel := "Download & Install…"
 	switch {

@@ -1235,8 +1235,9 @@ func (c *Ctx) SetEmojiFont(data []byte) {
 	if len(data) > 0 {
 		c.emojiCover = parseCover(data)
 	}
-	c.fontChainGen++    // every set rebuilds with the face last; labels drawn as boxes redraw
-	c.purgeEmojiCache() // cached rasters used the OLD emoji face — rebuild on next draw
+	c.fontChainGen++       // every set rebuilds with the face last; labels drawn as boxes redraw
+	c.purgeEmojiCache()    // cached rasters used the OLD emoji face — rebuild on next draw
+	c.purgeMarkdownCache() // and markdown blocks with emoji, so their boxes become the glyphs
 }
 
 // SetFallbackFonts installs the broad-Unicode text faces (nil clears); they must stay referenced (RWFromMem). Bumps
@@ -1252,8 +1253,9 @@ func (c *Ctx) SetFallbackFonts(data [][]byte) {
 	}
 	c.fontChainGen++ // force every fontSet to rebuild with the fallbacks included
 	// Emoji rasters bake per-rune picks from the old chain, including cached "nothing to add" answers: purge, or a
-	// label stays tofu until restart.
+	// label stays tofu until restart. Markdown blocks bake the same picks.
 	c.purgeEmojiCache()
+	c.purgeMarkdownCache()
 }
 
 // SetCJKFonts installs the CJK tier; mirrors SetFallbackFonts, appended after the broad set. Render thread.

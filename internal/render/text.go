@@ -202,7 +202,7 @@ func Rasterize(ren *sdl.Renderer, font *ttf.Font, text string, wrapW int32, colo
 		return m, nil
 	}
 	runes := []rune(text)
-	for _, lr := range wrapStyled(font, runes, wrapW) {
+	for _, lr := range wrapMultiFont(sameFont(font, len(runes)), nil, runes, wrapW) {
 		rl, err := rasterizeLine(ren, font, string(runes[lr.start:lr.end]), color)
 		if err != nil {
 			m.Destroy()
@@ -257,6 +257,18 @@ type spanStyle struct {
 	italic bool
 }
 
+// ttfStyle is the SDL_ttf style a run is drawn and measured in.
+func (st spanStyle) ttfStyle() int {
+	style := ttf.STYLE_NORMAL
+	if st.bold {
+		style |= ttf.STYLE_BOLD
+	}
+	if st.italic {
+		style |= ttf.STYLE_ITALIC
+	}
+	return style
+}
+
 // RasterizeStyled renders a multi-color message with one texture per same-color span; render thread, once per message.
 func RasterizeStyled(ren *sdl.Renderer, font *ttf.Font, text string, spans []ColorSpan, wrapW int32, devScale int32) (*MessageRaster, error) {
 	if devScale <= 0 {
@@ -269,7 +281,7 @@ func RasterizeStyled(ren *sdl.Renderer, font *ttf.Font, text string, spans []Col
 		return m, nil
 	}
 	styles := perRuneStyles(runes, spans)
-	for _, lr := range wrapStyled(font, runes, wrapW) {
+	for _, lr := range wrapMultiFont(sameFont(font, len(runes)), styles, runes, wrapW) {
 		line, err := rasterizeStyledLine(ren, font, runes[lr.start:lr.end], styles[lr.start:lr.end])
 		if err != nil {
 			m.Destroy()
@@ -305,40 +317,13 @@ func perRuneStyles(runes []rune, spans []ColorSpan) []spanStyle {
 
 type lineRange struct{ start, end int }
 
-// wrapStyled word-wraps runes to maxW, returning each line's [start,end) rune range so colors map by index.
-func wrapStyled(font *ttf.Font, runes []rune, maxW int32) []lineRange {
-	n := len(runes)
-	if maxW <= 0 {
-		return []lineRange{{0, n}}
+// sameFont is font repeated n times, for the per-rune wrap.
+func sameFont(font *ttf.Font, n int) []*ttf.Font {
+	fonts := make([]*ttf.Font, n)
+	for i := range fonts {
+		fonts[i] = font
 	}
-	var out []lineRange
-	lineStart, lastSpace := 0, -1
-	for i := 0; i < n; {
-		if runes[i] == '\n' {
-			out = append(out, lineRange{lineStart, i})
-			i++
-			lineStart, lastSpace = i, -1
-			continue
-		}
-		if runes[i] == ' ' {
-			lastSpace = i
-		}
-		w, _, _ := font.SizeUTF8(string(runes[lineStart : i+1]))
-		if int32(w) > maxW && i > lineStart {
-			if lastSpace > lineStart {
-				out = append(out, lineRange{lineStart, lastSpace}) // break at the space, drop it
-				lineStart = lastSpace + 1
-			} else {
-				out = append(out, lineRange{lineStart, i}) // over-long word: hard break
-				lineStart = i
-			}
-			lastSpace = -1
-			continue // re-measure from the new line start
-		}
-		i++
-	}
-	out = append(out, lineRange{lineStart, n})
-	return out
+	return fonts
 }
 
 // rasterizeStyledLine builds one line's spans, with a new span at each style change.
@@ -368,13 +353,7 @@ func rasterizeStyledLine(ren *sdl.Renderer, font *ttf.Font, runes []rune, styles
 
 // buildSpan rasterizes one same-style run; font styles are restored so the shared font doesn't leak them.
 func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xOffset, yOff int32) (rasterSpan, error) {
-	style := ttf.STYLE_NORMAL
-	if st.bold {
-		style |= ttf.STYLE_BOLD
-	}
-	if st.italic {
-		style |= ttf.STYLE_ITALIC
-	}
+	style := st.ttfStyle()
 	if style != ttf.STYLE_NORMAL {
 		font.SetStyle(style)
 		defer font.SetStyle(ttf.STYLE_NORMAL) // always reset, even on error/panic

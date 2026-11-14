@@ -237,7 +237,7 @@ func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font
 		}
 	}
 	m.lineH = lineH
-	for _, lr := range wrapMultiFont(fonts, runes, wrapW) {
+	for _, lr := range wrapMultiFont(fonts, styles, runes, wrapW) {
 		line, err := rasterizeFallbackLine(ren, runes[lr.start:lr.end], fonts[lr.start:lr.end], styles[lr.start:lr.end], ascent)
 		if err != nil {
 			m.Destroy()
@@ -324,7 +324,7 @@ func WrapEmojiAware(primary, emoji *ttf.Font, text string, maxW int32, maxLines 
 			fonts[i] = primary
 		}
 	}
-	ranges := wrapMultiFont(fonts, runes, maxW)
+	ranges := wrapMultiFont(fonts, nil, runes, maxW)
 	if maxLines > 0 && len(ranges) > maxLines {
 		ranges = ranges[:maxLines]
 	}
@@ -352,9 +352,37 @@ func WrapMeasured(measure func(string) int32, text string, maxW int32, maxLines 
 	return out
 }
 
-// wrapMultiFont word-wraps runes to maxW under per-rune fonts; build-time, fallback path only.
-func wrapMultiFont(fonts []*ttf.Font, runes []rune, maxW int32) []lineRange {
-	return wrapMeasured(func(lo, hi int) int32 { return measureRuns(fonts, runes, lo, hi) }, runes, maxW)
+// wrapMultiFont word-wraps runes to maxW under per-rune fonts and styles (nil styles: all regular); build-time.
+func wrapMultiFont(fonts []*ttf.Font, styles []spanStyle, runes []rune, maxW int32) []lineRange {
+	return wrapMeasured(func(lo, hi int) int32 { return measureStyled(fonts, styles, runes, lo, hi) }, runes, maxW)
+}
+
+// measureStyled sums SizeUTF8 per run of one font and one weight, measuring bold and italic runs in their own style:
+// a bold run is wider, and measuring it regular let a line run past its column.
+func measureStyled(fonts []*ttf.Font, styles []spanStyle, runes []rune, lo, hi int) int32 {
+	if styles == nil {
+		return measureRuns(fonts, runes, lo, hi)
+	}
+	var w int32
+	for i := lo; i < hi; {
+		j := i + 1
+		for j < hi && fonts[j] == fonts[i] && styles[j].bold == styles[i].bold && styles[j].italic == styles[i].italic {
+			j++
+		}
+		if f := fonts[i]; f != nil {
+			style := styles[i].ttfStyle()
+			if style != ttf.STYLE_NORMAL {
+				f.SetStyle(style)
+			}
+			ww, _, _ := f.SizeUTF8(string(runes[i:j]))
+			if style != ttf.STYLE_NORMAL {
+				f.SetStyle(ttf.STYLE_NORMAL)
+			}
+			w += int32(ww)
+		}
+		i = j
+	}
+	return w
 }
 
 // wrapMeasured is the shared greedy line breaker; measure(lo, hi) reports the width of runes[lo:hi].

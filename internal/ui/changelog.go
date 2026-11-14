@@ -24,6 +24,10 @@ const (
 	// changelogInstalledTag flags the running build's entry in the history.
 	changelogInstalledTag = "    • installed"
 	changelogBullet       = "•"
+	// changelogBulletGap separates consecutive bullets so wrapped ones read apart.
+	changelogBulletGap int32 = 4
+	// changelogBackW is the Back button's width.
+	changelogBackW int32 = 90
 )
 
 // changelogBlock is one header, bullet or paragraph of the changelog. A header is a plain label; a bullet or paragraph
@@ -46,11 +50,13 @@ func buildChangelogBlocks() []changelogBlock {
 	markInstalled := !update.IsDev()
 	src := parseMarkdownBlocks(changelogMD)
 	out := make([]changelogBlock, 0, len(src))
-	seenVersion := false
-	for _, b := range src {
+	for i, b := range src {
 		gap := int32(0)
-		if b.afterBlank {
+		switch {
+		case b.afterBlank:
 			gap = changelogParaGap
+		case b.bullet && i > 0 && src[i-1].bullet:
+			gap = changelogBulletGap
 		}
 		switch b.level {
 		case markdownTitle:
@@ -61,10 +67,9 @@ func buildChangelogBlocks() []changelogBlock {
 				title += changelogInstalledTag
 			}
 			gap = changelogVersionGap
-			if !seenVersion {
-				gap = 0 // the first header hugs the top hairline
+			if len(out) == 0 {
+				gap = 0 // a header opening the screen hugs the top hairline
 			}
-			seenVersion = true
 			out = append(out, changelogBlock{header: title, col: ColAccent, gap: gap})
 		case markdownSub:
 			out = append(out, changelogBlock{header: b.text, col: ColTextDim, gap: gap})
@@ -104,28 +109,29 @@ func (a *App) drawChangelog(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 
-	// Content starts below the app-chrome band.
-	hdrY := a.topChromeH() + pad
-	c.Heading(pad, hdrY, "What's New — Version History", ColText)
-	sub := "You're running AsyncAO " + strings.TrimSpace(update.Version)
-	if update.IsDev() {
-		sub = "You're running a development build"
-	}
-	c.Label(pad, hdrY+30, sub, ColTextDim)
-	if c.Button(sdl.Rect{X: w - 90 - pad, Y: hdrY, W: 90, H: btnH}, "Back") {
-		a.screen = a.prevScreen
-		return
-	}
-	top := hdrY + 56
-	c.Fill(sdl.Rect{X: 0, Y: top - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
-	viewH := h - top - pad
-
+	// One text column; the header row sits on the same margins so the title, the text and Back line up.
 	colW := w - 2*pad - scrollBarW - 2*pad
 	colW = value.Clamp(colW, 200, aboutMaxColW)
 	x0 := (w - scrollBarW - colW) / 2
 	if x0 < pad {
 		x0 = pad
 	}
+
+	// Content starts below the app-chrome band.
+	hdrY := a.topChromeH() + pad
+	c.Heading(x0, hdrY, "What's New — Version History", ColText)
+	sub := "You're running AsyncAO " + strings.TrimSpace(update.Version)
+	if update.IsDev() {
+		sub = "You're running a development build"
+	}
+	c.Label(x0, hdrY+30, sub, ColTextDim)
+	if c.Button(sdl.Rect{X: x0 + colW - changelogBackW, Y: hdrY, W: changelogBackW, H: btnH}, "Back") {
+		a.screen = a.prevScreen
+		return
+	}
+	top := hdrY + 56
+	c.Fill(sdl.Rect{X: x0, Y: top - 10, W: colW, H: 1}, ColPanelHi) // hairline under the header, column wide
+	viewH := h - top - pad
 
 	if a.changelogBlocks == nil {
 		a.changelogBlocks = buildChangelogBlocks()
