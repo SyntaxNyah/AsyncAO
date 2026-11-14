@@ -93,7 +93,8 @@ func TestRecallIgnoresAnotherVersionAndDamage(t *testing.T) {
 		}}.Memory())
 		Recall(r.m, r.builder, Learned{Version: LearnedVersion, Hosts: map[string]*LearnedHost{
 			testOrigin: {Formats: map[Class]map[string]int{ClassEmote: {".exe": 1}},
-				Winners: []string{"short", "0\t0\t99\t0\t0\t0\ta\t+.png", "0\t0\t2\t0\t0\t9\ta\t+.png"}},
+				Winners: []string{"short", "0\t0\t99\t0\t0\t0\ta\t+.png", "0\t0\t2\t0\t0\t9\ta\t+.png",
+					"0\t0\t2\t0\t256\t0\ta\t+.png", "0\t0\t2\t-1\t0\t0\ta\t+.png"}},
 			"nil.test": nil,
 		}}.Memory())
 	})
