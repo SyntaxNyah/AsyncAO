@@ -1313,15 +1313,16 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		c.Label(r.X, r.Y+4, "No favourite emotes — turn off \"favourites only\" in Settings, then click an emote's ★.", ColTextDim)
 	}
 
-	// AO2's emote_left / emote_right step pages (courtroom.cpp on_emote_left_clicked); only the wheel is per-row.
+	// AO2's emote_left / emote_right step pages (courtroom.cpp on_emote_left_clicked) and are hidden where they can't
+	// (emotes.cpp:110-147); only the wheel is per-row.
 	if a.emoteGridScrolls() {
-		if lr, ok := lay.rect("emote_left"); ok {
-			if a.drawThemeButton("emote_left", "<", lr) && a.emoteCanScrollUp() {
+		if lr, ok := lay.rect("emote_left"); ok && a.emoteCanScrollUp() {
+			if a.drawThemeButton("emote_left", "<", lr) {
 				a.scrollEmotePages(-1)
 			}
 		}
-		if rr, ok := lay.rect("emote_right"); ok {
-			if a.drawThemeButton("emote_right", ">", rr) && a.emoteCanScrollDown() {
+		if rr, ok := lay.rect("emote_right"); ok && a.emoteCanScrollDown() {
+			if a.drawThemeButton("emote_right", ">", rr) {
 				a.scrollEmotePages(1)
 			}
 		}

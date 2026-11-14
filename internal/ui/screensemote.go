@@ -161,13 +161,14 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		c.Label(r.X, r.Y+4, "No favourite emotes yet — turn off ★ Favs, then click the ★ on an emote.", ColTextDim)
 	}
 
-	// "<" and ">" move a whole page; the per-row step belongs to the wheel.
+	// "<" and ">" move a whole page, and show only where they can, as AO2's emote arrows (emotes.cpp:110-147); the per-row
+	// step belongs to the wheel.
 	if a.emoteGridScrolls() {
 		cy := r.Y + r.H - btnH
-		if c.Button(sdl.Rect{X: r.X, Y: cy, W: 30, H: btnH}, "<") && a.emoteCanScrollUp() {
+		if a.emoteCanScrollUp() && c.Button(sdl.Rect{X: r.X, Y: cy, W: 30, H: btnH}, "<") {
 			a.scrollEmotePages(-1)
 		}
-		if c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") && a.emoteCanScrollDown() {
+		if a.emoteCanScrollDown() && c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") {
 			a.scrollEmotePages(1)
 		}
 		c.Label(r.X+72, cy+6, a.emotePageCounter(a.emotePageShown(), a.emotePagesShown(), len(vis)), ColTextDim)
