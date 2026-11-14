@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
@@ -225,6 +226,9 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Goroutines: %d", runtime.NumGoroutine()), ColTextDim)
 	y += debugLineH
 
+	c.LabelClipped(r.X, y, r.W, a.redrawSummary(), ColTextDim)
+	y += debugLineH
+
 	// Pacer: the last FramePace tier and why. focusSuffix reads focus now while the tier was stamped last frame,
 	// so a focus flip can briefly show a mismatched pair.
 	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
@@ -420,6 +424,26 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 		}
 		c.Fill(sdl.Rect{X: r.X + int32(i)*barW, Y: r.Y + r.H - hPx, W: barW, H: hPx}, col)
 	}
+}
+
+// redrawSummary counts the frame ring's reasons: how many frames drew the stage alone, and why the others drew in full.
+func (a *App) redrawSummary() string {
+	var counts [reasonCount]int
+	for _, r := range a.frameReasons {
+		counts[r]++
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Redraws, last %d: %d stage only · %d full", perfHUDFrames, counts[reasonStage],
+		perfHUDFrames-counts[reasonStage])
+	sep := " — "
+	for r := range reasonCount {
+		if r == reasonStage || counts[r] == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "%s%s %d", sep, frameReasonLabels[r], counts[r])
+		sep = " · "
+	}
+	return b.String()
 }
 
 // frameStats reduces the frame-time ring to avg, worst and fps.

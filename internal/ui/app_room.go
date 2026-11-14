@@ -842,55 +842,101 @@ const (
 	needFull
 )
 
+// frameReason is why a frame is drawn, for the debug panel.
+type frameReason uint8
+
+const (
+	reasonNone       frameReason = iota // nothing asked; a deadline or the idle tick drew it
+	reasonStage                         // the stage's animation, drawn alone
+	reasonStageFull                     // the stage's animation, drawn in full: no single stage, or a GPU renderer
+	reasonInput                         // input this pass
+	reasonScreen                        // a screen that always draws
+	reasonFullRate                      // recent input or an effect in flight
+	reasonMessage                       // a message playing
+	reasonWarning                       // a warning showing
+	reasonFonts                         // fonts loading
+	reasonAnimChrome                    // animated UI outside the stage
+	reasonDamage                        // a packet, an upload or a caret blink
+	reasonCount
+)
+
+// frameReasonLabels names each frameReason in the debug panel.
+var frameReasonLabels = [reasonCount]string{
+	reasonNone: "deadline", reasonStage: "stage only", reasonStageFull: "stage, drawn full", reasonInput: "input",
+	reasonScreen: "screen", reasonFullRate: "recent input", reasonMessage: "message", reasonWarning: "warning",
+	reasonFonts: "fonts", reasonAnimChrome: "animated UI", reasonDamage: "changes",
+}
+
 // SkipFrame reports that the last drawn frame is still right, so the loop may skip render and present and just pump.
 // A wrong skip heals on the next damage or deadline, never a hang. It also skips menu screens
 // and turns caret and clock refusals into wakes (NextWakeDelay).
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
-	return a.nextFrameNeed(focused, sawEvent) == needNone
+	need, _ := a.nextFrameNeed(focused, sawEvent)
+	return need == needNone
 }
 
 // StageOnly returns where the last full frame drew the stage when nothing but the stage's animation needs drawing, so
 // a renderer that keeps the window's pixels can redraw that rect alone.
 func (a *App) StageOnly(focused, sawEvent bool) (sdl.Rect, bool) {
-	if !a.stageRectOK || a.nextFrameNeed(focused, sawEvent) != needStage {
+	if need, _ := a.nextFrameNeed(focused, sawEvent); !a.stageRectOK || need != needStage {
 		return sdl.Rect{}, false
 	}
 	return a.stageRect, true
 }
 
-func (a *App) nextFrameNeed(focused, sawEvent bool) frameNeed {
+// NoteRedraw records why the frame about to be drawn is drawn, and whether it is the stage alone.
+func (a *App) NoteRedraw(stageOnly, focused, sawEvent bool) {
+	_, reason := a.nextFrameNeed(focused, sawEvent)
+	switch {
+	case stageOnly:
+		reason = reasonStage
+	case reason == reasonStage:
+		reason = reasonStageFull
+	}
+	a.frameReasons[a.frameReasonIdx] = reason
+	a.frameReasonIdx = (a.frameReasonIdx + 1) % perfHUDFrames
+}
+
+func (a *App) nextFrameNeed(focused, sawEvent bool) (frameNeed, frameReason) {
 	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
 	if sawEvent {
-		return needFull // input this pass (incl. a focus-regain window event)
+		return needFull, reasonInput // input this pass (incl. a focus-regain window event)
 	}
 	// Background cap off and unfocused: a 0 fps ceiling, overriding animation, damage and the input grace.
 	if !focused {
 		if _, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS()); off {
-			return needNone
+			return needNone, reasonNone
 		}
 	}
 	// The loop parks on NextWakeDelay, whose idle tick is the periodic render.
 	if !a.screenSkippable() {
-		return needFull
+		return needFull, reasonScreen
 	}
-	if a.wantsFullRate() || a.roomBusy() || a.warnActive() || a.fontWorkPending() {
-		return needFull
+	switch {
+	case a.wantsFullRate():
+		return needFull, reasonFullRate
+	case a.roomBusy():
+		return needFull, reasonMessage
+	case a.warnActive():
+		return needFull, reasonWarning
+	case a.fontWorkPending():
+		return needFull, reasonFonts
 	}
 	if a.drawnAnimChrome {
 		// The last frame drew time-stepped art outside the viewport scheduler, so render on.
 		// The sprite preview reports from its draw site, not a previewBase check here: a preview orphaned by a screen
 		// switch has no one left to close it, and a state check would hold the event-driven loop at the cap forever.
-		return needFull
+		return needFull, reasonAnimChrome
 	}
 	if a.RenderNeeded() {
-		return needFull // pending damage: packets landed / textures moved / a caret flip is showing
+		return needFull, reasonDamage // pending damage: packets landed / textures moved / a caret flip is showing
 	}
 	if a.d.Viewport != nil && a.room != nil {
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
-			return needStage
+			return needStage, reasonStage
 		}
 	}
-	return needNone // both focused and unfocused static screens skip identically
+	return needNone, reasonNone // both focused and unfocused static screens skip identically
 }
 
 // screenSkippable reports whether the current screen may skip; others always render.

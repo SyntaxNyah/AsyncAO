@@ -245,10 +245,13 @@ type App struct {
 	// holdKeyArmed means the hold-to-clear rebind is capturing the next key.
 	holdKeyArmed bool
 	// F3 perf HUD: toggle plus the frame-time ring it graphs.
-	perfHUD     bool
-	frameDts    [perfHUDFrames]float32 // milliseconds
-	frameDtIdx  int
-	previewBase string
+	perfHUD    bool
+	frameDts   [perfHUDFrames]float32 // milliseconds
+	frameDtIdx int
+	// frameReasons is why each of the same frames was drawn.
+	frameReasons   [perfHUDFrames]frameReason
+	frameReasonIdx int
+	previewBase    string
 	// previewName is the display name of the emote behind previewBase, stamped by previewEmote so the caption never
 	// scans a.emotes per frame. previewNameFor is that base: consumers return the name only while it equals
 	// previewBase, so every other previewBase setter invalidates the caption automatically.

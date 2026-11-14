@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,13 @@ func TestStageOnlyFrames(t *testing.T) {
 	}
 	if _, ok := a.StageOnly(focused, sawEvent); ok {
 		t.Error("a pass with input asked for a stage-only frame")
+	}
+	a.NoteRedraw(true, focused, noEvent)
+	a.NoteRedraw(false, focused, sawEvent)
+	a.NoteRedraw(false, focused, noEvent) // the stage was due, but a full frame drew it
+	if got := a.redrawSummary(); !strings.Contains(got, "1 stage only") || !strings.Contains(got, "input 1") ||
+		!strings.Contains(got, "stage, drawn full 1") {
+		t.Errorf("redraw summary = %q, want one stage-only frame, one for input and one stage drawn in full", got)
 	}
 	a.uiDirty = true
 	if _, ok := a.StageOnly(focused, noEvent); ok {

@@ -495,7 +495,9 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		lw := int32(float32(w) / scale)
 		lh := int32(float32(h) / scale)
 		stalls.FrameStart()
-		if stageOnly && stageFrame.Begin(ren, stage, int32(app.UIScale()), w, h) {
+		stageOnly = stageOnly && stageFrame.Begin(ren, stage, int32(app.UIScale()), w, h)
+		app.NoteRedraw(stageOnly, focused, sawEvent)
+		if stageOnly {
 			app.Frame(dt, lw, lh)
 			stageFrame.End(ren)
 		} else {
