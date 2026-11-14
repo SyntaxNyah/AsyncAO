@@ -80,3 +80,24 @@ func TestGPUWatcherEscalates(t *testing.T) {
 		}
 	}
 }
+
+// TestGPUWatcherTakesADeviceResetAsALoss pins SDL's reset event as a loss: after it every texture is gone though
+// presents still work, so it recovers like failed presents, escalates the same way, and is reported once.
+func TestGPUWatcherTakesADeviceResetAsALoss(t *testing.T) {
+	clock := &fakeClock{t: time.Unix(0, 0)}
+	w := NewGPUWatcher(0, false, clock.now)
+	if got := w.DeviceReset(); got != GPURestart {
+		t.Fatalf("device reset: %v, want %v", got, GPURestart)
+	}
+	if got := w.DeviceReset(); got != GPUWorking {
+		t.Errorf("a second reset event reported the loss again: %v", got)
+	}
+	if got := loseDevice(w); got != GPUWorking {
+		t.Errorf("failed presents after the reset reported the loss again: %v", got)
+	}
+
+	again := NewGPUWatcher(1, false, clock.now)
+	if got := again.DeviceReset(); got != GPURestartSoftware {
+		t.Errorf("reset right after a restart: %v, want %v", got, GPURestartSoftware)
+	}
+}

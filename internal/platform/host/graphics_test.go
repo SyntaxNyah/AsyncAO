@@ -1,27 +1,26 @@
 package host
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// sdlSoftwareRenderer is the name SDL gives its CPU renderer.
-const sdlSoftwareRenderer = "software"
+// headlessWindowW and headlessWindowH are the hidden test window's size.
+const (
+	headlessWindowW = 640
+	headlessWindowH = 480
+)
 
-// newHeadlessWindow opens a hidden window on the dummy video driver, where no
-// Vulkan surface exists, so OpenGraphics's device tiers fail the way they do on a
-// machine without a driver.
+// newHeadlessWindow opens a hidden window on the dummy video driver, which has no GPU renderer, so OpenGraphics's GPU
+// tier fails the way it does on a machine without a driver.
 func newHeadlessWindow(t *testing.T) *sdl.Window {
 	t.Helper()
 	t.Setenv("SDL_VIDEODRIVER", "dummy")
-	t.Setenv(vulkanDriverFilesEnv, os.Getenv(vulkanDriverFilesEnv)) // restored after OpenGraphics sets it
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
 		t.Skipf("SDL unavailable: %v", err)
 	}
-	window, err := sdl.CreateWindow("gpu", 0, 0, 640, 480, sdl.WINDOW_HIDDEN)
+	window, err := sdl.CreateWindow("gpu", 0, 0, headlessWindowW, headlessWindowH, sdl.WINDOW_HIDDEN)
 	if err != nil {
 		sdl.Quit()
 		t.Skipf("window unavailable: %v", err)
@@ -33,64 +32,22 @@ func newHeadlessWindow(t *testing.T) *sdl.Window {
 	return window
 }
 
-// TestOpenGraphicsAlwaysDraws pins the last resort: with no GPU driver usable, the
-// window still gets a renderer and a graphics name to show, rather than an error
-// that would stop the client from starting.
+// TestOpenGraphicsAlwaysDraws pins the last resort: with no GPU usable, the window still gets SDL's software renderer,
+// reported as software, rather than an error that would stop the client from starting. SDL's own fallback to that
+// renderer counts as software too, or the stall check would try to escape a renderer that can't freeze.
 func TestOpenGraphicsAlwaysDraws(t *testing.T) {
-	window := newHeadlessWindow(t)
-	g, err := OpenGraphics(window, GraphicsOptions{VSync: true})
-	if err != nil {
-		t.Fatalf("OpenGraphics: %v", err)
-	}
-	defer g.Close()
-	if g.Renderer() == nil {
-		t.Fatal("no renderer")
-	}
-	if g.Name() == "" {
-		t.Error("no graphics name for the debug overlay and the About screen")
-	}
-}
-
-// TestOpenGraphicsForceSoftwareWithoutDriverUsesSDLSoftware pins the force-software
-// flag on a build with no software Vulkan driver: it must skip the hardware
-// driver and land on SDL's CPU renderer, which has no SDL_GPU device.
-func TestOpenGraphicsForceSoftwareWithoutDriverUsesSDLSoftware(t *testing.T) {
-	window := newHeadlessWindow(t)
-	g, err := OpenGraphics(window, GraphicsOptions{ForceSoftware: true})
-	if err != nil {
-		t.Fatalf("OpenGraphics: %v", err)
-	}
-	defer g.Close()
-	if got := g.Name(); got != sdlSoftwareRenderer {
-		t.Errorf("graphics = %q, want %q", got, sdlSoftwareRenderer)
-	}
-	if g.Device() != nil {
-		t.Error("SDL's software renderer reported an SDL_GPU device")
-	}
-	if !g.Software() {
-		t.Error("SDL's software renderer did not report software — a GPUWatcher would escalate to it again")
-	}
-}
-
-// TestOpenGraphicsUnusableSoftwareDriverFallsThrough pins that a software driver
-// manifest that cannot load (missing, or a broken install) falls through to SDL's
-// renderer instead of failing startup, and that the Vulkan loader setting is put
-// back afterwards: left set, it would leak into the client relaunched after a
-// device loss.
-func TestOpenGraphicsUnusableSoftwareDriverFallsThrough(t *testing.T) {
-	window := newHeadlessWindow(t)
-	const userSetting = "user-chosen.json" // a Vulkan setting the user made before launch
-	t.Setenv(vulkanDriverFilesEnv, userSetting)
-	missing := filepath.Join(t.TempDir(), "lvp_icd.x86_64.json")
-	g, err := OpenGraphics(window, GraphicsOptions{ForceSoftware: true, SoftwareDriverFile: missing})
-	if err != nil {
-		t.Fatalf("OpenGraphics: %v", err)
-	}
-	defer g.Close()
-	if got := os.Getenv(vulkanDriverFilesEnv); got != userSetting {
-		t.Errorf("%s = %q after OpenGraphics, want the user's %q back", vulkanDriverFilesEnv, got, userSetting)
-	}
-	if got := g.Name(); got != sdlSoftwareRenderer {
-		t.Errorf("graphics = %q, want %q", got, sdlSoftwareRenderer)
+	for _, force := range []bool{false, true} {
+		window := newHeadlessWindow(t)
+		g, err := OpenGraphics(window, GraphicsOptions{VSync: true, ForceSoftware: force})
+		if err != nil {
+			t.Fatalf("force=%v: OpenGraphics: %v", force, err)
+		}
+		if g.Name != sdl.SoftwareRendererName {
+			t.Errorf("force=%v: graphics = %q, want %q", force, g.Name, sdl.SoftwareRendererName)
+		}
+		if !g.Software {
+			t.Errorf("force=%v: SDL's software renderer did not report software — a GPUWatcher would escalate to it again", force)
+		}
+		_ = g.Renderer.Destroy()
 	}
 }

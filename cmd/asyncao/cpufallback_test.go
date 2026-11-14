@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestCPUFallbackArgs: the client that replaces a frozen one starts on SDL's CPU renderer by its own command line, so
+// TestCPUFallbackArgs: the client that replaces a frozen one starts on the CPU renderer by its own command line, so
 // a pref that failed to save can't send it back to the frozen driver, and it keeps the run's settings.
 func TestCPUFallbackArgs(t *testing.T) {
 	const master = "https://servers.example/list"
@@ -16,7 +16,6 @@ func TestCPUFallbackArgs(t *testing.T) {
 		gotMaster := fs.String("master", "", "")
 		gotVsync := fs.Bool("vsync", false, "")
 		gotSoftware := fs.Bool("software-gpu", false, "")
-		gotRenderer := fs.String("renderer", rendererGPU, "")
 		gotStalled := fs.Bool(rendererStalledFlag, false, "")
 		gotDebug := fs.Bool("debug", false, "")
 		if err := fs.Parse(args); err != nil {
@@ -25,8 +24,7 @@ func TestCPUFallbackArgs(t *testing.T) {
 		if *gotMaster != master || !*gotVsync || *gotDebug != debug {
 			t.Errorf("%v lost the run's settings", args)
 		}
-		skips, err := skipsGPUDevice(*gotRenderer)
-		if err != nil || !skips || !*gotSoftware {
+		if !*gotSoftware {
 			t.Errorf("%v doesn't start on SDL's CPU renderer", args)
 		}
 		if !*gotStalled {

@@ -21,6 +21,10 @@ const (
 	MOUSEBUTTONUP   = C.SDL_EVENT_MOUSE_BUTTON_UP
 	MOUSEWHEEL      = C.SDL_EVENT_MOUSE_WHEEL
 	DROPFILE        = C.SDL_EVENT_DROP_FILE
+	// RENDER_DEVICE_RESET: SDL rebuilt the renderer's device, so every texture is gone.
+	RENDER_DEVICE_RESET = C.SDL_EVENT_RENDER_DEVICE_RESET
+	// RENDER_DEVICE_LOST: SDL could not rebuild the device.
+	RENDER_DEVICE_LOST = C.SDL_EVENT_RENDER_DEVICE_LOST
 )
 
 // Window event kinds, carried in WindowEvent.Event.

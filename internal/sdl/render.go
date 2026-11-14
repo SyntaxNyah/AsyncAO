@@ -78,11 +78,8 @@ func CreateRenderer(window *Window, _ int, flags uint32) (*Renderer, error) {
 	return newRenderer(C.asyncaoCreateRenderer(window.c(), flags&RENDERER_SOFTWARE != 0), flags)
 }
 
-// CreateGPURenderer creates a renderer that draws through device, so other
-// SDL_GPU users can share it. Only RENDERER_PRESENTVSYNC applies.
-func CreateGPURenderer(device *GPUDevice, window *Window, flags uint32) (*Renderer, error) {
-	return newRenderer(C.SDL_CreateGPURenderer(device.c(), window.c()), flags)
-}
+// SoftwareRendererName is the name SDL gives its CPU renderer.
+const SoftwareRendererName = C.SDL_SOFTWARE_RENDERER
 
 // newRenderer wraps a freshly created renderer and applies the flags SDL3 sets
 // after creation.

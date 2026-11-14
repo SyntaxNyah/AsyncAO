@@ -37,8 +37,6 @@ runs:
           mingw-w64-ucrt-x86_64-libavif
           mingw-w64-ucrt-x86_64-opus
           mingw-w64-ucrt-x86_64-opusfile
-          mingw-w64-ucrt-x86_64-vulkan-loader
-          mingw-w64-ucrt-x86_64-mesa
     - name: Install C dependencies (Linux)
       if: runner.os == 'Linux'
       shell: bash

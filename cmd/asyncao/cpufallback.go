@@ -29,7 +29,6 @@ func cpuFallbackArgs(masterURL string, vsync, debug bool) []string {
 	args := []string{
 		"-master=" + masterURL,
 		"-vsync=" + strconv.FormatBool(vsync),
-		"-renderer=" + rendererSDL,
 		"-software-gpu",
 		"-" + rendererStalledFlag,
 	}

@@ -46,12 +46,13 @@ func main() {
 		flagMaster      = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
 		flagDebug       = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr+" and write the log to asyncao-debug.log")
 		flagVsync       = flag.Bool("vsync", true, "use vsync presentation")
-		flagSoftGPU     = flag.Bool("software-gpu", false, "draw with the bundled software GPU driver (for broken GPU drivers)")
-		flagRenderer    = flag.String("renderer", rendererGPU, `"gpu" draws through SDL_GPU (Vulkan, or Metal on macOS); "sdl" uses SDL's own renderer (Direct3D 11 on Windows), for drivers that hang on SDL_GPU`)
+		flagSoftGPU     = flag.Bool("software-gpu", false, "draw on the CPU, for broken GPU drivers")
 		flagGPURecovery = flag.Int("gpu-recovery", 0, "set by the client when it restarts after a GPU device loss: losses so far")
 		flagStalled     = flag.Bool(rendererStalledFlag, false, "set by the client when it restarts on the CPU renderer after the graphics driver froze")
 		flagVersion     = flag.Bool("version", false, "print the version and exit")
 	)
+	// Ignored: SDL's own renderer is the only one. Accepted so shortcuts that still pass -renderer=sdl start.
+	_ = flag.String("renderer", "", "ignored; kept so old shortcuts still start")
 	flag.Parse()
 
 	if *flagVersion {
@@ -68,18 +69,9 @@ func main() {
 		}()
 	}
 
-	skipDevice, err := skipsGPUDevice(*flagRenderer)
-	if err != nil {
-		log.Fatal(err)
-	}
-	gpuOpts := host.GraphicsOptions{
-		VSync:              *flagVsync,
-		ForceSoftware:      *flagSoftGPU,
-		SkipDevice:         skipDevice,
-		SoftwareDriverFile: host.SoftwareVulkanDriverFile(),
-	}
+	gpuOpts := host.GraphicsOptions{VSync: *flagVsync, ForceSoftware: *flagSoftGPU}
 	app := host.App{Name: windowTitle, Version: update.Version, ID: appID}
-	err = host.Main(app, platform.SystemProbe{}, func(rt *host.Runtime) error {
+	err := host.Main(app, platform.SystemProbe{}, func(rt *host.Runtime) error {
 		return run(rt, *flagServer, *flagMaster, gpuOpts, *flagGPURecovery, *flagStalled, *flagDebug)
 	})
 	if err != nil {
@@ -114,7 +106,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	}
 	// A driver that froze a frame stays unused until Settings switches it back.
 	if prefs.Load().CPURenderer {
-		gpuOpts.SkipDevice, gpuOpts.ForceSoftware = true, true
+		gpuOpts.ForceSoftware = true
 	}
 	// Corrupt settings were renamed aside; tell the user, since release builds have no console.
 	configQuarantine := prefs.Quarantine()
@@ -208,14 +200,13 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	if err != nil {
 		return err
 	}
-	defer graphics.Close()
-	log.Printf("renderer: %s", graphics.Name())
-	ren := graphics.Renderer()
-	gpuWatcher := host.NewGPUWatcher(gpuRecoveries, graphics.Software(), time.Now)
+	ren := graphics.Renderer
+	defer func() { _ = ren.Destroy() }()
+	log.Printf("renderer: %s", graphics.Name)
+	gpuWatcher := host.NewGPUWatcher(gpuRecoveries, graphics.Software, time.Now)
 	// A frame stuck in the driver never returns an error, so only a clock notices it; the CPU renderer is the last step.
-	onCPU := graphics.Software() && graphics.Device() == nil
 	stalls := host.NewStallWatch(rendererStallLimit, stallCheckEvery, time.Now, func(time.Duration) {
-		if !onCPU {
+		if !graphics.Software {
 			fallBackToCPU(prefs, cpuFallbackArgs(masterURL, vsync, debugMode))
 		}
 	})
@@ -325,7 +316,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Viewport:         viewport,
 		Pump:             nil, // set below (needs app for liveness)
 		Audio:            audio,
-		GraphicsName:     graphics.Name(),
+		GraphicsName:     graphics.Name,
 		Desktop:          rt.Desktop,
 		Sockets:          sockets,
 		Capabilities:     rt.Platform.Capabilities,
@@ -359,6 +350,18 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	// pendingEv is the event a wait dequeued; the next pass handles it first.
 	var pendingEv sdl.Event
 	running := true
+	// recoverGPU acts on a lost device: restart, or quit when even the CPU renderer lost it.
+	recoverGPU := func(recovery host.GPURecovery) {
+		switch recovery {
+		case host.GPUWorking:
+		case host.GPUGiveUp:
+			log.Printf("gpu: the CPU renderer lost its device too; quitting instead of restarting again")
+			_ = sdl.ShowErrorBox(windowTitle, gpuGiveUpMessage, window)
+			running = false
+		default:
+			app.RequestRelaunch(gpuRecoveryArgs(recovery, masterURL, gpuOpts, gpuRecoveries, debugMode), true)
+		}
+	}
 	for running {
 		now := time.Now()
 		dt := now.Sub(last)
@@ -385,6 +388,10 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 				return
 			}
 			switch e := ev.(type) {
+			case *sdl.RenderEvent:
+				if e.Type == sdl.RENDER_DEVICE_RESET || e.Type == sdl.RENDER_DEVICE_LOST {
+					recoverGPU(gpuWatcher.DeviceReset())
+				}
 			case *sdl.DropEvent:
 				if e.Type == sdl.DROPFILE {
 					app.HandleFileDrop(e.File)
@@ -477,15 +484,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		_ = ren.SetDrawColor(0, 0, 0, 255)
 		_ = ren.Clear()
 		app.Frame(dt, lw, lh)
-		switch recovery := gpuWatcher.Observe(graphics.Present()); recovery {
-		case host.GPUWorking:
-		case host.GPUGiveUp:
-			log.Printf("gpu: the software driver lost its device too; quitting instead of restarting again")
-			_ = sdl.ShowErrorBox(windowTitle, gpuGiveUpMessage, window)
-			running = false
-		default:
-			app.RequestRelaunch(gpuRecoveryArgs(recovery, masterURL, gpuOpts, gpuRecoveries, debugMode), true)
-		}
+		recoverGPU(gpuWatcher.Observe(ren.Present()))
 		preview.Present()
 		stalls.FrameDone()
 		// A click's state change only appears on the next frame, so force one.

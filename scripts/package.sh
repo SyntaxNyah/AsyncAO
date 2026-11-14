@@ -97,9 +97,6 @@ build_windows() {
 	} | grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r name; do
 		cp "$name" "$STAGE/"
 	done
-	# msys2's lavapipe manifest points into its own tree.
-	sed 's|"library_path": *"[^"]*"|"library_path": ".\\\\vulkan_lvp.dll"|' \
-		/ucrt64/share/vulkan/icd.d/lvp_icd.x86_64.json >"$STAGE/lvp_icd.x86_64.json"
 }
 
 build_linux() {
@@ -147,7 +144,8 @@ smoke_windows() {
 	while read -r name; do
 		test -f "$SMOKE/$name"
 	done < <(on_demand_dlls)
-	test -f "$SMOKE/lvp_icd.x86_64.json"
+	# lavapipe and its 145 MB LLVM must not creep back into the bundle.
+	test ! -e "$SMOKE/vulkan_lvp.dll"
 	check_version "$(env PATH=/usr/bin "$SMOKE/asyncao.exe" -version)"
 }
 

@@ -6,9 +6,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 )
 
-// gpuGiveUpMessage tells the user why the client closes when even the software driver lost its device.
+// gpuGiveUpMessage tells the user why the client closes when even the CPU renderer lost its device.
 const gpuGiveUpMessage = "The graphics device stopped working, and restarting AsyncAO " +
-	"(also on the software renderer) did not help. AsyncAO will close now.\n\n" +
+	"(also on the CPU renderer) did not help. AsyncAO will close now.\n\n" +
 	"Updating or reinstalling your graphics driver usually fixes this."
 
 // gpuRecoveryArgs is the command line for the restart after a GPU device loss; -server is left out because
@@ -25,9 +25,6 @@ func gpuRecoveryArgs(recovery host.GPURecovery, masterURL string, opts host.Grap
 	}
 	if recovery == host.GPURestartSoftware || opts.ForceSoftware {
 		args = append(args, "-software-gpu")
-	}
-	if opts.SkipDevice {
-		args = append(args, "-renderer="+rendererSDL)
 	}
 	if debug {
 		args = append(args, "-debug")
