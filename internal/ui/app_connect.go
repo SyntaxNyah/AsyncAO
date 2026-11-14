@@ -714,7 +714,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			if uid, sender, ok := courtroom.ParsePMSender(ev.Name); ok {
 				a.routeIncomingPM(uid, sender, ev.Text)
 			}
-			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
+			a.pushOOC(ev.Name+": "+ev.Text, ev.Name, ev.FromServer)
 			if a.d.Prefs.Load().CallwordsOOC && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
 				names := a.mentionNames()
 				a.checkCallwords(ev.Text, names, isSelfName(ev.Name, names))
@@ -782,7 +782,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventWTCE:
 			a.handleWTCE(ev.Text, ev.Int)
 		case courtroom.EventModcall:
-			a.pushOOC("[MOD CALL] "+ev.Text, "")
+			a.pushOOC("[MOD CALL] "+ev.Text, "", false)
 			// AO2's ui_guard silences only the modcall alert (courtroom.cpp:4997-5001: sound and window flash); the OOC
 			// line and auto-clip still land, so a guarded mod loses the interruption, never the report.
 			if !a.modcallGuard {
@@ -795,21 +795,21 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// AO2 surfaces auth transitions as CLIENT lines in the OOC log (on_authentication_state_received).
 			switch {
 			case ev.Int >= 1:
-				a.pushOOC("CLIENT: Logged in as a moderator.", "")
+				a.pushOOC("CLIENT: Logged in as a moderator.", "", false)
 				// Mod now: re-pull /getarea so IPIDs (mod-only, absent from PR/PU) reach the roster; the first
 				// auto-pull can fire before this auto-login lands.
 				if a.sess != nil {
 					a.fetchRoster()
 				}
 			case ev.Int == 0:
-				a.pushOOC("CLIENT: Login unsuccessful.", "")
+				a.pushOOC("CLIENT: Login unsuccessful.", "", false)
 			default:
-				a.pushOOC("CLIENT: You were logged out.", "")
+				a.pushOOC("CLIENT: You were logged out.", "", false)
 			}
 		case courtroom.EventSetPos:
 			a.sidePref = ev.Text // SP: the server moved us
 		case courtroom.EventCase:
-			a.pushOOC("[CASE] "+ev.Text, "")
+			a.pushOOC("[CASE] "+ev.Text, "", false)
 			if enabled, roles := a.d.Prefs.Load().Casing(); enabled && ev.Int&roles != 0 {
 				a.playThemeSFX("case_call")
 				a.ctx.FlashWindow()
@@ -818,7 +818,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// BB is AO2's call_notice, shown in a modal (courtroom.cpp). Do both: the OOC log keeps it searchable, the
 			// box makes it copyable and unmissable. serverNoticeInfo, so dismissing touches nothing; the connection is
 			// fine.
-			a.pushOOC("[SERVER] "+ev.Text, "")
+			a.pushOOC("[SERVER] "+ev.Text, "", false)
 			if strings.TrimSpace(ev.Text) != "" {
 				a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, a.serverName, ev.Text)
 			}
@@ -827,9 +827,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// The server (un)muted us: log it and flash the window; the IC input shows a muted chip and refuses sends
 			// while Session.Muted is set (AO2 set_mute disables ui_ic_chat_message).
 			if ev.Int == 1 {
-				a.pushOOC("[SERVER] You have been muted — you can't speak in-character.", "")
+				a.pushOOC("[SERVER] You have been muted — you can't speak in-character.", "", false)
 			} else {
-				a.pushOOC("[SERVER] You have been unmuted.", "")
+				a.pushOOC("[SERVER] You have been unmuted.", "", false)
 			}
 			a.ctx.FlashWindow()
 		case courtroom.EventEvidence:

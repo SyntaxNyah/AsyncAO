@@ -974,7 +974,7 @@ func (a *App) sendIC() {
 	}
 	// Muted (AO2 set_mute; on_chat_return_pressed returns early): refuse but keep the line, as no echo will clear it.
 	if a.sess.Muted {
-		a.pushOOC("[SERVER] You're muted — that message wasn't sent.", "")
+		a.pushOOC("[SERVER] You're muted — that message wasn't sent.", "", false)
 		return
 	}
 	// AO2-Client chat_ratelimit parity: drop sends inside the window.
