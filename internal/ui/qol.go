@@ -1358,6 +1358,9 @@ type icWrapLine struct {
 // logWrapIndentPx is the hanging indent of wrapped rows; drawers wrap against width-logWrapIndentPx.
 const logWrapIndentPx = 14
 
+// logRowGapPx is the space between log rows, added to the font height.
+const logRowGapPx = 2
+
 // icRowIsEntryStart reports whether row li of a.icWrap begins a new icLog entry rather than continuing the row above.
 func (a *App) icRowIsEntryStart(li int) bool {
 	return li <= 0 || li >= len(a.icWrap) || a.icWrap[li-1].entry != a.icWrap[li].entry
