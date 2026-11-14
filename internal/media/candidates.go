@@ -228,8 +228,7 @@ func cleanExts(in []string) []string {
 		if strings.HasPrefix(e, config.ExtWebP+".") {
 			e = config.ExtWebP
 		}
-		known := slices.Contains(defaultImageOrder, e) || slices.Contains(defaultAudioOrder, e)
-		if known && !slices.Contains(out, e) && len(out) < manifestExtCap {
+		if knownExt(e) && !slices.Contains(out, e) && len(out) < manifestExtCap {
 			out = append(out, e)
 		}
 	}

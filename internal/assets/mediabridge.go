@@ -2,7 +2,9 @@ package assets
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/saver"
 )
 
 const (
@@ -22,7 +25,15 @@ const (
 	mediaDiskKept       = 2
 	mediaNetworkWorkers = 32
 	mediaComputeKept    = 1
+	// learnedSaveDelay is how long after a find learned.json is written, so a busy room writes it once.
+	learnedSaveDelay = 10 * time.Second
 )
+
+// errLearnedNotRecalled refuses a write before the saved file was read, which would replace it with this session alone.
+var errLearnedNotRecalled = errors.New("assets: learned.json not read yet")
+
+// errMediaStopped refuses a write after the media system stopped.
+var errMediaStopped = errors.New("assets: media system stopped")
 
 // mediaBridge runs the Manager's requests on internal/media, so every caller moves at once; it goes when callers use media directly.
 type mediaBridge struct {
@@ -42,6 +53,11 @@ type mediaBridge struct {
 	hostLists    sync.Map
 	hostListsGen atomic.Uint64
 	pin          *sceneryPin
+	// learned keeps learned.json. recalled and foundEarly are the Manager's goroutine's: whether the saved file was
+	// read, and whether something was found before it was.
+	learned    *saver.Saver
+	recalled   bool
+	foundEarly bool
 }
 
 func newMediaBridge(m *Manager) *mediaBridge {
@@ -54,7 +70,8 @@ func newMediaBridge(m *Manager) *mediaBridge {
 		pin:     newSceneryPin(),
 	}
 	b.folders = newBridgeFolders(m)
-	cfg := media.Config{Candidates: b.builder.Build, AllFormats: media.EveryFormat, Found: b.builder.Found,
+	b.learned = saver.New(m.learnedPath, learnedSaveDelay, b.encodeLearned)
+	cfg := media.Config{Candidates: b.builder.Build, AllFormats: media.EveryFormat, Found: b.found,
 		Finished: b.finished, Compute: b.compute}
 	b.remote = media.NewRemoteSource(ctx, bridgeFetcher{m}, media.DefaultMissingTTL, time.Now)
 	cfg.Chains = map[media.Place]*media.Chain{media.PlaceServer: media.NewChain(
@@ -66,7 +83,58 @@ func newMediaBridge(m *Manager) *mediaBridge {
 	cfg.Formats = map[media.Kind]media.Format{media.KindImage: bridgeImage{b}, media.KindSound: bridgeSound{b}}
 	b.media = media.NewManager(cfg)
 	b.scanDisk()
+	b.recallLearned()
 	return b
+}
+
+// found learns the format a key turned up in, and schedules a save.
+func (b *mediaBridge) found(k media.Key, f media.File) {
+	b.builder.Found(k, f)
+	if !b.recalled {
+		b.foundEarly = true
+	}
+	b.learned.Changed()
+}
+
+// recallLearned reads learned.json on a disk worker and adds it to what this session knows.
+func (b *mediaBridge) recallLearned() {
+	path := b.m.learnedPath
+	b.media.Run(b.diskP, media.Later, func() any {
+		var l media.Learned
+		if path == "" {
+			return l
+		}
+		if data, err := os.ReadFile(path); err == nil {
+			_ = json.Unmarshal(data, &l) // a damaged file is a fresh start
+		}
+		return l
+	}, func(v any) {
+		media.Recall(b.media, b.builder, v.(media.Learned))
+		b.recalled = true
+		if b.foundEarly {
+			b.learned.Changed()
+		}
+	})
+}
+
+// encodeLearned snapshots the learned formats and winners on the Manager's goroutine for the saver.
+func (b *mediaBridge) encodeLearned() ([]byte, error) {
+	var l media.Learned
+	var err error
+	ran := b.media.Call(func() {
+		if !b.recalled {
+			err = errLearnedNotRecalled
+			return
+		}
+		l = media.Remember(b.media, b.builder)
+	})
+	if !ran {
+		return nil, errMediaStopped
+	}
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(l)
 }
 
 // scanDisk fills the disk index; until it lands, a cached file is fetched again, which is only slower.
@@ -325,6 +393,7 @@ func (m *Manager) CloseMedia() {
 	b := m.bridge
 	b.closing.Do(func() {
 		b.cancel()
+		_ = b.learned.Close() // before the media system stops, as the snapshot is taken on its goroutine
 		b.media.Close()
 		// A worker blocked delivering to a channel nobody drains at exit must not hold the process open.
 		go func() {

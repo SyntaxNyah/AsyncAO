@@ -83,6 +83,17 @@ func TestCloseWritesAndSchedulesNothingAfter(t *testing.T) {
 	}
 }
 
+func TestCloseWithoutAChangeWritesNothing(t *testing.T) {
+	var c counter
+	s := New(filepath.Join(t.TempDir(), "store.json"), testDelay, c.encode)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if n := c.writes.Load(); n != 0 {
+		t.Errorf("%d writes with nothing changed", n)
+	}
+}
+
 func TestDiscardDropsTheWaitingWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store.json")
 	var c counter

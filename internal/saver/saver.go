@@ -30,6 +30,8 @@ type Saver struct {
 	mu      sync.Mutex
 	pending *time.Timer
 	closed  bool
+	// changed is set by Changed and cleared by a write, so Close writes only what isn't saved yet.
+	changed bool
 }
 
 // New saves to path what encode returns; encode runs on the saver's goroutine and must take its own snapshot.
@@ -41,6 +43,7 @@ func New(path string, delay time.Duration, encode func() ([]byte, error)) *Saver
 func (s *Saver) Changed() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.changed = true
 	if s.closed || s.pending != nil || s.path == "" {
 		return
 	}
@@ -52,10 +55,11 @@ func (s *Saver) Changed() {
 	})
 }
 
-// Discard drops a waiting write, for a store whose file is about to be deleted.
+// Discard drops the unsaved change and its waiting write, for a store whose file is about to be deleted.
 func (s *Saver) Discard() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.changed = false
 	if s.pending != nil {
 		s.pending.Stop()
 		s.pending = nil
@@ -69,19 +73,33 @@ func (s *Saver) Flush() error {
 	}
 	s.writing.Lock()
 	defer s.writing.Unlock()
+	s.setChanged(false)
 	data, err := s.encode()
-	if err != nil {
-		return err
+	if err == nil {
+		err = WriteFile(s.path, data)
 	}
-	return WriteFile(s.path, data)
+	if err != nil {
+		s.setChanged(true)
+	}
+	return err
 }
 
-// Close drops the waiting write, writes once more and schedules nothing after.
+func (s *Saver) setChanged(v bool) {
+	s.mu.Lock()
+	s.changed = v
+	s.mu.Unlock()
+}
+
+// Close drops the waiting write, writes what isn't saved yet and schedules nothing after.
 func (s *Saver) Close() error {
 	s.mu.Lock()
 	s.closed = true
+	changed := s.changed
 	s.mu.Unlock()
 	s.Discard()
+	if !changed {
+		return nil
+	}
 	return s.Flush()
 }
 
