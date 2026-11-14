@@ -39,6 +39,8 @@ func (a *App) zoomDst(vp sdl.Rect) sdl.Rect {
 func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	c := a.ctx
 	sc := a.renderScene() // real scene, or the slideshow's background override
+	a.frameStages++
+	a.frameStageRect = vp
 	// Report ambient FX from the draw site, like drawSpritePreview: while the drawn stage animates on the free-running
 	// clock (washes, a transmitted sprite style's motion, live weather). It fires only while such a stage actually
 	// renders, so the lobby, Settings and an empty stage park like any static screen.

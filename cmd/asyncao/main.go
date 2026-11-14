@@ -218,6 +218,9 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	_ = ren.SetDefaultTextureScaleMode(ui.TextureScaleMode(prefs.Load().SmoothScaling))
 	// macOS Retina: fold the 2x drawable into the render scale, since SetLogicalSize would break hit-testing.
 	retinaScale := host.RetinaScale(ren, window)
+	// Declared after ren so its texture is released first.
+	var stageFrame render.StageFrame
+	defer stageFrame.Release()
 	// SDL defaults to no blending, which draws every alpha fill opaque.
 	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
@@ -477,6 +480,13 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 			continue
 		}
 
+		// SDL's software renderer keeps the window's pixels, so a frame only the stage's animation asked for redraws the
+		// stage alone.
+		stage, stageOnly := sdl.Rect{}, false
+		if graphics.Software && !limiterOff && retinaScale == 1 {
+			stage, stageOnly = app.StageOnly(focused, sawEvent)
+		}
+
 		// Draw at logical size and let the GPU scale the frame; the kit unprojects the mouse to match.
 		w, h := window.GetSize()
 		app.SetAutoScaleFromWindow(w, h) // window-relative auto scale (when auto-scale is on)
@@ -485,9 +495,14 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		lw := int32(float32(w) / scale)
 		lh := int32(float32(h) / scale)
 		stalls.FrameStart()
-		_ = ren.SetDrawColor(0, 0, 0, 255)
-		_ = ren.Clear()
-		app.Frame(dt, lw, lh)
+		if stageOnly && stageFrame.Begin(ren, stage, int32(app.UIScale()), w, h) {
+			app.Frame(dt, lw, lh)
+			stageFrame.End(ren)
+		} else {
+			_ = ren.SetDrawColor(0, 0, 0, 255)
+			_ = ren.Clear()
+			app.Frame(dt, lw, lh)
+		}
 		recoverGPU(gpuWatcher.Observe(ren.Present()))
 		preview.Present()
 		stalls.FrameDone()

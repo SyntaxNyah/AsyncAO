@@ -77,6 +77,13 @@ type sessionState struct {
 	// active cap.
 	frameAnimChrome bool
 	drawnAnimChrome bool
+	// frameStages counts this frame's courtroom stage draws and frameStageRect holds the last one. stageRect is where
+	// the last frame drew its one stage; stageRectOK is false when it drew none, several, a pinned tab beside it, or a
+	// stage that moved.
+	frameStages    int
+	frameStageRect sdl.Rect
+	stageRect      sdl.Rect
+	stageRectOK    bool
 	// lastPacerTier records which FramePace branch set the last budget — a
 	// lastPacerTier records which FramePace branch set the last budget; diagnostic only, never read by pacing.
 	lastPacerTier pacerTier

@@ -833,43 +833,64 @@ func backstopBudget(b time.Duration) time.Duration {
 	return paceBudget(config.FPSCapUnlimitedOff)
 }
 
+// frameNeed is how much of the window the next pass must draw.
+type frameNeed uint8
+
+const (
+	needNone  frameNeed = iota // the last drawn frame is still right
+	needStage                  // only the stage's animation moved
+	needFull
+)
+
 // SkipFrame reports that the last drawn frame is still right, so the loop may skip render and present and just pump.
 // A wrong skip heals on the next damage or deadline, never a hang. It also skips menu screens
 // and turns caret and clock refusals into wakes (NextWakeDelay).
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
+	return a.nextFrameNeed(focused, sawEvent) == needNone
+}
+
+// StageOnly returns where the last full frame drew the stage when nothing but the stage's animation needs drawing, so
+// a renderer that keeps the window's pixels can redraw that rect alone.
+func (a *App) StageOnly(focused, sawEvent bool) (sdl.Rect, bool) {
+	if !a.stageRectOK || a.nextFrameNeed(focused, sawEvent) != needStage {
+		return sdl.Rect{}, false
+	}
+	return a.stageRect, true
+}
+
+func (a *App) nextFrameNeed(focused, sawEvent bool) frameNeed {
 	focused = a.pacingFocused(focused) // the "full speed while unfocused" option (pacingfocus.go)
 	if sawEvent {
-		return false // input this pass (incl. a focus-regain window event)
+		return needFull // input this pass (incl. a focus-regain window event)
 	}
 	// Background cap off and unfocused: a 0 fps ceiling, overriding animation, damage and the input grace.
 	if !focused {
 		if _, off := rateBudget(a.d.Prefs.Load().UnfocusedFPS()); off {
-			return true
+			return needNone
 		}
 	}
 	// The loop parks on NextWakeDelay, whose idle tick is the periodic render.
 	if !a.screenSkippable() {
-		return false
+		return needFull
 	}
 	if a.wantsFullRate() || a.roomBusy() || a.warnActive() || a.fontWorkPending() {
-		return false
+		return needFull
 	}
 	if a.drawnAnimChrome {
 		// The last frame drew time-stepped art outside the viewport scheduler, so render on.
 		// The sprite preview reports from its draw site, not a previewBase check here: a preview orphaned by a screen
 		// switch has no one left to close it, and a state check would hold the event-driven loop at the cap forever.
-		return false
+		return needFull
 	}
 	if a.RenderNeeded() {
-		return false // pending damage: packets landed / textures moved / a caret flip is showing
+		return needFull // pending damage: packets landed / textures moved / a caret flip is showing
 	}
 	if a.d.Viewport != nil && a.room != nil {
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
-			return false
+			return needStage
 		}
 	}
-	_ = focused // both focused and unfocused static screens skip identically
-	return true
+	return needNone // both focused and unfocused static screens skip identically
 }
 
 // screenSkippable reports whether the current screen may skip; others always render.

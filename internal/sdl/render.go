@@ -7,6 +7,25 @@ static SDL_Renderer *asyncaoCreateRenderer(SDL_Window *window, bool software) {
 	return SDL_CreateRenderer(window, software ? SDL_SOFTWARE_RENDERER : NULL);
 }
 
+// SDL scales a viewport by the render scale in force, so a set viewport is rescaled to keep its origin in pixels.
+static bool asyncaoSetScale(SDL_Renderer *renderer, float x, float y) {
+	SDL_Rect vp;
+	float ox, oy;
+	bool keep = SDL_RenderViewportSet(renderer) && SDL_GetRenderViewport(renderer, &vp) &&
+		SDL_GetRenderScale(renderer, &ox, &oy);
+	if (!SDL_SetRenderScale(renderer, x, y)) {
+		return false;
+	}
+	if (!keep || (ox == x && oy == y)) {
+		return true;
+	}
+	SDL_Rect scaled = {
+		(int)SDL_roundf(vp.x * ox / x), (int)SDL_roundf(vp.y * oy / y),
+		(int)SDL_floorf(vp.w * ox / x), (int)SDL_floorf(vp.h * oy / y),
+	};
+	return SDL_SetRenderViewport(renderer, &scaled);
+}
+
 static const SDL_PixelFormat *asyncaoTextureFormats(SDL_Renderer *renderer) {
 	return (const SDL_PixelFormat *)SDL_GetPointerProperty(SDL_GetRendererProperties(renderer),
 		SDL_PROP_RENDERER_TEXTURE_FORMATS_POINTER, NULL);
@@ -215,9 +234,19 @@ func (r *Renderer) GetClipRect() Rect {
 // IsClipEnabled reports whether a clip rectangle is set.
 func (r *Renderer) IsClipEnabled() bool { return bool(C.SDL_RenderClipEnabled(r.c())) }
 
-// SetScale scales every later draw.
+// SetScale scales every later draw. A viewport set with SetViewport keeps its origin in pixels.
 func (r *Renderer) SetScale(x, y float32) error {
-	return errorOr(C.SDL_SetRenderScale(r.c(), C.float(x), C.float(y)))
+	return errorOr(C.asyncaoSetScale(r.c(), C.float(x), C.float(y)))
+}
+
+// SetViewport moves the origin of every later draw to rect's corner and clips drawing to rect, in render units; nil
+// resets it to the whole target. Each render target keeps its own.
+func (r *Renderer) SetViewport(rect *Rect) error {
+	var cr *C.SDL_Rect
+	if rect != nil {
+		cr = rect.c()
+	}
+	return errorOr(C.SDL_SetRenderViewport(r.c(), cr))
 }
 
 // GetScale returns the draw scale.

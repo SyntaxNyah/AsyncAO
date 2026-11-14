@@ -124,9 +124,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.frameAnimChrome = false
 	// A draw leaving a streaming cell blank sets this, so NextWakeDelay keeps re-rendering until it fills.
 	a.frameDemandPending = false
+	a.frameStages = 0
 	defer func() {
 		a.drawnAnimChrome = a.frameAnimChrome
 		a.drawnDemandPending = a.frameDemandPending
+		// A stage that moved since the last frame waits one more full frame: a stage-only frame redraws the old rect.
+		a.stageRectOK = a.frameStages == 1 && !a.splitActive() && a.frameStageRect == a.stageRect
+		a.stageRect = a.frameStageRect
 	}()
 	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
 	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
