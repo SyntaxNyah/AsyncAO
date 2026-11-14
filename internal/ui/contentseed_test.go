@@ -17,6 +17,8 @@ package ui
 //      through the mounts in the probe path (AO2-parity).
 
 import (
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
+
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -54,7 +56,7 @@ func TestContentSeedGifManifestResolves(t *testing.T) {
 	var gifHits atomic.Int32 // written in the server goroutine, read in the test → atomic
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/"+assets.ManifestFileName:
+		case r.URL.Path == "/"+media.ManifestFile:
 			_, _ = w.Write([]byte(manifest))
 		case r.URL.Path == "/characters/phoenix/(a)normal.gif":
 			gifHits.Add(1)
@@ -155,9 +157,8 @@ func TestContentFullChainProbeFindsPNG(t *testing.T) {
 	}
 
 	// The winner must have been learned so a repeat resolve is single-probe.
-	host := hostOfURL(rec.Origin)
-	if ext, ok := a.d.Resolver.Learned(host, assets.AssetTypeCharSprite); !ok || ext != config.ExtPNG {
-		t.Errorf("Learned(CharSprite) = %q,%v, want %q,true (RecordSuccess should have learned the .png winner)", ext, ok, config.ExtPNG)
+	if n := a.d.Manager.LearnedHosts(); n == 0 {
+		t.Error("the .png winner taught no host a format")
 	}
 
 	// No NON-png candidate for phoenix's base may EVER have been probed on the
@@ -273,8 +274,13 @@ func TestContentSeedLocalMountResolves(t *testing.T) {
 // "seeded before the warm builds candidates").
 func TestExportSeedBeforeWarm(t *testing.T) {
 	manifest := `{"emote_extensions": [".gif"], "background_extensions": [".gif"]}`
+	var mu sync.Mutex
+	var asked []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/"+assets.ManifestFileName {
+		mu.Lock()
+		asked = append(asked, r.URL.Path)
+		mu.Unlock()
+		if r.URL.Path == "/"+media.ManifestFile {
 			_, _ = w.Write([]byte(manifest))
 			return
 		}
@@ -283,26 +289,7 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			AutoDetectFormats =
-
-			true
-
-	})
-
-	// the seed gate respects the same pref the session path does
 	origin := srv.URL + "/"
-	host := hostOfURL(origin)
-
-	// Pre-seed sanity: nothing learned yet, so the warm's first candidate WOULD be
-	// the zero-fallback .webp (the bug).
-	if ext, ok := a.d.Resolver.Learned(host, assets.AssetTypeCharSprite); ok {
-		t.Fatalf("CharSprite already learned (%q) before seeding — test can't prove the seed did it", ext)
-	}
 
 	// Build a seeding-phase export job and fire the seed, exactly as startSceneExport
 	// does after the load lands (no viewport / capture target needed — seeding runs
@@ -326,11 +313,15 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 		t.Fatal("seeding phase never completed")
 	}
 
-	// The observable: the manifest's .gif is now the learned CharSprite format, so
-	// the warm's first PrefetchChain candidate is base+".gif" — the manifest-
-	// declared format, not the .webp default.
-	if ext, ok := a.d.Resolver.Learned(host, assets.AssetTypeCharSprite); !ok || ext != config.ExtGIF {
-		t.Errorf("Learned(CharSprite) = %q,%v after export seed, want %q,true (warm would probe the wrong format otherwise)", ext, ok, config.ExtGIF)
+	// The observable: the manifest's .gif is now the first format asked for a sprite, not the .webp default.
+	mu.Lock()
+	asked = nil
+	mu.Unlock()
+	a.d.Manager.ResolveRaw(origin+"characters/x/(a)y", assets.AssetTypeCharSprite)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(asked) == 0 || asked[0] != "/characters/x/(a)y"+config.ExtGIF {
+		t.Errorf("after the export seed the sprite was asked as %v, want .gif first", asked)
 	}
 }
 

@@ -58,6 +58,8 @@ type mediaBridge struct {
 	learned    *saver.Saver
 	recalled   bool
 	foundEarly bool
+	// learnedHosts mirrors builder.LearnedOrigins for other threads.
+	learnedHosts atomic.Int64
 }
 
 func newMediaBridge(m *Manager) *mediaBridge {
@@ -93,7 +95,63 @@ func (b *mediaBridge) found(k media.Key, f media.File) {
 	if !b.recalled {
 		b.foundEarly = true
 	}
+	b.learnedHosts.Store(int64(b.builder.LearnedOrigins()))
 	b.learned.Changed()
+}
+
+// learn is found for a raw walk on a worker: url turned up for base.
+func (b *mediaBridge) learn(base string, t AssetType, url string) {
+	b.media.Do(func() { b.found(chainKey(base, t), media.File(url)) })
+}
+
+// candidates lists the URLs base may be, in the order the live chain asks; for workers, as it waits on the Manager.
+func (b *mediaBridge) candidates(base string, t AssetType) []string {
+	var files []media.File
+	b.media.Call(func() { files = b.builder.Build(chainKey(base, t), base) })
+	urls := make([]string, len(files))
+	for i, f := range files {
+		urls[i] = string(f)
+	}
+	return urls
+}
+
+// AllowFormats gives origin a format list per asset type, as its extensions.json would, such as a replay archive's
+// recorded formats.
+func (m *Manager) AllowFormats(origin string, byType map[AssetType]string) {
+	allowed := map[media.Class][]string{}
+	for t, ext := range byType {
+		if c := classOf(t); c != media.ClassExact && !slices.Contains(allowed[c], ext) {
+			allowed[c] = append(allowed[c], ext)
+		}
+	}
+	m.bridge.media.Do(func() { m.bridge.builder.Allow(origin, allowed) })
+}
+
+// AllowManifest gives origin the formats an extensions.json lists, for a host known to publish none; false when it
+// doesn't parse.
+func (m *Manager) AllowManifest(origin string, data []byte) bool {
+	allowed, err := media.ParseManifest(data)
+	if err != nil {
+		return false
+	}
+	m.bridge.media.Do(func() { m.bridge.builder.Allow(origin, allowed) })
+	return true
+}
+
+// ForgetLearned drops every learned format and remembered file, here and in learned.json.
+func (m *Manager) ForgetLearned() {
+	b := m.bridge
+	b.media.Do(func() {
+		b.builder.ForgetLearned()
+		b.media.ForgetWinners(func(media.Key, media.File) bool { return true })
+		b.learnedHosts.Store(0)
+		b.learned.Changed()
+	})
+}
+
+// LearnedHosts counts the hosts a format was learned for; safe from any thread.
+func (m *Manager) LearnedHosts() int {
+	return int(m.bridge.learnedHosts.Load())
 }
 
 // recallLearned reads learned.json on a disk worker and adds it to what this session knows.
@@ -111,6 +169,7 @@ func (b *mediaBridge) recallLearned() {
 	}, func(v any) {
 		media.Recall(b.media, b.builder, v.(media.Learned))
 		b.recalled = true
+		b.learnedHosts.Store(int64(b.builder.LearnedOrigins()))
 		if b.foundEarly {
 			b.learned.Changed()
 		}
@@ -300,7 +359,7 @@ func (b *mediaBridge) finished(a *media.Asset) {
 
 // FetchManifest reads a server's extensions.json straight from its host, so a change is seen and the answer proves it is alive.
 func (m *Manager) FetchManifest(ctx context.Context, origin string) ([]byte, error) {
-	file := origin + ManifestFileName
+	file := origin + media.ManifestFile
 	data, err := m.netFetch(ctx, file)
 	m.bridge.noteManifest(origin, file, data, err)
 	return data, err

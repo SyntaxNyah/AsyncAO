@@ -10,7 +10,6 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
@@ -42,21 +41,14 @@ func wireEmptyPackManager(t *testing.T, a *App) *assets.LocalFetcher {
 
 	local := assets.NewLocalFetcher([]string{t.TempDir()}) // empty: nothing resolves
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(a.d.Prefs),
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   local,
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  local,
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders(local.Mounts(), nil)
-	// One extension per type keeps the probe chains short and the fixture's
-	// intent legible; the defaults differ per type and none of that is what
-	// these gates are about.
-	for _, typ := range []assets.AssetType{assets.AssetTypeCharIcon, assets.AssetTypeEmoteButton} {
-		a.d.Prefs.SetFormatOrder(typ.Name(), []string{config.ExtPNG})
-	}
 	return local
 }
 

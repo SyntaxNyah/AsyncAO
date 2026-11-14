@@ -318,7 +318,6 @@ func TestPreviewRestoresARehearsalSessionsOfflineGate(t *testing.T) {
 func stageCountingFetcher(t *testing.T, a *App) *countingFetcher {
 	t.Helper()
 	canary := &countingFetcher{}
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -334,12 +333,11 @@ func stageCountingFetcher(t *testing.T, a *App) *countingFetcher {
 	// (no folders), because that is the mode a real install runs in and the mode
 	// whose egress the offline gate stands in front of.
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   canary,
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  canary,
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	return canary

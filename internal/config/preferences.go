@@ -33,9 +33,6 @@ const (
 
 	PrefsFileName = "asset_preferences.json"
 
-	// LearnedKeySeparator joins learned-format keys: "<host>|<type name>".
-	LearnedKeySeparator = "|"
-
 	prefsFilePerm   = 0o644
 	prefsDirPerm    = 0o755
 	prefsTmpPattern = PrefsFileName + ".*.tmp"
@@ -51,9 +48,6 @@ const (
 
 // defaultPreferAnimated is a decode and render toggle, never an extra network probe.
 const defaultPreferAnimated = true
-
-// defaultFormatAutoDetect is on because seeding from a server's extensions.json beats blind probing.
-const defaultFormatAutoDetect = true
 
 // Blip cadence: one blip per N revealed letters; mirrors courtroom.DefaultBlipRate, which config can't import.
 const (
@@ -618,13 +612,6 @@ func DPIScalePercent(dpi float64) int {
 	return pct
 }
 
-type AssetTypePrefs struct {
-	// FormatOrder is the ordered probe list; empty means the built-in default.
-	FormatOrder []string `json:"formatOrder"`
-	// FallbacksEnabled appends this type's legacy chain to FormatOrder.
-	FallbacksEnabled bool `json:"fallbacksEnabled"`
-}
-
 // AssetPreferences is the persisted configuration; exported methods are safe for concurrent use.
 type AssetPreferences struct {
 	mu        sync.RWMutex
@@ -647,9 +634,6 @@ type AssetPreferences struct {
 
 	// themeFitStampPending records a stamp this load wrote; newWithDebounce clears it by flushing synchronously.
 	themeFitStampPending bool
-
-	// formatGen increments on any change to an effective probe list; consumers key derived format tables by it.
-	formatGen atomic.Uint64
 
 	// wardrobeGen increments on any wardrobe change; char select keys its set by it for lock-free lookups.
 	wardrobeGen atomic.Uint64
@@ -912,7 +896,6 @@ func defaultSettings() *Settings {
 		NameSat:                      defaultNameColorSat,
 		NameVal:                      defaultNameColorVal,
 		BgSlideshowSecs:              defaultBgSlideshowSecs,
-		AutoDetectFormats:            defaultFormatAutoDetect,
 		BlipRate:                     defaultBlipRate,
 		ThemeLayoutOn:                defaultThemeLayout,
 		ThemeFit:                     defaultThemeFit,
@@ -953,8 +936,6 @@ func defaultSettings() *Settings {
 		TextCrawlMs:     DefaultTextCrawlMs,
 		TextStayMs:      DefaultTextStayMs,
 		ChatRateLimitMs: DefaultChatRateLimitMs,
-		AssetTypes:      defaultAssetTypes(),
-		LearnedFormats:  map[string][]string{},
 	}
 }
 
@@ -1055,7 +1036,6 @@ var resetContentFields = map[string]bool{
 	"ServerWarm":         true, // per-server: char/bg/wardrobe/folders/LOGINS/friends
 	"UserMacros":         true,
 	"CallWordList":       true,
-	"LearnedFormats":     true, // learned per-host formats (cache-adjacent)
 	"ThemeRectOv":        true, // layout-editor overrides
 	"ThemeRectRotations": true, // layout-editor rotation overrides (A4) — user content, survives a settings reset like ThemeRectOv (ClassicRotations is NOT preserved, mirroring ClassicLayout/ClassicAnchors)
 	"LayoutProfiles":     true, // saved full-state layout profiles (A6) — user content, survives a settings reset like ThemeRectOv
@@ -1084,7 +1064,6 @@ func (p *AssetPreferences) resetLocked(keep map[string]bool) {
 		}
 	}
 	p.settings.Store(fresh)
-	p.formatGen.Add(1)   // format/fallback prefs may have changed; invalidate resolver caches
 	p.wardrobeGen.Add(1) // a reset can wipe ServerWarm (and its wardrobes)
 	p.markDirty()
 }
@@ -1131,132 +1110,6 @@ func (p *AssetPreferences) Close() error {
 		}
 	})
 	return err
-}
-
-// FormatGeneration changes on any probe-list mutation, so derived caches rebuild without holding locks.
-func (p *AssetPreferences) FormatGeneration() uint64 {
-	return p.formatGen.Load()
-}
-
-// FormatList returns a fresh slice: the configured list plus, when fallbacks are on, the legacy chain deduplicated.
-func (s *Settings) FormatList(typeName string) []string {
-
-	tp, ok := s.AssetTypes[typeName]
-	order := tp.FormatOrder
-	if !ok || len(order) == 0 {
-		order = defaultFormatOrders[typeName]
-	}
-
-	withFallbacks := s.GlobalFallbacksEnabled || tp.FallbacksEnabled
-	capacity := len(order)
-	if withFallbacks {
-		capacity += len(legacyFallbackChains[typeName])
-	}
-	list := make([]string, 0, capacity)
-	for _, ext := range order {
-		if !slices.Contains(list, ext) {
-			list = append(list, ext)
-		}
-	}
-	if withFallbacks {
-		for _, ext := range legacyFallbackChains[typeName] {
-			if !slices.Contains(list, ext) {
-				list = append(list, ext)
-			}
-		}
-	}
-	return list
-}
-
-// FormatOrder returns the configured probe order, before fallbacks.
-func (s *Settings) FormatOrder(typeName string) []string {
-
-	if tp, ok := s.AssetTypes[typeName]; ok && len(tp.FormatOrder) > 0 {
-		return cloneStrings(tp.FormatOrder)
-	}
-	return DefaultFormatOrder(typeName)
-}
-
-// SetFormatOrder replaces a type's order and invalidates its learned formats, which may no longer lead.
-func (p *AssetPreferences) SetFormatOrder(typeName string, order []string) {
-	changed := false
-	p.Update(func(sn *Settings) {
-		tp := sn.AssetTypes[typeName]
-		if slices.Equal(tp.FormatOrder, order) {
-			return
-		}
-		tp.FormatOrder = cloneStrings(order)
-		if sn.AssetTypes == nil {
-			sn.AssetTypes = map[string]AssetTypePrefs{}
-		}
-		sn.AssetTypes[typeName] = tp
-		suffix := LearnedKeySeparator + typeName
-		for key := range sn.LearnedFormats {
-			if strings.HasSuffix(key, suffix) {
-				delete(sn.LearnedFormats, key)
-			}
-		}
-		changed = true
-	})
-	if changed {
-		p.formatGen.Add(1)
-	}
-}
-
-// ResetFormatOrder restores the default order and invalidates the type's learned formats.
-func (p *AssetPreferences) ResetFormatOrder(typeName string) {
-	p.SetFormatOrder(typeName, DefaultFormatOrder(typeName))
-}
-
-// TypeFallbacksEnabled reports the per-type toggle, not the global one.
-func (s *Settings) TypeFallbacksEnabled(typeName string) bool {
-
-	return s.AssetTypes[typeName].FallbacksEnabled
-}
-
-// SetTypeFallbacks toggles a type's chain and invalidates its learned formats.
-func (p *AssetPreferences) SetTypeFallbacks(typeName string, enabled bool) {
-	changed := false
-	p.Update(func(sn *Settings) {
-		tp := sn.AssetTypes[typeName]
-		if tp.FallbacksEnabled == enabled {
-			return
-		}
-		tp.FallbacksEnabled = enabled
-		if len(tp.FormatOrder) == 0 {
-			tp.FormatOrder = DefaultFormatOrder(typeName)
-		}
-		if sn.AssetTypes == nil {
-			sn.AssetTypes = map[string]AssetTypePrefs{}
-		}
-		sn.AssetTypes[typeName] = tp
-		suffix := LearnedKeySeparator + typeName
-		for key := range sn.LearnedFormats {
-			if strings.HasSuffix(key, suffix) {
-				delete(sn.LearnedFormats, key)
-			}
-		}
-		changed = true
-	})
-	if changed {
-		p.formatGen.Add(1)
-	}
-}
-
-// SetGlobalFallbacks toggles all fallbacks and invalidates all learned formats, since every probe list changed.
-func (p *AssetPreferences) SetGlobalFallbacks(enabled bool) {
-	changed := false
-	p.Update(func(sn *Settings) {
-		if sn.GlobalFallbacksEnabled == enabled {
-			return
-		}
-		sn.GlobalFallbacksEnabled = enabled
-		sn.LearnedFormats = map[string][]string{}
-		changed = true
-	})
-	if changed {
-		p.formatGen.Add(1)
-	}
 }
 
 // SpriteScalingMode is clamped on read too, so a newer build's value can't index past this build's options.
@@ -1330,33 +1183,6 @@ func (p *AssetPreferences) EmoteGridGap() int {
 	snap := p.Load()
 
 	return value.Clamp(snap.EmoteGridGapPx, MinEmoteGridGapPx, MaxEmoteGridGapPx)
-}
-
-// ClearLearnedType drops every host's learned format for one type, so the next probe re-derives it.
-func (p *AssetPreferences) ClearLearnedType(typeName string) {
-	p.Update(func(sn *Settings) {
-		dropLearnedType(sn, typeName)
-	})
-	p.formatGen.Add(1)
-}
-
-// ClearLearnedHost drops one host's formats, sparing other servers a re-probe, and reports how many.
-// The separator can't occur in a host, so the prefix match is exact.
-func (p *AssetPreferences) ClearLearnedHost(host string) int {
-	if host == "" {
-		return 0
-	}
-	prefix := host + LearnedKeySeparator
-	n := 0
-	p.Update(func(sn *Settings) {
-		for key := range sn.LearnedFormats {
-			if strings.HasPrefix(key, prefix) {
-				delete(sn.LearnedFormats, key)
-				n++
-			}
-		}
-	})
-	return n
 }
 
 func (s *Settings) HighlightColorRGB() int {
@@ -3237,87 +3063,6 @@ func (p *AssetPreferences) ImportSettings(srcPath string) error {
 	return nil
 }
 
-func LearnedKey(host, typeName string) string {
-	return host + LearnedKeySeparator + typeName
-}
-
-// LearnedExtCap mirrors the resolver's cap; they must agree or a reload drops formats the session learned.
-const LearnedExtCap = 4
-
-// RecordLearned moves ext to the front, since a host can serve several formats for a class.
-// Mirrors assets.promoteExt; they must stay in step or a restart resurrects a truncated list.
-func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
-	if ext == "" {
-		return
-	}
-	key := LearnedKey(host, typeName)
-	p.Update(func(sn *Settings) {
-		existing := sn.LearnedFormats[key]
-		if len(existing) > 0 && existing[0] == ext {
-			return // already preferred; no write, no dirty
-		}
-		if sn.LearnedFormats == nil {
-			sn.LearnedFormats = map[string][]string{}
-		}
-		sn.LearnedFormats[key] = promoteFront(existing, ext, LearnedExtCap)
-	})
-}
-
-// RecordLearnedList replaces because a re-read manifest supersedes probing; empty exts keeps what was learned.
-func (p *AssetPreferences) RecordLearnedList(host, typeName string, exts []string) {
-	if len(exts) == 0 {
-		return
-	}
-	if len(exts) > LearnedExtCap {
-		exts = exts[:LearnedExtCap]
-	}
-	key := LearnedKey(host, typeName)
-	p.Update(func(sn *Settings) {
-		if equalStrings(sn.LearnedFormats[key], exts) {
-			return // unchanged; no write, no dirty
-		}
-		if sn.LearnedFormats == nil {
-			sn.LearnedFormats = map[string][]string{}
-		}
-		sn.LearnedFormats[key] = cloneStrings(exts) // caller's slice must not alias the stored one
-	})
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// ExtProfile returns a host's extensions.json profile, or ""; it overrides the manifest and global default.
-func (s *Settings) ExtProfile(host string) string {
-
-	return s.ExtProfiles[host]
-}
-
-// SetExtProfile sets or, with "", clears a host's profile.
-func (p *AssetPreferences) SetExtProfile(host, profileJSON string) {
-	if host == "" {
-		return
-	}
-	p.Update(func(sn *Settings) {
-		if sn.ExtProfiles == nil {
-			sn.ExtProfiles = map[string]string{}
-		}
-		if profileJSON == "" {
-			delete(sn.ExtProfiles, host)
-		} else {
-			sn.ExtProfiles[host] = profileJSON
-		}
-	})
-}
-
 // BlipTyping reports one blip per rate revealed letters and whether spaces blip too.
 func (s *Settings) BlipTyping() (rate int, onSpaces bool) {
 
@@ -3939,59 +3684,6 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 		sn.ThemeFitPanX = x
 		sn.ThemeFitPanY = y
 	})
-}
-
-// ExportLearnedJSON returns the table as indented JSON, so one player's warm state can seed another's.
-func (p *AssetPreferences) ExportLearnedJSON() ([]byte, error) {
-	return json.MarshalIndent(p.Load().LearnedSnapshot(), "", jsonMarshalIndent)
-}
-
-// ImportLearnedJSON merges an export, imported entries winning, and reports how many landed.
-func (p *AssetPreferences) ImportLearnedJSON(data []byte) (int, error) {
-	var in map[string][]string
-	if err := json.Unmarshal(data, &in); err != nil {
-		return 0, fmt.Errorf("config: parsing learned-format import: %w", err)
-	}
-	n := 0
-	p.Update(func(sn *Settings) {
-		for k, v := range in {
-			if k == "" || len(v) == 0 {
-				continue
-			}
-			if sn.LearnedFormats == nil {
-				sn.LearnedFormats = map[string][]string{}
-			}
-			sn.LearnedFormats[k] = cloneStrings(v)
-			n++
-		}
-	})
-	return n, nil
-}
-
-// LearnedSnapshot returns a deep copy, warming the resolver's snapshot at startup and on connect.
-func (s *Settings) LearnedSnapshot() map[string][]string {
-
-	out := make(map[string][]string, len(s.LearnedFormats))
-	for k, v := range s.LearnedFormats {
-		out[k] = cloneStrings(v)
-	}
-	return out
-}
-
-func (p *AssetPreferences) ClearLearned() {
-	p.Update(func(sn *Settings) {
-		sn.LearnedFormats = map[string][]string{}
-	})
-}
-
-// dropLearnedType removes one type's entries across hosts from a snapshot.
-func dropLearnedType(sn *Settings, typeName string) {
-	suffix := LearnedKeySeparator + typeName
-	for key := range sn.LearnedFormats {
-		if strings.HasSuffix(key, suffix) {
-			delete(sn.LearnedFormats, key)
-		}
-	}
 }
 
 // LocalAssets reports streaming switched off, and the player's folders, searched in order like AO2-Client mount paths.

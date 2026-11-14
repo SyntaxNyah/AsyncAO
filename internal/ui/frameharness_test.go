@@ -52,7 +52,6 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform/host"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -89,7 +88,6 @@ func stageFrameDrivenApp(t testing.TB) (*App, func()) {
 	a, cleanup := stageThemedCourtroom(t)
 
 	// --- the three dependencies App.Frame dereferences unconditionally ---
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		cleanup()
@@ -104,12 +102,11 @@ func stageFrameDrivenApp(t testing.TB) (*App, func()) {
 	decoder := assets.NewDecoderPool(frameHarnessPoolWorkers)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   assets.NewLocalFetcher([]string{t.TempDir()}),
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  assets.NewLocalFetcher([]string{t.TempDir()}),
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders([]string{t.TempDir()}, nil)
@@ -136,18 +133,6 @@ func stageFrameDrivenApp(t testing.TB) (*App, func()) {
 	// call is guarded, but latching it keeps the frame free of first-frame-only work
 	// so frame 1 and frame 2 are comparable.
 	a.presenceInit = true
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	// no extensions.json probe interposes
 	// macroBind is the one App field whose ZERO VALUE means "armed" — slot 0 of the
 	// macro key-capture — which is why the real constructor spells it out
 	// (app.go:3322). A hand-built fixture that leaves it at 0 reports

@@ -1,5 +1,4 @@
 {
-  "globalFallbacksEnabled": true,
   "preferAnimated": true,
   "emoteButtonImages": true,
   "smoothScaling": true,
@@ -7,10 +6,11 @@
   "spriteScalingMigrated": true,
   "updateCheck": true,
   "updateExperimental": true,
-  "highlightColor": 1,
-  "icCustomColor": 2,
+  "prereleaseTickedFor": "v2",
+  "highlightColor": 2,
+  "icCustomColor": 1,
   "nameColors": true,
-  "nameColorSat": 1,
+  "nameColorSat": 2,
   "nameColorVal": 50,
   "bgSlideshow": true,
   "bgSlideshowSecs": 3,
@@ -56,10 +56,10 @@
   },
   "mySpriteStyle": {
     "tint": true,
-    "r": 1,
-    "g": 2,
-    "b": 1,
-    "opacity": 2,
+    "r": 2,
+    "g": 1,
+    "b": 2,
+    "opacity": 1,
     "glow": true,
     "wobble": true,
     "spin": true,
@@ -69,10 +69,9 @@
     "grayscale": true,
     "sepia": true,
     "posterize": true,
-    "restyle": 1,
-    "motion": 2,
+    "restyle": 2,
+    "motion": 1,
     "motionPath": [
-      1,
       2,
       1,
       2,
@@ -87,39 +86,40 @@
       1,
       2,
       1,
-      2
+      2,
+      1
     ],
-    "motionPathLen": 1,
+    "motionPathLen": 2,
     "outline": true,
     "dropShadow": true,
     "glitch": true,
-    "outlineR": 2,
-    "outlineG": 1,
-    "outlineB": 2,
-    "brightness": 1,
-    "scale": 2,
-    "rotation": 1,
-    "paintSplit": 2,
-    "paint2R": 1,
-    "paint2G": 2,
-    "paint2B": 1,
-    "glitchMode": 2,
-    "glitchAR": 1,
-    "glitchAG": 2,
-    "glitchAB": 1,
-    "glitchBR": 2,
-    "glitchBG": 1,
-    "glitchBB": 2
+    "outlineR": 1,
+    "outlineG": 2,
+    "outlineB": 1,
+    "brightness": 2,
+    "scale": 1,
+    "rotation": 2,
+    "paintSplit": 1,
+    "paint2R": 2,
+    "paint2G": 1,
+    "paint2B": 2,
+    "glitchMode": 1,
+    "glitchAR": 2,
+    "glitchAG": 1,
+    "glitchAB": 2,
+    "glitchBR": 1,
+    "glitchBG": 2,
+    "glitchBB": 1
   },
   "stylePresets": [
     {
-      "name": "v26",
+      "name": "v16",
       "style": {
         "tint": true,
-        "r": 2,
-        "g": 1,
-        "b": 2,
-        "opacity": 1,
+        "r": 1,
+        "g": 2,
+        "b": 1,
+        "opacity": 2,
         "glow": true,
         "wobble": true,
         "spin": true,
@@ -129,10 +129,9 @@
         "grayscale": true,
         "sepia": true,
         "posterize": true,
-        "restyle": 2,
-        "motion": 1,
+        "restyle": 1,
+        "motion": 2,
         "motionPath": [
-          2,
           1,
           2,
           1,
@@ -147,43 +146,45 @@
           2,
           1,
           2,
-          1
+          1,
+          2
         ],
-        "motionPathLen": 2,
+        "motionPathLen": 1,
         "outline": true,
         "dropShadow": true,
         "glitch": true,
-        "outlineR": 1,
-        "outlineG": 2,
-        "outlineB": 1,
-        "brightness": 2,
-        "scale": 1,
-        "rotation": 2,
-        "paintSplit": 1,
-        "paint2R": 2,
-        "paint2G": 1,
-        "paint2B": 2,
-        "glitchMode": 1,
-        "glitchAR": 2,
-        "glitchAG": 1,
-        "glitchAB": 2,
-        "glitchBR": 1,
-        "glitchBG": 2,
-        "glitchBB": 1
+        "outlineR": 2,
+        "outlineG": 1,
+        "outlineB": 2,
+        "brightness": 1,
+        "scale": 2,
+        "rotation": 1,
+        "paintSplit": 2,
+        "paint2R": 1,
+        "paint2G": 2,
+        "paint2B": 1,
+        "glitchMode": 2,
+        "glitchAR": 1,
+        "glitchAG": 2,
+        "glitchAB": 1,
+        "glitchBR": 2,
+        "glitchBG": 1,
+        "glitchBB": 2
       },
-      "color": 2,
-      "emote": "v401",
-      "key": "v501"
+      "color": 1,
+      "emote": "v301",
+      "key": "v401"
     }
   ],
   "hideSpriteStyles": true,
   "hideReactions": true,
   "validateTLSCerts": true,
-  "assetOrigin": "v601",
-  "wsOrigin": "v701",
-  "assetCharCase": 1,
-  "proxyMode": 2,
-  "proxyUrl": "v011",
+  "assetOrigin": "v501",
+  "wsOrigin": "v601",
+  "assetCharCase": 2,
+  "proxyMode": 1,
+  "proxyUrl": "v901",
+  "proxyBypass": "v011",
   "panelFonts": {
     "v111": {
       "family": "v211"
@@ -198,12 +199,12 @@
   "profile": {
     "enabled": true,
     "showOnList": true,
-    "name": "v911",
-    "pronouns": "v021",
-    "tag": "v121",
-    "bio": "v221",
-    "themeSong": "v321",
-    "artURL": "v421"
+    "name": "v511",
+    "pronouns": "v611",
+    "tag": "v711",
+    "bio": "v811",
+    "themeSong": "v911",
+    "artURL": "v021"
   },
   "chatboxOpacity": 2,
   "rainbowSpriteVividness": 1,
@@ -240,17 +241,16 @@
   "callwordOSToast": true,
   "friendGlowPulse": true,
   "friendSound": true,
-  "friendSoundFile": "v531",
+  "friendSoundFile": "v131",
   "modBanSFX": true,
   "modKickSFX": true,
   "modMuteSFX": true,
-  "modBanSoundFile": "v631",
-  "modKickSoundFile": "v731",
-  "modMuteSoundFile": "v831",
+  "modBanSoundFile": "v231",
+  "modKickSoundFile": "v331",
+  "modMuteSoundFile": "v431",
   "modcallToast": true,
-  "callwordSoundFile": "v931",
+  "callwordSoundFile": "v531",
   "debugOverlay": true,
-  "formatAutoDetect": true,
   "themeLayout": true,
   "themeFit": 1,
   "themeFitZoom": 50,
@@ -264,7 +264,7 @@
   "multiTabCap": 2,
   "restoreTabs": true,
   "volStripOn": true,
-  "changelogSeenVersion": "v641",
+  "changelogSeenVersion": "v241",
   "spriteLoadMode": 2,
   "spriteWaitMs": 50,
   "spriteWaitPair": true,
@@ -279,6 +279,7 @@
   "icLogDepth": 2,
   "catchUpLingerMs": 1,
   "diskCacheBudgetMiB": 128,
+  "cacheDir": "v251",
   "notFoundTTLSec": 30,
   "adaptiveLatMultiple": 2,
   "spriteDownscaleOff": true,
@@ -299,8 +300,8 @@
   "musicFlags": 1,
   "openTabs": [
     {
-      "name": "v371",
-      "url": "v471"
+      "name": "v761",
+      "url": "v861"
     }
   ],
   "reduceMotion": true,
@@ -316,19 +317,19 @@
   "autoClipModcall": true,
   "groupChatButton": true,
   "charChatbox": true,
-  "fontPaths": "v571",
+  "fontPaths": "v961",
   "macros": [
     {
-      "name": "v671",
-      "key": "v771",
+      "name": "v071",
+      "key": "v171",
       "lines": [
-        "v871"
+        "v271"
       ]
     }
   ],
   "themeRectOverrides": {
-    "v971": {
-      "v081": [
+    "v371": {
+      "v471": [
         2,
         1,
         2,
@@ -337,12 +338,12 @@
     }
   },
   "themeRectRotations": {
-    "v581": {
-      "v681": 2
+    "v971": {
+      "v081": 2
     }
   },
   "classicLayout": {
-    "v881": [
+    "v281": [
       0.5,
       0.5,
       0.5,
@@ -350,9 +351,9 @@
     ]
   },
   "layoutProfiles": {
-    "v391": {
+    "v781": {
       "classic": {
-        "v491": [
+        "v881": [
           0.5,
           0.5,
           0.5,
@@ -360,11 +361,11 @@
         ]
       },
       "hidden": [
-        "v302"
+        "v791"
       ],
       "gridPx": 2,
       "rotations": {
-        "v502": 1
+        "v991": 1
       }
     }
   },
@@ -377,13 +378,13 @@
     }
   },
   "classicRotations": {
-    "v212": 2
+    "v602": 2
   },
   "streamerMode": true,
-  "themeName": "v412",
-  "themeDir": "v512",
-  "subtheme": "v612",
-  "oocName": "v712",
+  "themeName": "v802",
+  "themeDir": "v902",
+  "subtheme": "v012",
+  "oocName": "v112",
   "viewportPercent": 40,
   "chatScalePercent": 50,
   "chatBoxPercent": 50,
@@ -403,126 +404,46 @@
   "sfxVolMuted": true,
   "blipVolMuted": true,
   "holdClearOn": true,
-  "holdClearKey": "v132",
+  "holdClearKey": "v522",
   "holdClearMs": 300,
-  "extrasBg": "v332",
-  "extrasBg2": "v432",
-  "extrasBorder": "v532",
-  "extrasTitle": "v632",
-  "extrasText": "v732",
+  "extrasBg": "v722",
+  "extrasBg2": "v822",
+  "extrasBorder": "v922",
+  "extrasTitle": "v032",
+  "extrasText": "v132",
   "extrasGradient": true,
-  "areaHighlightHex": "v832",
+  "areaHighlightHex": "v232",
   "textCrawlMs": 5,
   "textStayMs": 1,
   "chatRateLimitMs": 2,
-  "masterListUrl": "v242",
-  "assetTypes": {
-    "Background": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "Blip": {
-      "formatOrder": [
-        ".opus"
-      ],
-      "fallbacksEnabled": false
-    },
-    "CharIcon": {
-      "formatOrder": [
-        ".png"
-      ],
-      "fallbacksEnabled": false
-    },
-    "CharSprite": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "DeskOverlay": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "Effect": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "EmoteButton": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "Misc": {
-      "formatOrder": [
-        ".png",
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "Music": {
-      "formatOrder": [
-        ".opus"
-      ],
-      "fallbacksEnabled": false
-    },
-    "SFX": {
-      "formatOrder": [
-        ".opus"
-      ],
-      "fallbacksEnabled": false
-    },
-    "ShoutBubble": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "v342": {
-      "formatOrder": [
-        "v442"
-      ],
-      "fallbacksEnabled": true
-    }
-  },
-  "learnedFormats": {
-    "v542": [
-      "v642"
-    ]
-  },
-  "showname": "v742",
+  "masterListUrl": "v632",
+  "showname": "v732",
   "shownamePresets": [
-    "v842"
+    "v832"
   ],
   "shownameKeys": {
-    "v942": "v052"
+    "v932": "v042"
   },
   "icPhraseKeys": {
-    "v152": "v252"
+    "v142": "v242"
   },
   "mutedSFX": [
-    "v352"
+    "v342"
   ],
   "sfxFavorites": [
-    "v452"
+    "v442"
   ],
   "modReasonTemplates": [
-    "v552"
+    "v542"
   ],
   "modDurations": [
-    "v652"
+    "v642"
   ],
   "blipVolumes": {
-    "v752": 1
+    "v742": 1
   },
   "emoteFavorites": {
-    "v952": [
+    "v942": [
       1
     ]
   },
@@ -530,97 +451,102 @@
   "emoteFavStars": true,
   "localAssetsEnabled": true,
   "localAssetsLayered": true,
+  "packagesOff": true,
+  "cpuRenderer": true,
   "emoteCaptions": true,
   "viewportExactW": 256,
   "oocScalePercent": 75,
+  "wardrobeIconPx": 40,
+  "wardrobeNameAbove": true,
+  "wardrobeAccent": 1,
   "customChrome": [
-    "v362",
-    "v462",
-    "v562",
-    "v662",
-    "v762",
-    "v862",
-    "v962"
+    "v552",
+    "v652",
+    "v752",
+    "v852",
+    "v952",
+    "v062",
+    "v162"
   ],
   "layoutPartColors": [
-    "v072",
-    "v172",
-    "v272",
-    "v372"
+    "v262",
+    "v362",
+    "v462",
+    "v562"
   ],
   "boldNamesOff": true,
   "blipRate": 1,
   "blipOnSpaces": true,
   "callwordsOOC": true,
-  "extProfiles": {
-    "v572": "v672"
-  },
   "localAssetsPaths": [
-    "v772"
+    "v762"
   ],
   "favorites": [
     {
-      "name": "v872",
-      "url": "v972",
-      "description": "v082"
+      "name": "v862",
+      "url": "v962",
+      "description": "v072"
     }
   ],
   "wardrobe": [
-    "v182"
+    "v172"
   ],
   "casingEnabled": true,
   "casingRoles": 1,
   "hiddenPanels": [
-    "v382"
+    "v372"
   ],
   "serverWarm": {
-    "v482": {
-      "char": "v582",
-      "background": "v682",
+    "v472": {
+      "char": "v572",
+      "background": "v672",
       "wardrobe": [
-        "v782"
+        "v772"
       ],
       "favBackgrounds": [
-        "v882"
+        "v872"
       ],
       "favBackgroundFolder": {
-        "v982": "v092"
+        "v972": "v082"
       },
       "charKeys": {
-        "v192": "v292"
+        "v182": "v282"
       },
       "wardrobeFolder": {
-        "v392": "v492"
+        "v382": "v482"
       },
-      "origin": "v592",
+      "origin": "v582",
+      "assetHosts": [
+        "v682"
+      ],
       "audioOn": true,
-      "audioMaster": 1,
-      "audioMusic": 2,
-      "audioSFX": 1,
-      "audioBlip": 2,
+      "audioMaster": 2,
+      "audioMusic": 1,
+      "audioSFX": 2,
+      "audioBlip": 1,
       "chars": [
-        "v003"
+        "v192"
       ],
       "backgrounds": [
-        "v103"
+        "v292"
       ],
       "friends": [
-        "v203"
+        "v392"
       ],
       "ignored": [
-        "v303"
+        "v492"
       ],
-      "loginUser": "v403",
-      "loginPass": "v503",
+      "loginUser": "v592",
+      "loginPass": "v692",
       "autoLogin": true,
-      "theme": "v603"
+      "theme": "v792"
     }
   },
   "callWords": [
-    "v703"
+    "v892"
   ],
   "hotkeys": {
-    "v803": "v903"
+    "v992": "v003"
   },
   "discord": {
     "enabled": true,
@@ -628,19 +554,19 @@
     "showChar": true,
     "showName": true,
     "showArea": true,
-    "appId": "v013"
+    "appId": "v103"
   },
   "autoStatus": {
     "enabled": true,
-    "clearWords": "v113",
-    "afkWords": "v213",
-    "busyWords": "v313",
-    "writingWords": "v413",
-    "lfrpWords": "v513"
+    "clearWords": "v203",
+    "afkWords": "v303",
+    "busyWords": "v403",
+    "writingWords": "v503",
+    "lfrpWords": "v603"
   },
-  "chromeTheme": "v613",
+  "chromeTheme": "v703",
   "chromeShape": "sharp",
-  "chromeShapeTier": 1,
+  "chromeShapeTier": 2,
   "toolboxSeen": true,
   "spriteMove": true,
   "deskFollowManifest": true,
@@ -649,13 +575,13 @@
   "previewHeightPx": 96,
   "previewPinned": true,
   "previewWinRectValid": true,
-  "previewWinRectX": 2,
-  "previewWinRectY": 1,
-  "previewWinRectW": 2,
-  "previewWinRectH": 1,
+  "previewWinRectX": 1,
+  "previewWinRectY": 2,
+  "previewWinRectW": 1,
+  "previewWinRectH": 2,
   "emoteHoverNames": true,
   "emoteHoverNamesMs": 500,
-  "emoteGridGapPx": 1,
+  "emoteGridGapPx": 2,
   "autoLoginToast": true,
   "callwordToast": true,
   "messageCounter": true,
@@ -682,8 +608,8 @@
   "musicAcrossTabs": true,
   "showMissingPlaceholder": true,
   "errorSpriteCustom": true,
-  "errorSpritePath": "v723",
+  "errorSpritePath": "v813",
   "musicHosts": [
-    "v823"
+    "v913"
   ]
 }

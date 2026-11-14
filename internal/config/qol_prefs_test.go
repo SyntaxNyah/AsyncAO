@@ -2033,22 +2033,6 @@ func TestWardrobeGenerationBumps(t *testing.T) {
 	}
 }
 
-// TestClearLearnedType pins that clearing one type's learned formats (the
-// desk-policy toggle path) leaves other types alone.
-func TestClearLearnedType(t *testing.T) {
-	p, _ := newTestPrefs(t)
-	p.RecordLearned("h.example", TypeDeskOverlay, ExtPNG)
-	p.RecordLearned("h.example", TypeBackground, ExtPNG)
-	p.ClearLearnedType(TypeDeskOverlay)
-	snap := p.Load().LearnedSnapshot()
-	if _, ok := snap[LearnedKey("h.example", TypeDeskOverlay)]; ok {
-		t.Error("ClearLearnedType(DeskOverlay) must drop desk learned entries")
-	}
-	if _, ok := snap[LearnedKey("h.example", TypeBackground)]; !ok {
-		t.Error("ClearLearnedType(DeskOverlay) must NOT drop other types")
-	}
-}
-
 // TestClampWindowSize pins the shared window-size clamp (the stuck-too-big fix):
 // an oversize request on a smaller display fits to the usable bounds, a tiny
 // request floors at the minimum, and an unknown display (0) skips the ceiling.

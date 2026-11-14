@@ -79,16 +79,3 @@ func toggleInt(list []int, v int) ([]int, bool) {
 	}
 	return append(list, v), true
 }
-
-// promoteFront moves ext to the front, deduped and capped, so the most recently seen entry leads the preference order.
-func promoteFront(list []string, ext string, cap int) []string {
-	next := make([]string, 0, len(list)+1)
-	next = append(next, ext)
-	for _, e := range list {
-		if e == ext || len(next) == cap {
-			continue
-		}
-		next = append(next, e)
-	}
-	return next
-}

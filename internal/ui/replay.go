@@ -488,7 +488,7 @@ func (a *App) beginBundledReplay(rec *sceneRecording, dir string) {
 	local := assets.NewLocalFetcher([]string{dir})
 	rec.Origin = local.BaseURL()
 	a.d.Manager.SetArchiveSource(local)
-	archive.SeedFormats(a.d.Resolver, rec.Origin, rec.Formats)
+	archive.SeedFormats(a.d.Manager, rec.Origin, rec.Formats)
 	a.replayBundled = true
 }
 

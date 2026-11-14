@@ -24,14 +24,13 @@ import (
 // buildPumpManager wires a minimal asset manager over the given source —
 // the same shape the app uses, enough to fetch + decode + emit on Decoded().
 // localMode true = a mount-folder source; false = a real network client.
-func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) (*assets.Manager, *assets.Resolver) {
+func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) *assets.Manager {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	resolver := assets.NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -44,14 +43,14 @@ func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) (*ass
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: source, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)
 	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
 		mgr.SetFolders(lf.Mounts(), nil)
 	}
-	return mgr, resolver
+	return mgr
 }
 
 func writeTestPNG(t *testing.T, path string) {
@@ -93,10 +92,10 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	rel, _ := strings.CutPrefix(base, origin)
 	writeTestPNG(t, filepath.Join(dir, filepath.FromSlash(rel+config.ExtPNG)))
 
-	mgr, resolver := buildPumpManager(t, local, true)
+	mgr := buildPumpManager(t, local, true)
 	// The default probe list is webp-only; this fixture is PNG, so seed the host's
 	// learned format (what a real extensions.json / a prior learned hit provides).
-	resolver.RecordSuccess(assets.HostOf(base), assets.AssetTypeCharSprite, config.ExtPNG)
+	mgr.AllowFormats(local.BaseURL(), map[assets.AssetType]string{assets.AssetTypeCharSprite: config.ExtPNG})
 
 	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
@@ -139,7 +138,7 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	}))
 	defer srvCorrupt.Close()
 
-	mgr, _ := buildPumpManager(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
+	mgr := buildPumpManager(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)

@@ -64,7 +64,6 @@ func (h *bridgeFakeHost) askedFor() []string {
 func newBridgeRig(t *testing.T, host *bridgeFakeHost) *testRig {
 	t.Helper()
 	prefs := newTestPrefs(t)
-	resolver := NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -76,9 +75,9 @@ func newBridgeRig(t *testing.T, host *bridgeFakeHost) *testRig {
 	t.Cleanup(disk.Close)
 	decoder := NewDecoderPool(bridgeTestWorkers)
 	t.Cleanup(decoder.Close)
-	m := NewManager(ManagerDeps{Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk, Source: host, Decoder: decoder})
+	m := NewManager(ManagerDeps{Prefs: prefs, T2: t2, Disk: disk, Source: host, Decoder: decoder})
 	t.Cleanup(m.CloseMedia)
-	return &testRig{prefs: prefs, resolver: resolver, manager: m, decoder: decoder, disk: disk, t2: t2}
+	return &testRig{prefs: prefs, manager: m, decoder: decoder, disk: disk, t2: t2}
 }
 
 // nextDecoded waits for the final page of base, releasing partial ones as the upload pump does.
@@ -227,8 +226,8 @@ const bridgeSettle = 50 * time.Millisecond
 func TestBridgeManifestSetsOrderAndIsFetchedFresh(t *testing.T) {
 	webp := fixture(t, "sprite_256x192.webp")
 	host := &bridgeFakeHost{files: map[string][]byte{
-		bridgeTestOrigin + ManifestFileName: []byte(`{"emote_extensions": [".png", ".webp"]}`),
-		bridgeTestOrigin + "e.webp":         webp,
+		bridgeTestOrigin + media.ManifestFile: []byte(`{"emote_extensions": [".png", ".webp"]}`),
+		bridgeTestOrigin + "e.webp":           webp,
 	}}
 	r := newBridgeRig(t, host)
 	for range bridgeTestWorkers {
@@ -239,7 +238,7 @@ func TestBridgeManifestSetsOrderAndIsFetchedFresh(t *testing.T) {
 	base := bridgeTestOrigin + "e"
 	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
 	nextDecoded(t, r.manager, base)
-	want := []string{bridgeTestOrigin + ManifestFileName, bridgeTestOrigin + ManifestFileName, base + ".png", base + ".webp"}
+	want := []string{bridgeTestOrigin + media.ManifestFile, bridgeTestOrigin + media.ManifestFile, base + ".png", base + ".webp"}
 	if asked := host.askedFor(); !slices.Equal(asked, want) {
 		t.Fatalf("asked %v, want %v", asked, want)
 	}
@@ -287,7 +286,7 @@ func TestBridgeExtraHostServesWhatTheServerLacks(t *testing.T) {
 	if d.Err != nil || d.Asset == nil || d.URL != mirror+"c/e.webp" {
 		t.Fatalf("url %q err %v", d.URL, d.Err)
 	}
-	if !slices.Contains(host.askedFor(), mirror+ManifestFileName) {
+	if !slices.Contains(host.askedFor(), mirror+media.ManifestFile) {
 		t.Fatal("the mirror's extensions.json was not read")
 	}
 	waitUntil(t, "the mirror to report no list", func() bool { return r.manager.HostListState(mirror) == media.ManifestAbsent })
@@ -295,7 +294,7 @@ func TestBridgeExtraHostServesWhatTheServerLacks(t *testing.T) {
 
 func TestBridgeReportsAnExtraHostsListAndForgetsARemovedHost(t *testing.T) {
 	const mirror = "http://mirror.test/ao/"
-	host := &bridgeFakeHost{files: map[string][]byte{mirror + ManifestFileName: []byte(`{"emote_extensions": [".png"]}`)}}
+	host := &bridgeFakeHost{files: map[string][]byte{mirror + media.ManifestFile: []byte(`{"emote_extensions": [".png"]}`)}}
 	r := newBridgeRig(t, host)
 	if s := r.manager.HostListState(mirror); s != media.ManifestUnchecked {
 		t.Fatalf("before joining: %d, want unchecked", s)

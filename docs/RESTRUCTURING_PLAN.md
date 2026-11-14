@@ -97,7 +97,11 @@ in **Status**. Update Status in the same commit that completes a step.
     - [x] core: `Manager` on its own goroutine, `Get` over a concurrent map, `Pool`, `Chain`, `Source`. Not used by the client yet
     - [x] sources: memory, disk index, remote index with host limits (1 worker until a host answers, then 16); candidates,
           format learning and `extensions.json`; withdrawing and raising requests. Not used by the client yet
-    - [ ] sources still to build: saving the disk index and learned formats, character mapping
+    - [x] saving between sessions (2026-11-14): learned formats and the winner table in `learned.json` through
+          `internal/saver`; the disk index is not saved, and the disk is asked until its startup scan lands; 404s are
+          never saved. The old resolver, `prefs.LearnedFormats`, the Formats tab and every format override setting
+          are gone; archive, export and replay use the media table
+    - [ ] sources still to build: character mapping
     - [x] extra asset hosts per server: the user adds them in a fixed order with no speed ranking, the ASS packet's host is always
           first; Settings → Assets edits them. Raw fetch paths not on the media system yet don't ask them
     - [x] the client runs on it: `assets.Manager`'s requests go through `internal/media`, so callers and `Pump` are unchanged, and

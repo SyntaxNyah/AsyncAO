@@ -336,11 +336,8 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 		line(fmt.Sprintf("T3 disk cache — hit %d · miss %d · writes %d · dropped %d · errors %d",
 			d.Hits, d.Misses, d.Writes, d.Dropped, d.WriteErrors), ColText)
 	}
-	// Resolver — learned per-host formats (the zero-fallback streaming premise).
-	if a.d.Resolver != nil {
-		rs := a.d.Resolver.Stats()
-		line(fmt.Sprintf("Learned formats — hit %d · miss %d (%s)",
-			rs.LearnedHits, rs.LearnedMisses, hitRatePct(rs.LearnedHits, rs.LearnedMisses)), ColTextDim)
+	if a.d.Manager != nil {
+		line(fmt.Sprintf("Learned formats — %d hosts", a.d.Manager.LearnedHosts()), ColTextDim)
 	}
 	// Network client — total probes + cached 404s (never re-probed inside TTL).
 	if a.d.Client != nil {

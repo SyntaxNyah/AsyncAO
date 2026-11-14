@@ -155,17 +155,9 @@ type settingsState struct {
 	cacheStatus    string
 	cacheStatusBad bool
 	cacheSizeRes   chan cacheSizes
-	// learnedKeys is the learned-formats map size learnedServers was counted for.
-	learnedKeys, learnedServers int
 
 	// ioRes carries one-line results of off-thread file ops back to the status line.
 	ioRes chan string
-
-	// fmtOrderText caches each asset type's probe list, parallel to config.TypeNames (assets.AssetType order).
-	// Rebuilt only when the format generation moves; fmtOrderOK separates never built from generation 0.
-	fmtOrderText []string
-	fmtOrderGen  uint64
-	fmtOrderOK   bool
 }
 
 // themeScan is one result: theme names found, the normalized root, and an auto-pick when the path was a single theme.
@@ -197,7 +189,7 @@ var settings = settingsState{
 }
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Theme editor", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Power user", "Updates", "Reset",
+	"General", "Theme", "Theme editor", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Power user", "Updates", "Reset",
 }
 
 // Tab indices, in settingsTabNames order.
@@ -208,8 +200,6 @@ const (
 	// It sits right after Theme, which keeps selection, because the two read as a pair in the sidebar.
 	tabThemeEditor
 	tabAssets
-	// tabFormats owns every control that decides which file type is asked for; beside Assets, where people look.
-	tabFormats
 	tabAudio
 	tabChat
 	tabAccount
@@ -298,20 +288,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"learned format", "learned formats", "learned", "clear learned", "retry missing",
 		"placeholder", "missing sprite", "missingno", "missing character", "error sprite", "custom error sprite", "404",
 	},
-	tabFormats: {
-		// How formats work, This server, Automatic detection, Formats per asset type, Fallbacks.
-		// Absent because a later tab owns the word: "blip", "volume" (Audio); "ignore", "callword" (Chat);
-		// "password" (Account); "webp", "gif" (Studio); "export", "import" (Studio, Data);
-		// "extensions.json" (its ".json" would take Data's "json").
-		"image format", "file type", "file types", "extension", "extensions", "manifest",
-		"format profile", "server format profile", "per-server format", "pin format",
-		"probe", "probing", "one probe", "probe order", "format order", "which format",
-		"fallback", "fallbacks", "legacy format", "legacy audio", "audio format", "sound format",
-		"autodetect", "auto-detect", "detect formats", "desk format",
-		"png", "apng", "avif", "jpg", "jpeg", "opus", "ogg", "mp3", "wav",
-		"emotes not loading", "assets not loading", "images not loading", "art not loading",
-		"stuck images", "repeated images", "same image", "nothing loads",
-	},
+
 	tabAudio: {
 		// Volume, music ducking, custom music streaming.
 		"audio", "volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
@@ -608,8 +585,6 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 		y = a.drawSettingsThemeEditor(y, w)
 	case tabAssets:
 		y = a.drawSettingsAssets(y, w)
-	case tabFormats:
-		y = a.drawSettingsFormats(y, w)
 	case tabAudio:
 		y = a.drawSettingsAudio(y, w)
 	case tabChat:
@@ -1786,4 +1761,11 @@ func TextureScaleMode(smooth bool) sdl.ScaleMode {
 		return sdl.ScaleModeLinear
 	}
 	return sdl.ScaleModeNearest
+}
+
+// noteSearchRow registers a button with the settings search; Checkbox does this itself.
+func (a *App) noteSearchRow(label string, y int32) {
+	if a.ctx.onRow != nil {
+		a.ctx.onRow(label, y)
+	}
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -28,6 +27,9 @@ func replayWarmRec(origin string) *sceneRecording {
 // TestStartReplayWarmSkipsEmptyOrigin pins that a recording with no streamable
 // origin (empty or local://) arms NO pre-warm phase — it plays exactly as before,
 // with the render thread never entering the warm gate (H5's "empty origin skips").
+// warmTestOrigin is the recordings' origin; tests mark it read, as a live session would on connect.
+const warmTestOrigin = "http://example.test/"
+
 func TestStartReplayWarmSkipsEmptyOrigin(t *testing.T) {
 	a := testTabApp(t)
 
@@ -47,30 +49,19 @@ func TestStartReplayWarmSkipsEmptyOrigin(t *testing.T) {
 
 // TestStartReplayWarmEnumeratesAndSplits pins that an http-origin recording arms the
 // phase and enumerates the scene once, splitting texture refs (submitted
-// incrementally) from music refs (Exact, prefetched once). Format auto-detect is
-// turned OFF so no seed goroutine interposes — the split is what's under test.
+// incrementally) from music refs (Exact, prefetched once). The origin counts as
+// already read, so no seed goroutine interposes — the split is what's under test.
 func TestStartReplayWarmEnumeratesAndSplits(t *testing.T) {
 	a, _ := newWarmHarness(t)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
+	a.markOriginSeeded(warmTestOrigin)
 
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	// no seed sub-phase; isolate the enumeration
-
-	a.startReplayWarm(replayWarmRec("http://example.test/"))
+	a.startReplayWarm(replayWarmRec(warmTestOrigin))
 	w := a.replayWarm
 	if w == nil {
 		t.Fatal("an http-origin recording must arm the replay pre-warm")
 	}
 	if w.seeding {
-		t.Error("auto-detect off: the seed sub-phase must not run")
+		t.Error("an origin already read must not run the seed sub-phase")
 	}
 	if len(w.warmRefs) == 0 {
 		t.Error("no texture refs enumerated — the message's bg/desk/sprite refs are missing")
@@ -98,23 +89,12 @@ func TestStartReplayWarmEnumeratesAndSplits(t *testing.T) {
 // includes-missing path can end this within the tick budget.
 func TestTickReplayWarmConclusiveMissEndsPromptly(t *testing.T) {
 	a, store := newWarmHarness(t)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	// isolate the warm from the seed sub-phase
+	a.markOriginSeeded(warmTestOrigin)
 
 	// A big scene: more sprite refs than the in-flight window, so the never-settled
 	// stall shape applies (the first window fills; without the miss release nothing
 	// prunes and the phase would sit until the hard cap).
-	rec := &sceneRecording{Version: recordingVersion, Origin: "http://example.test/", StartBg: "courtroom"}
+	rec := &sceneRecording{Version: recordingVersion, Origin: warmTestOrigin, StartBg: "courtroom"}
 	for i := 0; i < warmInFlightWindow+40; i++ {
 		rec.Events = append(rec.Events, recEvent{
 			Kind:    int(courtroom.EventMessage),
@@ -158,18 +138,9 @@ func TestTickReplayWarmConclusiveMissEndsPromptly(t *testing.T) {
 // and one tick must clear the phase.
 func TestTickReplayWarmHardCapBackstop(t *testing.T) {
 	a, _ := newWarmHarness(t) // never mark anything resident/missing: the never-settled shape
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
+	a.markOriginSeeded(warmTestOrigin)
 
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	rec := &sceneRecording{Version: recordingVersion, Origin: "http://example.test/", StartBg: "courtroom"}
+	rec := &sceneRecording{Version: recordingVersion, Origin: warmTestOrigin, StartBg: "courtroom"}
 	for i := 0; i < warmInFlightWindow+10; i++ {
 		rec.Events = append(rec.Events, recEvent{
 			Kind:    int(courtroom.EventMessage),
@@ -195,18 +166,9 @@ func TestTickReplayWarmHardCapBackstop(t *testing.T) {
 // PrefetchExact a real (missing) submit; we assert the one-shot latch flips.
 func TestTickReplayWarmPrefetchesMusicOnce(t *testing.T) {
 	a, _ := newWarmHarness(t)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
+	a.markOriginSeeded(warmTestOrigin)
 
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	a.startReplayWarm(replayWarmRec("http://example.test/"))
+	a.startReplayWarm(replayWarmRec(warmTestOrigin))
 	if a.replayWarm == nil || len(a.replayWarm.musicRefs) == 0 {
 		t.Fatal("warm not armed with music refs")
 	}

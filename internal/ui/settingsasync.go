@@ -2,7 +2,6 @@ package ui
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -30,38 +29,6 @@ func applyPresetAsync(d Deps, name string) {
 		line := "Preset \"" + name + "\" staged — RESTART AsyncAO to apply (changes made this session won't save)."
 		if err := d.Prefs.ApplyPreset(name); err != nil {
 			line = "Apply preset failed: " + err.Error()
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// learnedExportFileName sits next to the executable.
-const learnedExportFileName = "learned-formats.json"
-
-func learnedExportPath() (string, error) {
-	dir, err := exeDataDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, learnedExportFileName), nil
-}
-
-// exportLearnedAsync writes the learned table off-thread (hard rule 2).
-func exportLearnedAsync(d Deps) {
-	go func() {
-		path, err := learnedExportPath()
-		if err == nil {
-			var data []byte
-			if data, err = d.Prefs.ExportLearnedJSON(); err == nil {
-				err = os.WriteFile(path, data, 0o644)
-			}
-		}
-		line := "Learned formats exported to " + path
-		if err != nil {
-			line = "Export failed: " + err.Error()
 		}
 		select {
 		case settings.ioRes <- line:
@@ -121,32 +88,6 @@ func importSettingsAsync(d Deps, path string) {
 		line := "Settings imported — RESTART AsyncAO to apply (changes made this session won't save)."
 		if err := d.Prefs.ImportSettings(path); err != nil {
 			line = "Settings import failed: " + err.Error()
-		}
-		select {
-		case settings.ioRes <- line:
-		default:
-		}
-	}()
-}
-
-// importLearnedAsync merges a learned-formats export and republishes the resolver snapshot (atomic swap, safe
-// off-thread).
-func importLearnedAsync(d Deps) {
-	go func() {
-		var line string
-		path, err := learnedExportPath()
-		if err == nil {
-			var data []byte
-			if data, err = os.ReadFile(path); err == nil {
-				var n int
-				if n, err = d.Prefs.ImportLearnedJSON(data); err == nil {
-					d.Resolver.WarmFromPrefs()
-					line = fmt.Sprintf("Imported %d learned entries from %s", n, path)
-				}
-			}
-		}
-		if err != nil {
-			line = "Import failed: " + err.Error() + " (expected " + learnedExportFileName + " beside the exe)"
 		}
 		select {
 		case settings.ioRes <- line:

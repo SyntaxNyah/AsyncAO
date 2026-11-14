@@ -234,26 +234,10 @@ func (p *AssetPreferences) normalizeSnapshot(s *Settings, presence map[string]bo
 	}
 
 	// Restore non-zero nested defaults the overlay zeroed.
-	if len(s.AssetTypes) == 0 {
-		s.AssetTypes = def.AssetTypes
-	} else {
-		for name, tp := range s.AssetTypes {
-			if len(tp.FormatOrder) == 0 {
-				tp.FormatOrder = DefaultFormatOrder(name)
-			}
-			if name == TypeMisc && len(tp.FormatOrder) == 1 && tp.FormatOrder[0] == ExtWebP {
-				tp.FormatOrder = DefaultFormatOrder(name)
-			}
-			s.AssetTypes[name] = tp
-		}
-	}
 	if s.MusicHosts == nil {
 		s.MusicHosts = def.MusicHosts
 	} else {
 		s.MusicHosts = sanitizeMusicHosts(s.MusicHosts)
-	}
-	if s.LearnedFormats == nil {
-		s.LearnedFormats = def.LearnedFormats
 	}
 	// Bound, drop blank names and ids, and dedupe, so a hand-edited file cannot grow or corrupt the maps.
 	s.SavedStyles = sanitizeStylePresets(s.SavedStyles)

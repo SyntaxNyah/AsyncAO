@@ -104,9 +104,8 @@ const (
 
 // Deps wires the app to the engine singletons built in main.
 type Deps struct {
-	Prefs    *config.AssetPreferences
-	Resolver *assets.Resolver
-	Manager  *assets.Manager
+	Prefs   *config.AssetPreferences
+	Manager *assets.Manager
 	// Disk is the disk cache tier, which Settings can move to another folder while the client runs.
 	Disk     *cache.DiskCache
 	Client   *network.Client

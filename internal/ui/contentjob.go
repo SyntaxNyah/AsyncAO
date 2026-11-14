@@ -512,13 +512,10 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	a.content = j
 	a.contentBusy = true
 
-	// Seed first when the origin is a network host and auto-detect is on: fetch <origin>/extensions.json and seed
-	// this
-	// host's learned formats before probing, as the live connect path does. A .demo's recorded origin is never the
-	// session origin, so otherwise the probe would try one format against a server that ships .gif/.png. Other
-	// origins
-	// skip to probing; probeRef's full-chain fallback still finds assets. Deduped per origin via the shared marker.
-	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(report.Origin) {
+	// A network origin's extensions.json is read before probing, as the live connect path does: a .demo's recorded
+	// origin is never the session origin. Other origins skip to probing; probeRef's full walk still finds assets.
+	// Deduped per origin via the shared marker.
+	if strings.HasPrefix(report.Origin, "http") && !a.originSeeded(report.Origin) {
 		a.markOriginSeeded(report.Origin)
 		a.startContentSeed(j)
 		a.warnLine = "Checking the server's format manifest…"
@@ -582,9 +579,9 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	a.content = j
 	a.contentBusy = true
 
-	// Seed first for a network origin with auto-detect on that isn't already seeded; an in-app recording's origin is
-	// usually the live session origin, seeded on connect. Same condition as StartContentReport.
-	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(report.Origin) {
+	// Read a network origin's extensions.json first unless it already was; an in-app recording's origin is usually the
+	// live session origin, read on connect. Same condition as StartContentReport.
+	if strings.HasPrefix(report.Origin, "http") && !a.originSeeded(report.Origin) {
 		a.markOriginSeeded(report.Origin)
 		a.startContentSeed(j)
 		return
@@ -592,7 +589,7 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	a.startProbePhase(j)
 }
 
-// startContentSeed spawns the one seed goroutine: it fetches <origin>/extensions.json and seeds the learned table,
+// startContentSeed spawns the one seed goroutine: it reads <origin>/extensions.json into the media system,
 // delivering on the 1-buffered seedDone channel drained by tickContentSeed. A Cancel nils a.content so the send
 // lands in an unpolled buffer and the goroutine ends. Render thread only.
 func (a *App) startContentSeed(j *contentJob) {
@@ -600,12 +597,11 @@ func (a *App) startContentSeed(j *contentJob) {
 	j.seedDone = make(chan seedResult, contentSeedBuf)
 	done := j.seedDone
 	mgr := j.seedMgr
-	prefs := a.d.Prefs
 	origin := j.report.Origin
 	j.probeLive.Add(1)
 	go func() {
 		defer j.probeLive.Add(-1)
-		done <- seedOriginFormats(mgr, prefs, origin) // 1-buffered: always accepts
+		done <- seedOriginFormats(mgr, origin) // 1-buffered: always accepts
 	}()
 }
 
@@ -774,17 +770,12 @@ func (a *App) tickContentJob() {
 	}
 }
 
-// tickContentSeed polls the seed goroutine without blocking; on delivery it republishes the resolver table, notes
-// the outcome on the report and starts the probe phase. A Cancel nils a.content, so a stale generation never
+// tickContentSeed polls the seed goroutine without blocking; on delivery it notes the outcome on the report and
+// starts the probe phase. A Cancel nils a.content, so a stale generation never
 // reaches here. Render thread only.
 func (a *App) tickContentSeed(j *contentJob) {
 	select {
 	case res := <-j.seedDone:
-		// WarmFromPrefs on the render thread: SeedLearned wrote prefs off-thread, and this publishes them into the
-		// resolver's atomic table before any candidate is built.
-		if res.status == seedApplied {
-			a.d.Resolver.WarmFromPrefs()
-		}
 		j.report.Seed = res.status
 		a.startProbePhase(j)
 	default:

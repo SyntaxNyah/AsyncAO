@@ -36,7 +36,7 @@ func TestManagerDeliveryNotify(t *testing.T) {
 	})
 
 	base := local.BaseURL() + "characters/witch/emotions/button1_off"
-	rig.resolver.RecordSuccess(HostOf(base), AssetTypeEmoteButton, config.ExtPNG)
+	rig.manager.AllowFormats(local.BaseURL(), map[AssetType]string{AssetTypeEmoteButton: config.ExtPNG})
 	rig.manager.Prefetch(base, AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (test)
 
 	deadline := time.After(managerWait)
