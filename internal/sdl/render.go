@@ -26,6 +26,59 @@ static bool asyncaoSetScale(SDL_Renderer *renderer, float x, float y) {
 	return SDL_SetRenderViewport(renderer, &scaled);
 }
 
+static bool asyncaoIsSoftware(SDL_Renderer *renderer) {
+	const char *name = SDL_GetRendererName(renderer);
+	return name && SDL_strcmp(name, SDL_SOFTWARE_RENDERER) == 0;
+}
+
+// SDL's software renderer run-length encodes a static texture, and a blend from row y of one walks every row above
+// it: a label low in a 2048-row atlas cost 2.2 ms against 2.5 us from a streaming texture. Static there means
+// streaming.
+static SDL_Texture *asyncaoCreateTexture(SDL_Renderer *renderer, SDL_PixelFormat format, SDL_TextureAccess access,
+	int w, int h) {
+	if (access == SDL_TEXTUREACCESS_STATIC && asyncaoIsSoftware(renderer)) {
+		access = SDL_TEXTUREACCESS_STREAMING;
+	}
+	return SDL_CreateTexture(renderer, format, access, w, h);
+}
+
+// SDL_CreateTextureFromSurface always makes a static texture, so the software renderer builds a streaming one and
+// carries over what that call would: the pixels, blend mode, colour and alpha mods.
+static SDL_Texture *asyncaoCreateTextureFromSurface(SDL_Renderer *renderer, SDL_Surface *surface) {
+	if (!asyncaoIsSoftware(renderer)) {
+		return SDL_CreateTextureFromSurface(renderer, surface);
+	}
+	SDL_Surface *src = surface;
+	if (surface->format != SDL_PIXELFORMAT_ARGB8888) {
+		src = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_ARGB8888);
+		if (!src) {
+			return NULL;
+		}
+	}
+	SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+		surface->w, surface->h);
+	if (texture) {
+		SDL_BlendMode blend;
+		Uint8 r, g, b, a;
+		bool ok = SDL_UpdateTexture(texture, NULL, src->pixels, src->pitch) &&
+			SDL_GetSurfaceBlendMode(surface, &blend) && SDL_SetTextureBlendMode(texture, blend) &&
+			SDL_GetSurfaceColorMod(surface, &r, &g, &b) && SDL_SetTextureColorMod(texture, r, g, b) &&
+			SDL_GetSurfaceAlphaMod(surface, &a) && SDL_SetTextureAlphaMod(texture, a);
+		if (!ok) {
+			SDL_DestroyTexture(texture);
+			texture = NULL;
+		}
+	}
+	if (src != surface) {
+		SDL_DestroySurface(src);
+	}
+	return texture;
+}
+
+static int asyncaoTextureAccess(SDL_Texture *texture) {
+	return (int)SDL_GetNumberProperty(SDL_GetTextureProperties(texture), SDL_PROP_TEXTURE_ACCESS_NUMBER, -1);
+}
+
 static const SDL_PixelFormat *asyncaoTextureFormats(SDL_Renderer *renderer) {
 	return (const SDL_PixelFormat *)SDL_GetPointerProperty(SDL_GetRendererProperties(renderer),
 		SDL_PROP_RENDERER_TEXTURE_FORMATS_POINTER, NULL);
@@ -73,8 +126,9 @@ const (
 
 // Texture access modes.
 const (
-	TEXTUREACCESS_STATIC = C.SDL_TEXTUREACCESS_STATIC
-	TEXTUREACCESS_TARGET = C.SDL_TEXTUREACCESS_TARGET
+	TEXTUREACCESS_STATIC    = C.SDL_TEXTUREACCESS_STATIC
+	TEXTUREACCESS_STREAMING = C.SDL_TEXTUREACCESS_STREAMING
+	TEXTUREACCESS_TARGET    = C.SDL_TEXTUREACCESS_TARGET
 )
 
 // Renderer creation flags. SDL3 has none of its own: software picks SDL's
@@ -140,18 +194,20 @@ func (r *Renderer) SetDefaultTextureScaleMode(mode ScaleMode) error {
 	return errorOr(C.SDL_SetDefaultTextureScaleMode(r.c(), C.SDL_ScaleMode(mode)))
 }
 
-// CreateTexture creates a w×h texture.
+// CreateTexture creates a w×h texture. On SDL's software renderer a static texture is made streaming, which SDL
+// doesn't run-length encode.
 func (r *Renderer) CreateTexture(format uint32, access int, w, h int32) (*Texture, error) {
-	t := C.SDL_CreateTexture(r.c(), C.SDL_PixelFormat(format), C.SDL_TextureAccess(access), C.int(w), C.int(h))
+	t := C.asyncaoCreateTexture(r.c(), C.SDL_PixelFormat(format), C.SDL_TextureAccess(access), C.int(w), C.int(h))
 	if t == nil {
 		return nil, errorOr(false)
 	}
 	return (*Texture)(t), nil
 }
 
-// CreateTextureFromSurface uploads a surface into a new texture.
+// CreateTextureFromSurface uploads a surface into a new texture, streaming on SDL's software renderer as CreateTexture
+// makes it.
 func (r *Renderer) CreateTextureFromSurface(s *Surface) (*Texture, error) {
-	t := C.SDL_CreateTextureFromSurface(r.c(), s.s)
+	t := C.asyncaoCreateTextureFromSurface(r.c(), s.s)
 	if t == nil {
 		return nil, errorOr(false)
 	}
@@ -289,6 +345,9 @@ func (r *Renderer) ReadPixels(rect *Rect, format uint32, pixels unsafe.Pointer, 
 }
 
 func (t *Texture) c() *C.SDL_Texture { return (*C.SDL_Texture)(t) }
+
+// Access reports how the texture was created: TEXTUREACCESS_STATIC, TEXTUREACCESS_STREAMING or TEXTUREACCESS_TARGET.
+func (t *Texture) Access() int { return int(C.asyncaoTextureAccess(t.c())) }
 
 // Destroy frees the texture.
 func (t *Texture) Destroy() error {
