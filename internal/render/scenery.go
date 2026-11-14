@@ -53,7 +53,7 @@ func (v *Viewport) drawScenery(ren *sdl.Renderer, scene *courtroom.Scene, base s
 		d = scaleChannel(channelMax, dimPct)
 		_ = tex.SetColorMod(d, d, d)
 	}
-	if !v.drawScaled(ren, &anim.scaled, page, frame, tex, v.fillRect, sdl.FLIP_NONE, d, d, d) {
+	if !v.drawScaled(ren, &anim.scaled, page, frame, tex, v.fillRect, sdl.FLIP_NONE, d, d, d, channelMax) {
 		_ = ren.Copy(tex, nil, &v.fillRect)
 	}
 	if dimPct < percentMax {

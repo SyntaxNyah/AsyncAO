@@ -14,6 +14,9 @@ type Graphics struct {
 	Name string
 	// Software reports drawing on the CPU with SDL's software renderer.
 	Software bool
+	// Format names the pixel format the frame is drawn into, which sets the cost of every blended draw on the CPU.
+	// Empty on a GPU renderer.
+	Format string
 }
 
 // GraphicsOptions configures how OpenGraphics picks the graphics.
@@ -33,7 +36,7 @@ func OpenGraphics(window *sdl.Window, opts GraphicsOptions) (*Graphics, error) {
 	if !opts.ForceSoftware {
 		ren, err := sdl.CreateRenderer(window, -1, flags)
 		if err == nil {
-			return newGraphics(ren), nil
+			return newGraphics(window, ren), nil
 		}
 		log.Printf("gpu: no GPU renderer: %v", err)
 	}
@@ -41,13 +44,17 @@ func OpenGraphics(window *sdl.Window, opts GraphicsOptions) (*Graphics, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newGraphics(ren), nil
+	return newGraphics(window, ren), nil
 }
 
-func newGraphics(ren *sdl.Renderer) *Graphics {
+func newGraphics(window *sdl.Window, ren *sdl.Renderer) *Graphics {
 	name := "unknown"
 	if info, err := ren.GetInfo(); err == nil {
 		name = info.Name
 	}
-	return &Graphics{Renderer: ren, Name: name, Software: name == sdl.SoftwareRendererName}
+	g := &Graphics{Renderer: ren, Name: name, Software: name == sdl.SoftwareRendererName}
+	if g.Software {
+		g.Format = window.SurfaceFormatName()
+	}
+	return g
 }

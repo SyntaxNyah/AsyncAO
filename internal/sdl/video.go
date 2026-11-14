@@ -233,6 +233,21 @@ func (w *Window) Flash(op FlashOperation) error {
 // until it is called.
 func (w *Window) StartTextInput() error { return errorOr(C.SDL_StartTextInput(w.c())) }
 
+// PixelFormatName names the pixel format of the display the window is on.
+func (w *Window) PixelFormatName() string {
+	return C.GoString(C.SDL_GetPixelFormatName(C.SDL_GetWindowPixelFormat(w.c())))
+}
+
+// SurfaceFormatName names the pixel format of the window's surface, the one SDL's software renderer draws into. Call
+// it only while that renderer draws to the window: asking for the surface would break a GPU renderer.
+func (w *Window) SurfaceFormatName() string {
+	s := C.SDL_GetWindowSurface(w.c())
+	if s == nil {
+		return ""
+	}
+	return C.GoString(C.SDL_GetPixelFormatName(s.format))
+}
+
 // Win32Handle returns the window's HWND, or nil off Windows.
 func (w *Window) Win32Handle() unsafe.Pointer { return C.asyncaoWin32Handle(w.c()) }
 

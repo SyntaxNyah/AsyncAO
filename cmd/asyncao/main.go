@@ -202,7 +202,10 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	}
 	ren := graphics.Renderer
 	defer func() { _ = ren.Destroy() }()
-	log.Printf("renderer: %s", graphics.Name)
+	log.Printf("renderer: %s, display %s", graphics.Name, window.PixelFormatName())
+	if graphics.Software {
+		log.Printf("software renderer draws into %s", graphics.Format)
+	}
 	gpuWatcher := host.NewGPUWatcher(gpuRecoveries, graphics.Software, time.Now)
 	// A frame stuck in the driver never returns an error, so only a clock notices it; the CPU renderer is the last step.
 	stalls := host.NewStallWatch(rendererStallLimit, stallCheckEvery, time.Now, func(time.Duration) {

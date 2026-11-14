@@ -32,6 +32,9 @@ type scaledFrame struct {
 	mirrorW, mirrorH int32
 	key              scaledKey
 	built            bool
+	opaque           bool
+	// alpha is the cached texture's alpha mod; a fixed fade, such as a reflection's, is applied at the copy.
+	alpha uint8
 }
 
 // release destroys the cached textures; render thread only.
@@ -94,13 +97,24 @@ func (f *scaledFrame) build(ren *sdl.Renderer, key scaledKey, opaque bool) bool 
 	if !ok {
 		return false
 	}
-	blend := sdl.BlendMode(sdl.BLENDMODE_BLEND)
-	if opaque {
-		blend = sdl.BLENDMODE_NONE
-	}
-	_ = f.tex.SetBlendMode(blend)
+	f.opaque = opaque
+	f.alpha = 0 // unset, so the first draw sets the texture's alpha and blending
 	f.key, f.built = key, true
 	return true
+}
+
+// setAlpha sets the cached texture's alpha mod, blending whenever the frame or the fade lets the stage show through.
+func (f *scaledFrame) setAlpha(alpha uint8) {
+	if f.alpha == alpha {
+		return
+	}
+	blend := sdl.BlendMode(sdl.BLENDMODE_BLEND)
+	if f.opaque && alpha == channelMax {
+		blend = sdl.BLENDMODE_NONE
+	}
+	_ = f.tex.SetAlphaMod(alpha)
+	_ = f.tex.SetBlendMode(blend)
+	f.alpha = alpha
 }
 
 // scaledPixels converts a coordinate in render units to pixels under the render scale s.
@@ -110,9 +124,9 @@ func scaledPixels(n int32, s float32) int32 {
 
 // drawScaled copies frame of page to dst through sf, a pre-scaled copy, and reports whether it drew; false leaves the
 // draw to the caller (not SDL's software renderer, or too big to keep). src carries the colour mod to bake in, and
-// page's applyScaleMode must have run, as its remembered filter is the one baked in.
+// page's applyScaleMode must have run, as its remembered filter is the one baked in. alpha fades the copy.
 func (v *Viewport) drawScaled(ren *sdl.Renderer, sf *scaledFrame, page *TexturePage, frame int, src *sdl.Texture,
-	dst sdl.Rect, flip sdl.RendererFlip, modR, modG, modB uint8) bool {
+	dst sdl.Rect, flip sdl.RendererFlip, modR, modG, modB, alpha uint8) bool {
 	if !v.prescale {
 		return false
 	}
@@ -126,6 +140,7 @@ func (v *Viewport) drawScaled(ren *sdl.Renderer, sf *scaledFrame, page *TextureP
 	if (!sf.built || sf.key != key) && !sf.build(ren, key, page.Opaque) {
 		return false
 	}
+	sf.setAlpha(alpha)
 	if sx == 1 && sy == 1 {
 		_ = ren.Copy(sf.tex, nil, &v.scaledDst)
 		return true

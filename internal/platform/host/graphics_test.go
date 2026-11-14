@@ -1,6 +1,7 @@
 package host
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -47,6 +48,9 @@ func TestOpenGraphicsAlwaysDraws(t *testing.T) {
 		}
 		if !g.Software {
 			t.Errorf("force=%v: SDL's software renderer did not report software — a GPUWatcher would escalate to it again", force)
+		}
+		if !strings.HasPrefix(g.Format, "SDL_PIXELFORMAT_") {
+			t.Errorf("force=%v: format = %q, want the window surface's pixel format", force, g.Format)
 		}
 		_ = g.Renderer.Destroy()
 	}

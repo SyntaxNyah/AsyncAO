@@ -22,7 +22,23 @@ const (
 	prescaleMaxOffPct = 1
 	percent           = 100
 	argbBytes         = 4
+	// prescaleReflectStrength is a reflection faint enough that a missed fade shows.
+	prescaleReflectStrength = 40
+	// prescaleFeetPct is where the speaker's feet band starts, below the reflection's floor line, so the mirrored
+	// feet land on rows of another colour.
+	prescaleFeetPct = 92
 )
+
+// withFeet paints the rows from fromPct of the height down in c.
+func withFeet(d *assets.Decoded, fromPct int, c color.RGBA) *assets.Decoded {
+	img := d.Frames[0]
+	for y := d.Height * fromPct / percent; y < d.Height; y++ {
+		for x := 0; x < d.Width; x++ {
+			img.SetRGBA(x, y, c)
+		}
+	}
+	return d
+}
 
 // halvesDecoded is a w×h frame with its left half left and its right half right, so a mirror shows.
 func halvesDecoded(w, h int, left, right color.RGBA) *assets.Decoded {
@@ -80,8 +96,8 @@ func offPct(a, b []byte) int {
 }
 
 // TestPrescaledDrawMatchesDirectDraw pins the software renderer's pre-scaled frames to what a direct scaled copy
-// draws, through a run of changes that must each rebuild the cached frame: a mirror, a render scale, a smaller
-// stage, another sprite, a dimmed pair.
+// draws, through a run of changes that must each rebuild the cached frame: a mirror, a faded reflection, a render
+// scale, a smaller stage, another sprite, a dimmed pair.
 func TestPrescaledDrawMatchesDirectDraw(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
@@ -97,7 +113,7 @@ func TestPrescaledDrawMatchesDirectDraw(t *testing.T) {
 	const spriteW, spriteH, bgW, bgH = 48, 64, 64, 48
 	for base, d := range map[string]*assets.Decoded{
 		"bg":    halvesDecoded(bgW, bgH, blue, green),
-		"spk":   halvesDecoded(spriteW, spriteH, red, clear),
+		"spk":   withFeet(halvesDecoded(spriteW, spriteH, red, clear), prescaleFeetPct, blue),
 		"other": halvesDecoded(spriteW, spriteH, clear, green),
 		"pair":  halvesDecoded(spriteW, spriteH, green, red),
 	} {
@@ -121,6 +137,9 @@ func TestPrescaledDrawMatchesDirectDraw(t *testing.T) {
 	}{
 		{"first draw", func() {}, full, 1},
 		{"mirrored", func() { scene.Speaker.Flip = true }, full, 1},
+		{"reflection", func() {
+			cached.SetSpriteFX(SpriteFX{Reflection: true, ReflectStrength: prescaleReflectStrength})
+		}, full, 1},
 		{"render scale", func() {}, small, 1.5},
 		{"smaller stage", func() {}, small, 1},
 		{"another sprite", func() { scene.Speaker.Active = "other" }, small, 1},

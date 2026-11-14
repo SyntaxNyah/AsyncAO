@@ -55,6 +55,8 @@ type animState struct {
 
 	// scaled is this layer's pre-scaled frame on SDL's software renderer.
 	scaled scaledFrame
+	// reflected is the same for its reflection, which SDL would otherwise mirror through its slow rotation path.
+	reflected scaledFrame
 }
 
 // reset rebinds the state to a new asset base, keeping lastGood for the cold-load hold.
@@ -497,6 +499,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	if len(v.groupAnims) != len(scene.Group) {
 		for i := range v.groupAnims {
 			v.groupAnims[i].scaled.release()
+			v.groupAnims[i].reflected.release()
 		}
 		v.groupAnims = make([]animState, len(scene.Group))
 	}
@@ -1100,6 +1103,9 @@ func (v *Viewport) drawReflection(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 		flip |= sdl.FLIP_HORIZONTAL
 	}
 	tex := page.Frames[frame]
+	if v.drawScaled(ren, &anim.reflected, page, frame, tex, v.reflRect, flip, channelMax, channelMax, channelMax, alpha) {
+		return
+	}
 	_ = tex.SetAlphaMod(alpha)
 	_ = ren.CopyEx(tex, nil, &v.reflRect, 0, nil, flip)
 	_ = tex.SetAlphaMod(channelMax) // restore the shared page
@@ -1475,7 +1481,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	switch {
 	case glitch && glitchMode == courtroom.GlitchTorn && angle == 0 && v.fxClock%glitchTornPeriod < glitchTornWindow:
 		v.drawTornSprite(ren, tex, page, flip, glitchSplit)
-	case plain && v.drawScaled(ren, &anim.scaled, drawPage, frame, tex, v.dstRect, flip, modR, modG, modB):
+	case plain && v.drawScaled(ren, &anim.scaled, drawPage, frame, tex, v.dstRect, flip, modR, modG, modB, channelMax):
 	default:
 		_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
 	}
