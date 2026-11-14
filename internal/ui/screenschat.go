@@ -68,7 +68,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	skinned := false
 	if charSkin != nil {
 		c.cgoRect = box
-		_ = c.Ren.Copy(charSkin, nil, &c.cgoRect)
+		c.copy(charSkin, nil, &c.cgoRect)
 		skinned = true
 	}
 	if !skinned {
@@ -77,7 +77,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			// themed path (chatboxfit.go).
 			page, _ = a.chatboxSkinForShowname(sc.ShownameText, page)
 			c.cgoRect = box
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+			c.copy(a.themeFrame(page), nil, &c.cgoRect)
 			skinned = true
 		}
 	}

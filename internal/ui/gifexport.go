@@ -851,7 +851,7 @@ func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.R
 	court := lay.area
 	if page, ok := a.themePage("courtroombackground"); ok {
 		c.cgoRect = court
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+		c.copy(a.themeFrame(page), nil, &c.cgoRect)
 	} else {
 		c.Fill(court, ColPanel)
 	}
@@ -936,10 +936,10 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 
 	if charSkin != nil {
 		c.cgoRect = box
-		_ = c.Ren.Copy(charSkin, nil, &c.cgoRect)
+		c.copy(charSkin, nil, &c.cgoRect)
 	} else if themeSkinned {
 		c.cgoRect = box
-		_ = c.Ren.Copy(a.themeFrame(skinPage), nil, &c.cgoRect)
+		c.copy(a.themeFrame(skinPage), nil, &c.cgoRect)
 	} else {
 		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
 		c.Border(box, ColAccent)

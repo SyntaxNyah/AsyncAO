@@ -63,7 +63,7 @@ func (a *App) drawThemePreview(y int32) int32 {
 	prev := sdl.Rect{X: pad, Y: y, W: prevW, H: prevH}
 	skinned := false
 	if page, ok := a.themePage(themeStemChatbox); ok {
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &prev)
+		c.copy(a.themeFrame(page), nil, &prev)
 		skinned = true
 	}
 	if !skinned {

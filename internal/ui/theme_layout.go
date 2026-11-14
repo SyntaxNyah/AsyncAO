@@ -398,7 +398,7 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 		// themedRotationDeg reads the baked cache map, never prefs; these backdrops are not editor keys, so this
 		// resolves 0.
 		if ang := a.themedRotationDeg(stem); ang == 0 {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+			c.copy(a.themeFrame(page), nil, &c.cgoRect)
 		} else {
 			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
 		}
@@ -416,7 +416,7 @@ func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 		c.cgoRect = r
 		// Only the art rotates: the hover border and hit test stay the un-rotated rect.
 		if ang := a.themedRotationDeg(key); ang == 0 {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+			c.copy(a.themeFrame(page), nil, &c.cgoRect)
 		} else {
 			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
 		}
@@ -507,7 +507,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// courtroombackground is a fixed stage frame, so this resolves 0; themedRotationDeg reads the baked map, never
 		// prefs.
 		if ang := a.themedRotationDeg("courtroombackground"); ang == 0 {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+			c.copy(a.themeFrame(page), nil, &c.cgoRect)
 		} else {
 			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
 		}
@@ -1099,7 +1099,7 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 		c.cgoRect = box
 		// The skin art rotates; the showname/message text stays axis-aligned.
 		if ang := lay.angle(themeChatboxKey); ang == 0 {
-			_ = c.Ren.Copy(charSkin, nil, &c.cgoRect)
+			c.copy(charSkin, nil, &c.cgoRect)
 		} else {
 			_ = c.Ren.CopyEx(charSkin, nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
 		}
@@ -1110,7 +1110,7 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 		// Only the skin rotates; text stays axis-aligned. The destination is the ao2_chatbox rect on every rung: AO2
 		// stretches swapped art into the widget it already sized (AOImage::setImage, aoimage.cpp:29-31).
 		if ang := lay.angle(themeChatboxKey); ang == 0 {
-			_ = c.Ren.Copy(a.themeFrame(skinPage), nil, &c.cgoRect)
+			c.copy(a.themeFrame(skinPage), nil, &c.cgoRect)
 		} else {
 			_ = c.Ren.CopyEx(a.themeFrame(skinPage), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
 		}
@@ -1414,7 +1414,7 @@ func (a *App) drawThemedMusicPlate(lay *themeLayoutCache) bool {
 	}
 	// &md into cgo would heap-allocate the parameter every frame.
 	c.cgoRect = md
-	_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+	c.copy(a.themeFrame(page), nil, &c.cgoRect)
 
 	// music_name is a child rect, offset by the plate's origin.
 	mn, ok := lay.rect("music_name")

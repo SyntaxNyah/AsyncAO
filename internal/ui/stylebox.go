@@ -416,7 +416,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			a.stylePrevBgPages, a.stylePrevBgKey = nil, bgBase
 		}
 		if page, ok := a.cachedPage(&a.stylePrevBgPages, &a.stylePrevBgGen, 1, 0, bgBase); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &pv)
+			c.copy(page.Frames[0], nil, &pv)
 		} else {
 			c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
 			if a.sess.Background != "" {

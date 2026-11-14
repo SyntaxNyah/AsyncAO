@@ -281,5 +281,5 @@ func (a *App) drawCharSelectBackdrop(w, h int32, lay *charSelectLayoutCache) {
 	// &lay.area into cgo would allocate per frame, so use the shared scratch; SDL doesn't retain the pointer.
 	// No rotation branch: per-key angles exist only in the courtroom layout cache.
 	c.cgoRect = lay.area
-	_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+	c.copy(a.themeFrame(page), nil, &c.cgoRect)
 }

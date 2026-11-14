@@ -348,5 +348,5 @@ func (c *Ctx) copy9(tex *sdl.Texture, sx, sy, sw, sh, dx, dy, dw, dh int32) {
 	}
 	c.shapeSrcScratch = sdl.Rect{X: sx, Y: sy, W: sw, H: sh}
 	c.shapeDstScratch = sdl.Rect{X: dx, Y: dy, W: dw, H: dh}
-	_ = c.Ren.Copy(tex, &c.shapeSrcScratch, &c.shapeDstScratch)
+	c.copy(tex, &c.shapeSrcScratch, &c.shapeDstScratch)
 }

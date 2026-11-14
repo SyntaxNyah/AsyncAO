@@ -388,7 +388,7 @@ func (a *App) drawCharOverlayArt(stem string, dst sdl.Rect) bool {
 	// Shared scratch, not &dst: a cgo pointer arg from a parameter heap-allocates per call, and this runs per taken
 	// cell per frame.
 	c.cgoRect = dst
-	_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+	c.copy(a.themeFrame(page), nil, &c.cgoRect)
 	return true
 }
 

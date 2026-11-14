@@ -254,7 +254,7 @@ func (a *App) drawICColorWheel(w, h int32) {
 	rad := float64(diam) / 2
 	wheel := sdl.Rect{X: r.X + 12, Y: r.Y + 26, W: diam, H: diam}
 	if tex := a.ensureColorWheel(); tex != nil {
-		_ = c.Ren.Copy(tex, nil, &wheel)
+		c.copy(tex, nil, &wheel)
 	}
 	ang := hh * 2 * math.Pi
 	dotX := wheel.X + int32(rad+math.Cos(ang)*ss*rad)
@@ -323,7 +323,7 @@ func (a *App) drawWheelPicker(x, y int32, cur int, set func(rgb int)) (nextY, he
 	rad := float64(diam) / 2
 	wheel := sdl.Rect{X: x, Y: y, W: diam, H: diam}
 	if tex := a.ensureColorWheel(); tex != nil {
-		_ = c.Ren.Copy(tex, nil, &wheel)
+		c.copy(tex, nil, &wheel)
 	}
 	// Selector ring at the current hue/sat.
 	ang := h * 2 * math.Pi

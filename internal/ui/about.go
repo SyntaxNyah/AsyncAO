@@ -318,7 +318,7 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect) {
 	if angle != 0 {
 		_ = c.Ren.CopyEx(tex, nil, &dst, angle, nil, sdl.FLIP_NONE)
 	} else {
-		_ = c.Ren.Copy(tex, nil, &dst)
+		c.copy(tex, nil, &dst)
 	}
 
 	// No on-screen guard: the enclosing pushClip makes hovering() ignore hits in the scrolled-out half.

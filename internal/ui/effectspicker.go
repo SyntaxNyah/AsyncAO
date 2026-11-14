@@ -524,7 +524,7 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 	if page, ok := a.cachedPage(&a.overlayIconPages, &a.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
 		// Through the shared cgo scratch, never &tr: a parameter's address heap-escapes on every cgo call.
 		c.cgoRect = tr
-		_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
+		c.copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
 		c.Fill(tr, overlayIconChipColor)
 		if path == "" {

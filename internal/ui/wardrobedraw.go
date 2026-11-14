@@ -446,7 +446,7 @@ func (a *App) drawWardrobeFolderIcon(f config.WardrobeFolder, r sdl.Rect) {
 	c := a.ctx
 	if page, ok := a.wardrobeImagePage(f.Image); ok {
 		c.cgoRect = r
-		_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
+		c.copy(page.Frames[0], nil, &c.cgoRect)
 		return
 	}
 	c.Icon(wardrobeIconShape(f.Icon), r, wardrobeColorOf(f.Color))
@@ -1193,7 +1193,7 @@ func (a *App) drawWardrobeCharIcon(idx int, it wardrobe.Item, r sdl.Rect) {
 	base := a.urls.CharIcon(it.Char)
 	if page, ok := a.cachedPage(&ward.pages, &ward.pagesGen, len(ward.flat), idx, base); ok && len(page.Frames) > 0 {
 		c.cgoRect = r
-		_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
+		c.copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
 		a.demandAsset(&ward.ask, len(ward.flat), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (wardrobe)
 		initials := it.Char

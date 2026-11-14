@@ -185,7 +185,7 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 		rc := sdl.Rect{X: cx, Y: cy, W: evidServerCell, H: evidServerCell}
 		url := a.urls.Evidence(name)
 		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
+			c.copy(page.Frames[0], nil, &rc)
 		} else {
 			c.Fill(rc, ColPanelHi)
 			a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (server evidence picker thumbnail)

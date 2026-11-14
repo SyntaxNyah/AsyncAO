@@ -23,6 +23,9 @@ type scaledKey struct {
 	mode             sdl.ScaleMode
 	flip             sdl.RendererFlip
 	modR, modG, modB uint8
+	// alpha is a fixed fade, such as a reflection's, baked into the pixels: SDL's software renderer blends a texture
+	// with an alpha mod about 27 times slower than one without.
+	alpha uint8
 }
 
 // scaledFrame is one layer's frame at its size in pixels, owned by that layer's animState.
@@ -32,9 +35,6 @@ type scaledFrame struct {
 	mirrorW, mirrorH int32
 	key              scaledKey
 	built            bool
-	opaque           bool
-	// alpha is the cached texture's alpha mod; a fixed fade, such as a reflection's, is applied at the copy.
-	alpha uint8
 }
 
 // release destroys the cached textures; render thread only.
@@ -90,31 +90,22 @@ func (f *scaledFrame) build(ren *sdl.Renderer, key scaledKey, opaque bool) bool 
 	}
 	ok := ren.SetRenderTarget(f.tex) == nil
 	if ok {
+		_ = src.SetAlphaMod(key.alpha) // with blending off, the fade lands in the cached pixels' alpha
 		_ = ren.Copy(src, nil, nil)
+		_ = src.SetAlphaMod(channelMax)
 	}
 	_ = key.src.SetBlendMode(sdl.BLENDMODE_BLEND)
 	_ = ren.SetRenderTarget(prev)
 	if !ok {
 		return false
 	}
-	f.opaque = opaque
-	f.alpha = 0 // unset, so the first draw sets the texture's alpha and blending
-	f.key, f.built = key, true
-	return true
-}
-
-// setAlpha sets the cached texture's alpha mod, blending whenever the frame or the fade lets the stage show through.
-func (f *scaledFrame) setAlpha(alpha uint8) {
-	if f.alpha == alpha {
-		return
-	}
 	blend := sdl.BlendMode(sdl.BLENDMODE_BLEND)
-	if f.opaque && alpha == channelMax {
+	if opaque && key.alpha == channelMax {
 		blend = sdl.BLENDMODE_NONE
 	}
-	_ = f.tex.SetAlphaMod(alpha)
 	_ = f.tex.SetBlendMode(blend)
-	f.alpha = alpha
+	f.key, f.built = key, true
+	return true
 }
 
 // scaledPixels converts a coordinate in render units to pixels under the render scale s.
@@ -136,11 +127,10 @@ func (v *Viewport) drawScaled(ren *sdl.Renderer, sf *scaledFrame, page *TextureP
 		return false
 	}
 	key := scaledKey{page: page, frame: frame, src: src, w: v.scaledDst.W, h: v.scaledDst.H, mode: page.scaleMode, flip: flip,
-		modR: modR, modG: modG, modB: modB}
+		modR: modR, modG: modG, modB: modB, alpha: alpha}
 	if (!sf.built || sf.key != key) && !sf.build(ren, key, page.Opaque) {
 		return false
 	}
-	sf.setAlpha(alpha)
 	if sx == 1 && sy == 1 {
 		_ = ren.Copy(sf.tex, nil, &v.scaledDst)
 		return true

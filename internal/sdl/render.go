@@ -75,6 +75,36 @@ static SDL_Texture *asyncaoCreateTextureFromSurface(SDL_Renderer *renderer, SDL_
 	return texture;
 }
 
+#define ASYNCAO_TEXTURE_VERSION "asyncao.version"
+
+// Bumps the texture's content version after a successful update, so a copy made from the old pixels can tell.
+static bool asyncaoUpdateTexture(SDL_Texture *texture, const SDL_Rect *rect, const void *pixels, int pitch) {
+	if (!SDL_UpdateTexture(texture, rect, pixels, pitch)) {
+		return false;
+	}
+	SDL_PropertiesID props = SDL_GetTextureProperties(texture);
+	SDL_SetNumberProperty(props, ASYNCAO_TEXTURE_VERSION, SDL_GetNumberProperty(props, ASYNCAO_TEXTURE_VERSION, 0) + 1);
+	return true;
+}
+
+static void asyncaoTextureState(SDL_Texture *texture, int *w, int *h, Uint8 *r, Uint8 *g, Uint8 *b, Uint8 *a,
+	int *blend, int *scale, int *access, Uint32 *id, Sint64 *version) {
+	SDL_PropertiesID props = SDL_GetTextureProperties(texture);
+	SDL_BlendMode bm = SDL_BLENDMODE_NONE;
+	SDL_ScaleMode sm = SDL_SCALEMODE_LINEAR;
+	*w = (int)SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_WIDTH_NUMBER, 0);
+	*h = (int)SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_HEIGHT_NUMBER, 0);
+	SDL_GetTextureColorMod(texture, r, g, b);
+	SDL_GetTextureAlphaMod(texture, a);
+	SDL_GetTextureBlendMode(texture, &bm);
+	SDL_GetTextureScaleMode(texture, &sm);
+	*blend = (int)bm;
+	*scale = (int)sm;
+	*access = (int)SDL_GetNumberProperty(props, SDL_PROP_TEXTURE_ACCESS_NUMBER, -1);
+	*id = props;
+	*version = SDL_GetNumberProperty(props, ASYNCAO_TEXTURE_VERSION, 0);
+}
+
 static int asyncaoTextureAccess(SDL_Texture *texture) {
 	return (int)SDL_GetNumberProperty(SDL_GetTextureProperties(texture), SDL_PROP_TEXTURE_ACCESS_NUMBER, -1);
 }
@@ -346,6 +376,28 @@ func (r *Renderer) ReadPixels(rect *Rect, format uint32, pixels unsafe.Pointer, 
 
 func (t *Texture) c() *C.SDL_Texture { return (*C.SDL_Texture)(t) }
 
+// TextureState is what a draw of a texture depends on.
+type TextureState struct {
+	W, H       int32
+	R, G, B, A uint8
+	Blend      BlendMode
+	Scale      ScaleMode
+	Access     int32
+	// ID names the texture for its whole life: SDL never reuses a properties ID.
+	ID uint32
+	// Version counts the updates of the texture's pixels.
+	Version int64
+}
+
+// State fills out with the texture's size, mods, modes, access, ID and version in one call; out is the caller's, so
+// nothing is allocated.
+func (t *Texture) State(out *TextureState) {
+	C.asyncaoTextureState(t.c(), (*C.int)(unsafe.Pointer(&out.W)), (*C.int)(unsafe.Pointer(&out.H)),
+		(*C.Uint8)(&out.R), (*C.Uint8)(&out.G), (*C.Uint8)(&out.B), (*C.Uint8)(&out.A),
+		(*C.int)(unsafe.Pointer(&out.Blend)), (*C.int)(unsafe.Pointer(&out.Scale)),
+		(*C.int)(unsafe.Pointer(&out.Access)), (*C.Uint32)(&out.ID), (*C.Sint64)(&out.Version))
+}
+
 // Access reports how the texture was created: TEXTUREACCESS_STATIC, TEXTUREACCESS_STREAMING or TEXTUREACCESS_TARGET.
 func (t *Texture) Access() int { return int(C.asyncaoTextureAccess(t.c())) }
 
@@ -361,7 +413,7 @@ func (t *Texture) Update(rect *Rect, pixels unsafe.Pointer, pitch int) error {
 	if rect != nil {
 		cr = rect.c()
 	}
-	return errorOr(C.SDL_UpdateTexture(t.c(), cr, pixels, C.int(pitch)))
+	return errorOr(C.asyncaoUpdateTexture(t.c(), cr, pixels, C.int(pitch)))
 }
 
 // SetBlendMode sets how the texture blends when drawn.

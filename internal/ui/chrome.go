@@ -301,7 +301,7 @@ func (a *App) wheelHexEditor(y int32, fieldID string, hexBuf *string, cur sdl.Co
 	rad := float64(diam) / 2
 	wheel := sdl.Rect{X: pad, Y: y, W: diam, H: diam}
 	if tex := a.ensureColorWheel(); tex != nil {
-		_ = c.Ren.Copy(tex, nil, &wheel)
+		c.copy(tex, nil, &wheel)
 	}
 	ang := hh * 2 * math.Pi
 	dotX := wheel.X + int32(rad+math.Cos(ang)*ss*rad)

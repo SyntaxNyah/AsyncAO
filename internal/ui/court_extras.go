@@ -395,7 +395,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			// costs no per-frame allocation; do not promote it to a shared scratch.
 			frame := page.Frames[pageFrameLoop(page, time.Since(a.wtceAt))]
 			if ang := badgeAngle(lay, "testimony"); ang == 0 {
-				_ = c.Ren.Copy(frame, nil, &dst)
+				c.copy(frame, nil, &dst)
 			} else {
 				_ = c.Ren.CopyEx(frame, nil, &dst, ang, nil, sdl.FLIP_NONE)
 			}
@@ -416,7 +416,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			dst := sdl.Rect{X: vp.X + vp.W - w - 8, Y: vp.Y + vp.H/4, W: w, H: h}
 			// Angle resolves 0 today (see the testimony badge); the local &dst is kept for the same reason.
 			if ang := badgeAngle(lay, "evidence_display"); ang == 0 {
-				_ = c.Ren.Copy(page.Frames[0], nil, &dst)
+				c.copy(page.Frames[0], nil, &dst)
 			} else {
 				_ = c.Ren.CopyEx(page.Frames[0], nil, &dst, ang, nil, sdl.FLIP_NONE)
 			}
@@ -440,7 +440,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 				dst := sdl.Rect{X: vp.X + (vp.W-w)/2, Y: vp.Y + (vp.H-h)/2, W: w, H: h}
 				// Angle resolves 0 today (see the testimony badge); the local &dst is kept for the same reason.
 				if ang := badgeAngle(lay, "wtce_splash"); ang == 0 {
-					_ = c.Ren.Copy(page.Frames[idx], nil, &dst)
+					c.copy(page.Frames[idx], nil, &dst)
 				} else {
 					_ = c.Ren.CopyEx(page.Frames[idx], nil, &dst, ang, nil, sdl.FLIP_NONE)
 				}
@@ -520,7 +520,7 @@ func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int, angleDeg float64) {
 		// 0/90/180/270
 		// cycle avoids that.
 		if angleDeg == 0 {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+			c.copy(a.themeFrame(page), nil, &c.cgoRect)
 		} else {
 			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, angleDeg, nil, sdl.FLIP_NONE)
 		}
@@ -788,7 +788,7 @@ func (a *App) posThumbDraw(i int, tr sdl.Rect) {
 	scenery := a.urls.PositionScenery(bg, choices[i], nil)
 	base := scenery.Background
 	if page, ok := a.cachedPage(&a.posBgPages, &a.posBgGen, len(choices), i, base); ok && len(page.Frames) > 0 {
-		_ = c.Ren.Copy(page.Frames[0], nil, &tr)
+		c.copy(page.Frames[0], nil, &tr)
 	} else {
 		c.Fill(tr, sdl.Color{R: 10, G: 10, B: 14, A: 255})
 		a.demandAsset(&a.posBgAsk, len(choices), i, base, assets.AssetTypeBackground, scenery.Alts...) // AssetType: Background (pos thumb)
@@ -1066,7 +1066,7 @@ func (a *App) drawEvidenceList(list sdl.Rect) {
 		iconR := sdl.Rect{X: row.X + 4, Y: row.Y + (rowH-icon)/2, W: icon, H: icon}
 		url := a.evidURL(item.Image)
 		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &iconR)
+			c.copy(page.Frames[0], nil, &iconR)
 		} else {
 			c.Fill(iconR, ColPanelHi)
 			a.demandEvidence(i, url)
@@ -1125,7 +1125,7 @@ func (a *App) drawEvidenceGrid(grid sdl.Rect) {
 		}
 		url := a.evidURL(item.Image)
 		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
+			c.copy(page.Frames[0], nil, &rc)
 		} else {
 			c.Fill(rc, ColPanelHi)
 			a.demandEvidence(i, url)

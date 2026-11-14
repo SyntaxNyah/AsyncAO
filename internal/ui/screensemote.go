@@ -475,12 +475,12 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 	}
 	if ok && len(page.Frames) > 0 {
 		// Fills the cell: AO2 scales button art with Qt::IgnoreAspectRatio (aobutton.cpp AOButton::updateIcon).
-		_ = c.Ren.Copy(page.Frames[0], nil, &btn)
+		c.copy(page.Frames[0], nil, &btn)
 	} else {
 		// No button art (404 or still streaming): fall back to the character icon, one small image per character.
 		iconBase := a.urls.CharIcon(me)
 		if ip, iok := a.cachedPage(&a.emoteIconPages, &a.emoteIconGen, 1, 0, iconBase); iok && len(ip.Frames) > 0 {
-			_ = c.Ren.Copy(ip.Frames[0], nil, &btn)
+			c.copy(ip.Frames[0], nil, &btn)
 		} else {
 			pending := a.demandAsset(&a.emoteIconAsk, 1, 0, iconBase, assets.AssetTypeCharIcon) // AssetType: CharIcon
 			c.Fill(btn, ColPanel)
@@ -727,7 +727,7 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 		a.pairBgPages, a.pairBgKey = nil, base
 	}
 	if page, ok := a.cachedPage(&a.pairBgPages, &a.pairBgGen, 1, 0, base); ok && len(page.Frames) > 0 {
-		_ = c.Ren.Copy(page.Frames[0], nil, &pv)
+		c.copy(page.Frames[0], nil, &pv)
 	} else {
 		c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
 		if a.sess.Background != "" {
@@ -830,9 +830,9 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 	tex := page.Frames[pageFrameLoop(page, a.themeElapsed())]
 	_ = tex.SetAlphaMod(alpha)
 	if flip {
-		_ = c.Ren.CopyEx(tex, nil, &dst, 0, nil, sdl.FLIP_HORIZONTAL)
+		c.copyFlip(tex, nil, &dst, sdl.FLIP_HORIZONTAL)
 	} else {
-		_ = c.Ren.Copy(tex, nil, &dst)
+		c.copy(tex, nil, &dst)
 	}
 	_ = tex.SetAlphaMod(255)
 }

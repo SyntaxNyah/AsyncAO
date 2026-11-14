@@ -774,7 +774,7 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 		}
 		clipPrev, clipHad := c.pushClip(box)
 		if page, pok := a.themePage("courtroombackground"); pok {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &art)
+			c.copy(a.themeFrame(page), nil, &art)
 		} else {
 			c.Fill(art, ColPanel)
 			c.Border(art, ColAccent)

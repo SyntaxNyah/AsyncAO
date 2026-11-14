@@ -264,11 +264,11 @@ func (c *Ctx) tinted(tex *sdl.Texture, src sdl.Rect, part bool, dst sdl.Rect, co
 	_ = tex.SetAlphaMod(col.A)
 	c.cgoRect = dst
 	if !part {
-		_ = c.Ren.Copy(tex, nil, &c.cgoRect)
+		c.copy(tex, nil, &c.cgoRect)
 		return
 	}
 	c.cgoSrc = src
-	_ = c.Ren.Copy(tex, &c.cgoSrc, &c.cgoRect)
+	c.copy(tex, &c.cgoSrc, &c.cgoRect)
 }
 
 // Icon draws line icon k in r, coloured col.

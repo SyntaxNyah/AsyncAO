@@ -324,7 +324,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, budget *int64) {
 	base := a.urls.Background(name, bgThumbPart)
 	if page, ok := a.cachedPage(&a.bgPick.pages, &a.bgPick.pagesGen, len(a.bgPick.list), idx, base); ok && len(page.Frames) > 0 {
 		// Resident: always draw it and bill its footprint.
-		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
+		c.copy(page.Frames[0], nil, &cell)
 		b := int64(page.W) * int64(page.H) * 4
 		*budget -= b
 		if b > a.bgPick.thumbMax {

@@ -743,7 +743,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		// Shared scratch, since &cell into cgo would heap-allocate per visible cell.
 		// SDL copies the rect and never retains it.
 		c.cgoRect = cell
-		_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
+		c.copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
 		// Not resident: demand it (visible, not speculation) and draw the initials placeholder.
 		a.demandAsset(&a.iconAsk, len(a.sess.Chars), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
@@ -936,9 +936,9 @@ func (a *App) drawSpritePreview(w, h int32, name string) {
 			relX = value.Clamp(relX, 0, 1)
 			relY = value.Clamp(relY, 0, 1)
 			src := sdl.Rect{X: value.Clamp(int32(relX*float64(page.W))-zw/2, 0, page.W-zw), Y: value.Clamp(int32(relY*float64(page.H))-zh/2, 0, page.H-zh), W: zw, H: zh}
-			_ = c.Ren.Copy(tex, &src, &dst)
+			c.copy(tex, &src, &dst)
 		} else {
-			_ = c.Ren.Copy(tex, nil, &dst)
+			c.copy(tex, nil, &dst)
 		}
 		a.drawPreviewZoom(frame, page.W, page.H, dst.H)
 		// Resize grip at the image's bottom-right, above the caption; handlePreviewInput does the drag.

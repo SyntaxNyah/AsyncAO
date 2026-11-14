@@ -582,7 +582,7 @@ func paintElementArt(a *App, e *bakedElement) {
 func paintElementBlit(c *Ctx, e *bakedElement, tex *sdl.Texture, dst sdl.Rect) {
 	c.cgoRect = dst
 	if e.ang == 0 {
-		_ = c.Ren.Copy(tex, nil, &c.cgoRect)
+		c.copy(tex, nil, &c.cgoRect)
 		return
 	}
 	// The 360/256 angle byte, as ThemeRectRotations.
@@ -606,7 +606,7 @@ func paintElementTiled(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 	for row := int32(0); row < rows; row++ {
 		for col := int32(0); col < cols; col++ {
 			c.cgoRect = sdl.Rect{X: e.r.X + col*tw, Y: e.r.Y + row*th, W: tw, H: th}
-			_ = c.Ren.Copy(tex, nil, &c.cgoRect)
+			c.copy(tex, nil, &c.cgoRect)
 		}
 	}
 	c.popClip(prev, had)
@@ -687,7 +687,7 @@ func paintElementNineSlice(c *Ctx, e *bakedElement, tex *sdl.Texture) {
 			}
 			c.cgoSrc = sdl.Rect{X: sx[col], Y: sy[row], W: sWs[col], H: sHs[row]}
 			c.cgoRect = sdl.Rect{X: dx[col], Y: dy[row], W: dWs[col], H: dHs[row]}
-			_ = c.Ren.Copy(tex, &c.cgoSrc, &c.cgoRect)
+			c.copy(tex, &c.cgoSrc, &c.cgoRect)
 		}
 	}
 }

@@ -51,14 +51,14 @@ func (v *Viewport) applyPostFX(ren *sdl.Renderer, vp sdl.Rect) {
 	if scan {
 		if t := v.ensureScanlines(ren, vp.W, vp.H); t != nil {
 			v.postRect = vp
-			_ = ren.Copy(t, nil, &v.postRect)
+			_ = v.copies.Copy(ren, t, nil, &v.postRect)
 		}
 	}
 	if v.postFX.CRT {
 		// Before the vignette, so the darkened edges sit on top of the grille.
 		if t := v.ensureCRTMask(ren, vp.W, vp.H); t != nil {
 			v.postRect = vp
-			_ = ren.Copy(t, nil, &v.postRect)
+			_ = v.copies.Copy(ren, t, nil, &v.postRect)
 		}
 	}
 	if vign {
@@ -67,7 +67,7 @@ func (v *Viewport) applyPostFX(ren *sdl.Renderer, vp sdl.Rect) {
 		}
 		if v.vignetteTex != nil {
 			v.postRect = vp
-			_ = ren.Copy(v.vignetteTex, nil, &v.postRect)
+			_ = v.copies.Copy(ren, v.vignetteTex, nil, &v.postRect)
 		}
 	}
 	if v.postFX.Grain {
@@ -76,7 +76,7 @@ func (v *Viewport) applyPostFX(ren *sdl.Renderer, vp sdl.Rect) {
 		}
 		if t := v.grainTex[v.grainIdx]; t != nil {
 			v.postRect = vp
-			_ = ren.Copy(t, nil, &v.postRect)
+			_ = v.copies.Copy(ren, t, nil, &v.postRect)
 		}
 		v.grainIdx = (v.grainIdx + 1) % grainFrames
 	}

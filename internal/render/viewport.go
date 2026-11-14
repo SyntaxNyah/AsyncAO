@@ -298,6 +298,8 @@ type Viewport struct {
 	prescale bool
 	// flushLayers runs SDL's queued draws after each layer, so a CPU profile shows each layer's cost (-debug).
 	flushLayers bool
+	// copies draws layers the pre-scaled frames don't cover through copies already scaled, tinted and faded.
+	copies *CopyCache
 
 	speakerAnim   animState
 	pairAnim      animState
@@ -442,7 +444,11 @@ const (
 )
 
 func NewViewport(store *TextureStore, flushLayers bool) *Viewport {
-	return &Viewport{store: store, prescale: store != nil && store.software, flushLayers: flushLayers}
+	v := &Viewport{store: store, prescale: store != nil && store.software, flushLayers: flushLayers}
+	if store != nil {
+		v.copies = NewCopyCache(store.ren)
+	}
+	return v
 }
 
 // flushLayer runs SDL's queued draws now, so their cost lands under the layer that queued them. SDL otherwise runs
@@ -950,7 +956,7 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 		d := scaleChannel(channelMax, dimPct)
 		_ = tex.SetColorMod(d, d, d)
 	}
-	_ = ren.Copy(tex, nil, &v.fillRect)
+	_ = v.copies.Copy(ren, tex, nil, &v.fillRect)
 	if dimPct < percentMax {
 		_ = tex.SetColorMod(channelMax, channelMax, channelMax) // restore the shared page
 	}
@@ -983,10 +989,10 @@ func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl
 	page.applyScaleMode(ren, v.overlayScaleMode(o, page.H, dst.H))
 	v.ovRect = dst
 	if o.Flip {
-		_ = ren.CopyEx(tex, nil, &v.ovRect, 0, nil, sdl.FLIP_HORIZONTAL)
+		_ = v.copies.CopyFlip(ren, tex, nil, &v.ovRect, sdl.FLIP_HORIZONTAL)
 		return
 	}
-	_ = ren.Copy(tex, nil, &v.ovRect)
+	_ = v.copies.Copy(ren, tex, nil, &v.ovRect)
 }
 
 // drawOverlayInStage clips to the stage, as Qt clips a child to ui_viewport (courtroom.cpp:3218-3232).
@@ -1107,7 +1113,7 @@ func (v *Viewport) drawReflection(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 		return
 	}
 	_ = tex.SetAlphaMod(alpha)
-	_ = ren.CopyEx(tex, nil, &v.reflRect, 0, nil, flip)
+	_ = v.copies.CopyFlip(ren, tex, nil, &v.reflRect, flip)
 	_ = tex.SetAlphaMod(channelMax) // restore the shared page
 }
 
@@ -1148,7 +1154,7 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, scene *courtroom.Scene, 
 		r = dofBlurMin
 	}
 	v.fillRect = dst // the sharp base
-	_ = ren.Copy(tex, nil, &v.fillRect)
+	_ = v.copies.Copy(ren, tex, nil, &v.fillRect)
 	for i := range outlineDirs { // eight offset ghosts → a smear blur
 		a := uint8(dofAlphaCard)
 		if i >= outlineCardinals {
@@ -1158,7 +1164,7 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, scene *courtroom.Scene, 
 		v.fillRect = dst
 		v.fillRect.X += outlineDirs[i][0] * r
 		v.fillRect.Y += outlineDirs[i][1] * r
-		_ = ren.Copy(tex, nil, &v.fillRect)
+		_ = v.copies.Copy(ren, tex, nil, &v.fillRect)
 	}
 	_ = tex.SetAlphaMod(channelMax)
 	v.fillRect = vp // dim overlay, pushing the bg behind the sharp speaker
@@ -1218,7 +1224,7 @@ func (v *Viewport) drawHeldSprite(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 		// Restored right after because the T1 page is shared.
 		_ = tex.SetColorMod(heldTintR, heldTintG, heldTintB)
 	}
-	_ = ren.CopyEx(tex, nil, &v.dstRect, 0, nil, flip)
+	_ = v.copies.CopyFlip(ren, tex, nil, &v.dstRect, flip)
 	if v.tintHeld {
 		_ = tex.SetColorMod(channelMax, channelMax, channelMax)
 	}
@@ -1556,7 +1562,7 @@ func (v *Viewport) drawTornSprite(ren *sdl.Renderer, tex *sdl.Texture, page *Tex
 		}
 		v.srcRect = sdl.Rect{X: 0, Y: sy0, W: page.W, H: sy1 - sy0}
 		v.fxRect = sdl.Rect{X: v.dstRect.X + off, Y: v.dstRect.Y + dy0, W: v.dstRect.W, H: dy1 - dy0}
-		_ = ren.CopyEx(tex, &v.srcRect, &v.fxRect, 0, nil, flip)
+		_ = v.copies.CopyFlip(ren, tex, &v.srcRect, &v.fxRect, flip)
 	}
 }
 

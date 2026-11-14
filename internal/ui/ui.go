@@ -127,6 +127,8 @@ type atlasPage struct {
 // Ctx is the per-frame UI context: input snapshot, fonts, text cache, focus.
 type Ctx struct {
 	Ren *sdl.Renderer
+	// copies draws images through copies already scaled, mirrored, tinted and faded on SDL's software renderer.
+	copies *render.CopyCache
 	// win backs FlashWindow; nil in headless tests, as flashing is best-effort.
 	win *sdl.Window
 
@@ -2202,6 +2204,14 @@ func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
 	c.blitLabelScaled(t, x, y, wLog)
 }
 
+// copy draws src of tex into dst as Ren.Copy does, through the copy cache.
+func (c *Ctx) copy(tex *sdl.Texture, src, dst *sdl.Rect) { _ = c.copies.Copy(c.Ren, tex, src, dst) }
+
+// copyFlip is copy mirrored by flip.
+func (c *Ctx) copyFlip(tex *sdl.Texture, src, dst *sdl.Rect, flip sdl.RendererFlip) {
+	_ = c.copies.CopyFlip(c.Ren, tex, src, dst, flip)
+}
+
 // blitLabelScaled keeps src in device px and dst in logical px, for SetScale to map back; exact only when that
 // round-trips. A separate function so a test can drive it for pixel comparison.
 func (c *Ctx) blitLabelScaled(t cachedText, x, y, wLog int32) {
@@ -2214,7 +2224,7 @@ func (c *Ctx) blitLabelScaled(t cachedText, x, y, wLog int32) {
 	}
 	c.drawSrc = sdl.Rect{X: t.src.X, Y: t.src.Y, W: srcW, H: t.h}
 	c.drawDst = sdl.Rect{X: x, Y: y, W: wLog, H: uiLogicalFromDevice(t.h, t.devPct)}
-	_ = c.Ren.Copy(t.tex, &c.drawSrc, &c.drawDst)
+	c.copy(t.tex, &c.drawSrc, &c.drawDst)
 }
 
 // blitLabelExact draws at SetScale(1,1) with src.W == dst.W, so SDL never resamples. Only when uiDeviceExactAt holds.

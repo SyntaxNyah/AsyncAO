@@ -39,7 +39,7 @@ func (v *Viewport) drawSplash(ren *sdl.Renderer, base string, anim *animState, v
 		v.splashClip = vp
 		_ = ren.SetClipRect(&v.splashClip)
 	}
-	_ = ren.Copy(tex, nil, &v.fillRect)
+	_ = v.copies.Copy(ren, tex, nil, &v.fillRect)
 	if clip {
 		_ = ren.SetClipRect(nil)
 	}

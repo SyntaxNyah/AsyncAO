@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -16,6 +17,7 @@ func NewCtx(ren *sdl.Renderer) (*Ctx, error) {
 	}
 	return &Ctx{
 		Ren:     ren,
+		copies:  render.NewCopyCache(ren),
 		font:    font,
 		fontBig: fontBig,
 		// At 100% the device faces share the logical ones; SetTextDevScale rebuilds them when the UI scale changes.

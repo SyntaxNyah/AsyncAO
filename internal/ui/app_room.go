@@ -293,7 +293,7 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	a.handleClientZoomPan(view, pressed) // scroll = zoom (cursor-anchored), drag = pan
 	a.clientControlClick(view)           // a plain click on the client = take control of that server
 	src := a.clientViewSrc()             // sub-rect of the texture from zoom + pan
-	_ = c.Ren.Copy(a.clientTex, &src, &view)
+	c.copy(a.clientTex, &src, &view)
 	const ctlHint = "▶ Click to control this server (buttons + chat)"
 	hintPill := sdl.Rect{X: view.X, Y: view.Y, W: c.TextWidth(ctlHint) + 12, H: 18}
 	c.Fill(hintPill, sdl.Color{R: 0, G: 0, B: 0, A: 150})
@@ -847,23 +847,31 @@ const (
 type frameReason uint8
 
 const (
-	reasonNone       frameReason = iota // nothing asked; a deadline or the idle tick drew it
-	reasonStage                         // the stage's animation
-	reasonMessage                       // a message playing
-	reasonInput                         // input this pass
-	reasonScreen                        // a screen that always draws
-	reasonFullRate                      // recent input or an effect in flight
-	reasonWarning                       // a warning showing
-	reasonFonts                         // fonts loading
-	reasonAnimChrome                    // animated UI outside the stage
-	reasonDamage                        // a packet, an upload or a caret blink
+	reasonNone         frameReason = iota // nothing asked; a deadline or the idle tick drew it
+	reasonStage                           // the stage's animation
+	reasonMessage                         // a message playing
+	reasonInput                           // input this pass
+	reasonScreen                          // a screen that always draws
+	reasonInputGrace                      // the hold after input
+	reasonPointer                         // the pointer moving
+	reasonScreenEffect                    // a screen shake or flash
+	reasonTool                            // a replay, the scene maker or a GIF export
+	reasonPerfHUD                         // the F3 overlay
+	reasonReactions                       // emoji reactions floating
+	reasonPinnedTab                       // a pinned tab drawing beside this one
+	reasonWarning                         // a warning showing
+	reasonFonts                           // fonts loading
+	reasonAnimChrome                      // animated UI outside the stage
+	reasonDamage                          // a packet, an upload or a caret blink
 	reasonCount
 )
 
 // frameReasonLabels names each frameReason in the debug panel.
 var frameReasonLabels = [reasonCount]string{
 	reasonNone: "deadline", reasonStage: "stage", reasonMessage: "message", reasonInput: "input", reasonScreen: "screen",
-	reasonFullRate: "recent input", reasonWarning: "warning", reasonFonts: "fonts", reasonAnimChrome: "animated UI",
+	reasonInputGrace: "input hold", reasonPointer: "pointer moving", reasonScreenEffect: "shake or flash",
+	reasonTool: "replay or export", reasonPerfHUD: "F3 overlay", reasonReactions: "reactions",
+	reasonPinnedTab: "pinned tab", reasonWarning: "warning", reasonFonts: "fonts", reasonAnimChrome: "animated UI",
 	reasonDamage: "changes",
 }
 
@@ -922,9 +930,10 @@ func (a *App) nextFrameNeed(focused, sawEvent bool) (frameNeed, frameReason) {
 	if !a.screenSkippable() {
 		return needFull, reasonScreen
 	}
+	if reason := a.fullRateReason(); reason != reasonNone {
+		return needFull, reason
+	}
 	switch {
-	case a.wantsFullRate():
-		return needFull, reasonFullRate
 	case a.warnActive():
 		return needFull, reasonWarning
 	case a.fontWorkPending():
@@ -1088,23 +1097,27 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 
 // wantsFullRate reports whether something needs the full frame rate: recent input, stage effects, or an open surface.
 // Ambient motion counts only while a stage draws it (Viewport.AmbientAnimating), or every screen holds full rate.
-func (a *App) wantsFullRate() bool {
-	if time.Since(a.lastInputAt) < time.Duration(a.d.Prefs.Load().InputGraceFrames())*inputGraceFrameDuration {
-		return true // configurable post-input hold (default 1 frame); 0 would be the input's own frame only
+func (a *App) wantsFullRate() bool { return a.fullRateReason() != reasonNone }
+
+// fullRateReason is what holds the full frame rate, reasonNone when nothing does.
+func (a *App) fullRateReason() frameReason {
+	switch {
+	case time.Since(a.lastInputAt) < time.Duration(a.d.Prefs.Load().InputGraceFrames())*inputGraceFrameDuration:
+		return reasonInputGrace // configurable post-input hold (default 1 frame); 0 would be the input's own frame only
+	case time.Since(a.lastMotionAt) < motionInputGrace:
+		return reasonPointer // a moving pointer renders live; the short grace ends with it
+	case a.room != nil && (a.room.Scene.ShakeLeft > 0 || a.room.Scene.FlashLeft > 0):
+		return reasonScreenEffect // sub-second effect countdowns, self-terminating
+	case a.replaying || a.makerOpen || a.gifExporting:
+		return reasonTool
+	case a.perfHUD:
+		return reasonPerfHUD
+	case len(a.reactionFloats) > 0:
+		return reasonReactions
+	case a.splitActive():
+		return reasonPinnedTab
 	}
-	if time.Since(a.lastMotionAt) < motionInputGrace {
-		return true // a moving pointer renders live; the short grace ends with it
-	}
-	if a.room != nil {
-		sc := &a.room.Scene
-		if sc.ShakeLeft > 0 || sc.FlashLeft > 0 {
-			return true // sub-second effect countdowns — self-terminating
-		}
-	}
-	if a.replaying || a.makerOpen || a.gifExporting || a.perfHUD {
-		return true
-	}
-	return len(a.reactionFloats) > 0 || a.splitActive()
+	return reasonNone
 }
 
 // SetSpriteCapBase stores the display-derived decode-downscale base, for applySpriteCap to re-derive the cap live.

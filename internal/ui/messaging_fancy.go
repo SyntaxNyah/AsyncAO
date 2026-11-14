@@ -84,7 +84,7 @@ func (a *App) drawMsgCharIcon(char, displayName string, cell sdl.Rect) {
 	if char != "" {
 		base := a.urls.CharIcon(char)
 		if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &cell)
+			c.copy(page.Frames[0], nil, &cell)
 			c.Border(cell, ColPanelHi)
 			return
 		}

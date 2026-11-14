@@ -479,7 +479,7 @@ func (a *App) drawPlayerIcon(p *areaPlayer, idx int, cell sdl.Rect, isSpec bool)
 	}
 	base := a.urls.CharIcon(p.name)
 	if page, ok := a.cachedPage(&a.playerIconPages, &a.playerIconPagesGen, len(a.rosterView()), idx, base); ok && len(page.Frames) > 0 {
-		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
+		c.copy(page.Frames[0], nil, &cell)
 		return
 	}
 	a.demandAsset(&a.playerIconAsk, len(a.rosterView()), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
