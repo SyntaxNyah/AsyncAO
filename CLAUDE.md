@@ -117,7 +117,7 @@ Then set `CGO_ENABLED=1`,
 
 ```bash
 go test -race -count=1 ./...                       # full gate
-go test -run=NONE -bench=. -benchmem ./...         # alloc gates (see docs/BENCHMARKS.md)
+go test -run=NONE -bench=. -benchmem ./...         # compare against the previous commit, run side by side
 gofmt -w . && go vet ./...                         # before every commit
 ```
 

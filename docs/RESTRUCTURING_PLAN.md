@@ -82,8 +82,8 @@ in **Status**. Update Status in the same commit that completes a step.
       starts from a benchmark and is measured again after it; a cheap rewrite or optimisation found on the way is welcome.
       Moving work to a goroutine needs a measured cost or a blocking call, and work that applies in message order stays
       in order. `Scene` and the message state machine stay on the game thread
-  - [x] baseline benchmarks: `internal/courtroom/bench_test.go`, `internal/ui/framebench_test.go`, recorded in
-        `docs/BENCHMARKS.md`
+  - [x] baseline benchmarks: `internal/courtroom/bench_test.go`, `internal/ui/framebench_test.go`; a move is measured
+        by running them on the commit before it and after it, side by side
   - [x] one loop mode: the classic loop and its setting are gone (decided 2026-11-01)
   - [x] writer goroutine for `Conn.Send`, which proves the worker shape (one shape for background jobs, replacing the
         separate goroutine, channel and poll of each `ui` job). A full queue of 64 or a failed write ends the connection and

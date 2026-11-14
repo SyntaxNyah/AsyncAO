@@ -118,7 +118,6 @@ asyncao -debug          # pprof on localhost:6060
 | [BUILDING.md](BUILDING.md) | Step-by-step build guide (Windows/Linux/macOS) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Thread model, cache tiers, pipelines |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Tuning, PGO capture, profiling |
-| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Recorded numbers for every gate |
 | [docs/adr/0001-zero-fallback-by-default.md](docs/adr/0001-zero-fallback-by-default.md) | Why zero fallbacks |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | The AO2 wire protocol as implemented |
 | [docs/DISCORD.md](docs/DISCORD.md) | Discord Rich Presence: setup, privacy, building without it |
