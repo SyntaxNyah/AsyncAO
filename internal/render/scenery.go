@@ -47,14 +47,32 @@ func (v *Viewport) drawScenery(ren *sdl.Renderer, scene *courtroom.Scene, base s
 	v.fillRect = sceneryRect(vp, page.W, page.H, scene.SceneryStretch, v.panorama, v.origin)
 	page.applyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, v.fillRect.H))
 	tex := page.Frames[frame]
+	d := uint8(channelMax)
 	if dimPct < percentMax {
-		d := scaleChannel(channelMax, dimPct)
+		d = scaleChannel(channelMax, dimPct)
 		_ = tex.SetColorMod(d, d, d)
 	}
-	_ = ren.Copy(tex, nil, &v.fillRect)
+	if !v.drawScaled(ren, &anim.scaled, page, frame, tex, v.fillRect, sdl.FLIP_NONE, d, d, d) {
+		_ = ren.Copy(tex, nil, &v.fillRect)
+	}
 	if dimPct < percentMax {
 		_ = tex.SetColorMod(channelMax, channelMax, channelMax)
 	}
+}
+
+// CoversStage reports that Render's background will paint every pixel of vp opaquely, so a fill under the stage can
+// be skipped; any doubt, such as a shake, punch, slide or depth of field moving or fading it, says no.
+func (v *Viewport) CoversStage(scene *courtroom.Scene, vp sdl.Rect) bool {
+	if scene.BackgroundBase == "" || scene.ShakeLeft > 0 || scene.Slide.Active || v.fx.DoF ||
+		(v.fx.ShoutPunch && v.punchLeft > 0) {
+		return false
+	}
+	page, _, ok := v.layerPage(&v.bgAnim)
+	if !ok || !page.Opaque {
+		return false
+	}
+	r := sceneryRect(vp, page.W, page.H, scene.SceneryStretch, scene.SceneryPanorama, scene.SceneryOrigin)
+	return r.X <= vp.X && r.Y <= vp.Y && r.X+r.W >= vp.X+vp.W && r.Y+r.H >= vp.Y+vp.H
 }
 
 // placeStage sets this frame's panorama placement, the slide's eased origin while one runs, and returns how far the

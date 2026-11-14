@@ -145,6 +145,10 @@ in **Status**. Update Status in the same commit that completes a step.
       wheel routing, layer stack)
 - [ ] 5. uikit scaling, layout and text (logical units, layout, nine-slice, scroll
       container) + shared widgets; one text-colour palette in the engine
+      Redraw only what changed (requested 2026-11-14, from a CPU-renderer profile): today every drawn frame repaints
+      the whole window, while Qt's AO2 repaints only changed regions. Track damaged regions per frame, or keep static
+      panels (log, OOC, area list, toolbox) in their own textures and copy them 1:1 until their content changes. On SDL's
+      software renderer the panels' fills and text were about a third of a 65 ms frame at 2560×1334
       Font database (proposed 2026-10-31, Qt's QFontDatabase as the model): one off-thread index of family, style and
       coverage, fonts opened only when used, `AddFolder` for system, user, theme and pack folders. Replaces the curated
       lists, `fontCensus` and file-stem matching; `platform.Fonts` supplies the starting folders. Its own testing round
@@ -983,6 +987,15 @@ RmlUi).**
   default renderer on the GPU (Direct3D 11 on Windows, Metal on macOS, OpenGL on Linux), else
   SDL's software renderer, the one CPU path on every platform. `-software-gpu` and Settings' CPU
   renderer skip the GPU.
+- SDL's software renderer is single-threaded and stretches and blends every pixel of a scaled
+  copy, so on it the viewport keeps each layer's frame pre-scaled to its size and copies it 1:1
+  (`render/prescale.go`, as AO2 scales a frame once when it loads), opaque fills skip blending,
+  and the stage fill is skipped under an opaque background. Measured in a busy room at 2560×1334
+  (2026-11-14): about 65 ms per frame before, 120 fps after, at 42% of one core.
+- Rejected 2026-11-14: Direct3D 11 on WARP (`SDL_RENDER_DIRECT3D11_WARP`) as Windows' CPU
+  renderer. Against the old software path it looked fast (8.4 ms against 46.1 ms at 1080p), but in
+  the same room it used 9.6 cores, about 58 ms of CPU per frame against 3.5 ms for the
+  pre-scaled software path; on a 4-core laptop it would peg every core.
 - Measured on the maintainer's machine (RTX 3070, 2026-10-28), lobby open, private memory of
   the whole process: SDL's Direct3D 11 renderer 146 MB, against 307 MB for the SDL_GPU device
   on Vulkan it replaced.

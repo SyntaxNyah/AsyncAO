@@ -333,7 +333,10 @@ func (a *App) drawCourtroom(w, h int32) {
 	// With no override the View knob and divider own the 4:3 size; a viewport handle drag in the editor wins until
 	// reset.
 	vp := a.slotRect(slotViewport, vpDef, w, h)
-	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
+	// Black shows only where the background leaves the stage uncovered; a zoomed camera can pan past the art.
+	if a.vpZoom > 1 || a.d.Viewport == nil || !a.d.Viewport.CoversStage(a.renderScene(), vp) {
+		c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
+	}
 	a.renderViewportZoomed(vp)
 	a.drawStageRecordButton(vp)
 	a.handleVpDivider(vp, w) // drag the right edge to resize (claims the press BEFORE zoom/sprite-drag)

@@ -128,7 +128,9 @@ func (p *TexturePage) reduceToStill() {
 // TextureStore is T1, keyed by asset base; a base lives in one of the main, small, pinned or oversized tiers.
 type TextureStore struct {
 	ren *sdl.Renderer
-	t1  *cache.ByteBudgetLRU[string, *TexturePage]
+	// software is SDL's software renderer, which stretches every pixel of every scaled copy on one thread.
+	software bool
+	t1       *cache.ByteBudgetLRU[string, *TexturePage]
 	// small is the UI tier: sprites can't evict button and icon grids, and icon floods can't evict sprites.
 	small *cache.ByteBudgetLRU[string, *TexturePage]
 	// pinned holds LRU-exempt pages (theme chrome), bounded by the theme stem tables; render thread only.
@@ -241,6 +243,7 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 	}
 	s := &TextureStore{
 		ren:          ren,
+		software:     isSoftwareRenderer(ren),
 		pinned:       map[string]*TexturePage{},
 		oversized:    map[string]*TexturePage{},
 		oversizedCap: cache.DefaultOversizedTextureBytes,

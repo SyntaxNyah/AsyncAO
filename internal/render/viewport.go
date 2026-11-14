@@ -52,6 +52,9 @@ type animState struct {
 	// scaleName/scaleIdleH hold the idle page height; reset keeps them so a character shares one filter height.
 	scaleName  string
 	scaleIdleH int32
+
+	// scaled is this layer's pre-scaled frame on SDL's software renderer.
+	scaled scaledFrame
 }
 
 // reset rebinds the state to a new asset base, keeping lastGood for the cold-load hold.
@@ -289,6 +292,8 @@ const (
 // Viewport renders a courtroom.Scene into a destination rect without heap allocations in steady state.
 type Viewport struct {
 	store *TextureStore
+	// prescale keeps each layer's frame scaled to its size, for SDL's software renderer.
+	prescale bool
 
 	speakerAnim   animState
 	pairAnim      animState
@@ -363,6 +368,9 @@ type Viewport struct {
 	ovClip    sdl.Rect // screen-effect containment clip (the in-viewport rungs are children of the stage)
 	// splashClip is separate from ovClip: both can run in a frame, and SDL keeps the pointer live during the call.
 	splashClip sdl.Rect
+	// scaledDst is a pre-scaled frame's destination in pixels; scaledClip the clip drawScaled converts and puts back.
+	scaledDst  sdl.Rect
+	scaledClip sdl.Rect
 
 	// Post-processing overlays: cached, size-stable textures blended over the stage.
 	postFX               PostFX
@@ -430,7 +438,7 @@ const (
 )
 
 func NewViewport(store *TextureStore) *Viewport {
-	return &Viewport{store: store}
+	return &Viewport{store: store, prescale: store != nil && store.software}
 }
 
 // SetSpriteFX sets the sprite colour and motion effects; the App calls it once per frame before Update.
@@ -477,6 +485,9 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.syncAnim(&v.slideAnim, scene.Slide.Previous.Active)
 	v.syncAnim(&v.slidePairAnim, scene.Slide.PreviousPair.Active)
 	if len(v.groupAnims) != len(scene.Group) {
+		for i := range v.groupAnims {
+			v.groupAnims[i].scaled.release()
+		}
 		v.groupAnims = make([]animState, len(scene.Group))
 	}
 	for i := range scene.Group {
@@ -1443,10 +1454,13 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		}
 	}
 	// Rotated sprites keep the plain blit: CopyEx rotates each band around its own centre, which shreds the art.
-	if glitch && glitchMode == courtroom.GlitchTorn && angle == 0 &&
-		v.fxClock%glitchTornPeriod < glitchTornWindow {
+	// Only a plain copy is pre-scaled: rotation, glow and a changing alpha have no fixed result to keep.
+	plain := angle == 0 && !glow && alphaMod == channelMax
+	switch {
+	case glitch && glitchMode == courtroom.GlitchTorn && angle == 0 && v.fxClock%glitchTornPeriod < glitchTornWindow:
 		v.drawTornSprite(ren, tex, page, flip, glitchSplit)
-	} else {
+	case plain && v.drawScaled(ren, &anim.scaled, drawPage, frame, tex, v.dstRect, flip, modR, modG, modB):
+	default:
 		_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
 	}
 	if doColorMod {
