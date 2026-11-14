@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
+	"maps"
 	"slices"
 	"strings"
 
@@ -131,11 +133,16 @@ func defaultOrder(class Class) []string {
 
 // originOf is the key's own origin, or for a key holding a whole URL, the longest origin known to contain it, then its host.
 func (b *CandidateBuilder) originOf(key Key) string {
+	return originAmong(key, maps.Keys(b.origins))
+}
+
+// originAmong is originOf over a list of known origins.
+func originAmong(key Key, origins iter.Seq[string]) string {
 	if key.Origin != "" {
 		return key.Origin
 	}
 	best := ""
-	for origin := range b.origins {
+	for origin := range origins {
 		if len(origin) > len(best) && strings.HasPrefix(key.Path, origin) {
 			best = origin
 		}

@@ -2,7 +2,6 @@ package assets
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"slices"
@@ -159,15 +158,14 @@ func (b *mediaBridge) recallLearned() {
 	path := b.m.learnedPath
 	b.media.Run(b.diskP, media.Later, func() any {
 		var l media.Learned
-		if path == "" {
-			return l
+		if path != "" {
+			if data, err := os.ReadFile(path); err == nil {
+				l, _ = media.DecodeLearned(data) // a damaged file is a fresh start
+			}
 		}
-		if data, err := os.ReadFile(path); err == nil {
-			_ = json.Unmarshal(data, &l) // a damaged file is a fresh start
-		}
-		return l
+		return l.Memory()
 	}, func(v any) {
-		media.Recall(b.media, b.builder, v.(media.Learned))
+		media.Recall(b.media, b.builder, v.(media.Memory))
 		b.recalled = true
 		b.learnedHosts.Store(int64(b.builder.LearnedOrigins()))
 		if b.foundEarly {
@@ -178,14 +176,14 @@ func (b *mediaBridge) recallLearned() {
 
 // encodeLearned snapshots the learned formats and winners on the Manager's goroutine for the saver.
 func (b *mediaBridge) encodeLearned() ([]byte, error) {
-	var l media.Learned
+	var mem media.Memory
 	var err error
 	ran := b.media.Call(func() {
 		if !b.recalled {
 			err = errLearnedNotRecalled
 			return
 		}
-		l = media.Remember(b.media, b.builder)
+		mem = media.Remember(b.media, b.builder)
 	})
 	if !ran {
 		return nil, errMediaStopped
@@ -193,7 +191,7 @@ func (b *mediaBridge) encodeLearned() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(l)
+	return media.EncodeLearned(mem.Learned())
 }
 
 // scanDisk fills the disk index; until it lands, a cached file is fetched again, which is only slower.
