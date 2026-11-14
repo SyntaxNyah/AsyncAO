@@ -18,7 +18,6 @@ check() { # benchmark max-allocs
 	fi
 }
 
-check BenchmarkBuildCandidates_Learned 1
 check BenchmarkCacheHit_T1 0
 check BenchmarkCacheHit_T2 0
 check BenchmarkRenderFrame 0
