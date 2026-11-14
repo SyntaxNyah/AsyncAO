@@ -69,13 +69,12 @@ type Fetcher interface {
 // Manager answers asset requests through internal/media, in the order memory, disk cache, the player's folders,
 // then the web, and hands results to the render thread and the audio system.
 type Manager struct {
-	bridge   *mediaBridge
-	resolver *Resolver
-	prefs    *config.AssetPreferences
-	t2       *cache.ByteBudgetLRU[string, []byte]
-	disk     *cache.DiskCache
-	client   Fetcher
-	decoder  *DecoderPool
+	bridge  *mediaBridge
+	prefs   *config.AssetPreferences
+	t2      *cache.ByteBudgetLRU[string, []byte]
+	disk    *cache.DiskCache
+	client  Fetcher
+	decoder *DecoderPool
 	// learnedPath is where the media system's learned formats and winners are kept between sessions.
 	learnedPath string
 
@@ -192,10 +191,9 @@ func (m *Manager) ColdLoadStats() (fetch, decode time.Duration) {
 
 // ManagerDeps wires a Manager; every field is required except T1Contains and T1Failed.
 type ManagerDeps struct {
-	Resolver *Resolver
-	Prefs    *config.AssetPreferences
-	T2       *cache.ByteBudgetLRU[string, []byte]
-	Disk     *cache.DiskCache
+	Prefs *config.AssetPreferences
+	T2    *cache.ByteBudgetLRU[string, []byte]
+	Disk  *cache.DiskCache
 	// Source is the network client, or a fake in tests.
 	Source     Fetcher
 	Decoder    *DecoderPool
@@ -208,7 +206,6 @@ type ManagerDeps struct {
 // NewManager builds the Manager and starts its media system; CloseMedia stops it.
 func NewManager(deps ManagerDeps) *Manager {
 	m := &Manager{
-		resolver:    deps.Resolver,
 		prefs:       deps.Prefs,
 		t2:          deps.T2,
 		disk:        deps.Disk,
@@ -433,23 +430,20 @@ func (m *Manager) ResolveRawLayered(base string, t AssetType) (url string, data 
 	if base == "" || !t.Valid() {
 		return "", nil, false, false
 	}
-	cands := m.resolver.BuildCandidates(base, t, hostOf(base))
-	defer m.resolver.PutCandidates(cands)
-	return m.resolveIn(base, t, cands.URLs)
+	return m.resolveIn(base, t, m.bridge.candidates(base, t))
 }
 
-// ResolveRawFull is ResolveRaw for report and export passes: the learned format, then the full probe chain.
+// ResolveRawFull is ResolveRawLayered for report and export passes, which also ask the formats the host's list leaves
+// out.
 func (m *Manager) ResolveRawFull(base string, t AssetType) (string, []byte, bool) {
 	if base == "" || !t.Valid() {
 		return "", nil, false
 	}
-	exts := fullProbeChain(m.prefs, t)
-	if ext, ok := m.resolver.Learned(hostOf(base), t); ok {
-		exts = append([]string{ext}, slices.DeleteFunc(exts, func(e string) bool { return e == ext })...)
-	}
-	urls := make([]string, len(exts))
-	for i, ext := range exts {
-		urls[i] = base + ext
+	urls := m.bridge.candidates(base, t)
+	for _, f := range media.EveryFormat(media.Key{Class: classOf(t)}, base) {
+		if !slices.Contains(urls, string(f)) {
+			urls = append(urls, string(f))
+		}
 	}
 	url, data, _, ok := m.resolveIn(base, t, urls)
 	return url, data, ok
@@ -458,10 +452,9 @@ func (m *Manager) ResolveRawFull(base string, t AssetType) (string, []byte, bool
 // resolveIn finds one name in the live chain's order: memory and the disk cache, then the player's folders in every
 // format, then the web. Server hits teach the host's format; a folder hit teaches nothing, as the files are the player's.
 func (m *Manager) resolveIn(base string, t AssetType, urls []string) (url string, data []byte, fromPack, ok bool) {
-	host := hostOf(base)
 	for _, u := range urls {
 		if data, ok := m.cachedRaw(u); ok {
-			m.resolver.RecordSuccess(host, t, u[len(base):])
+			m.bridge.learn(base, t, u)
 			return u, data, false, true
 		}
 	}
@@ -472,37 +465,11 @@ func (m *Manager) resolveIn(base string, t AssetType, urls []string) (url string
 	}
 	for _, u := range urls {
 		if data, err := m.remoteRaw(context.Background(), u); err == nil && len(data) > 0 {
-			m.resolver.RecordSuccess(host, t, u[len(base):])
+			m.bridge.learn(base, t, u)
 			return u, data, false, true
 		}
 	}
 	return "", nil, false, false
-}
-
-// fullProbeChain is the configured order then the type's fallback chain, deduped, covering each decoder's formats.
-func fullProbeChain(prefs *config.AssetPreferences, t AssetType) []string {
-	name := t.Name()
-	var order []string
-	if prefs != nil {
-		order = prefs.Load().FormatOrder(name) // configured order (defaults to the zero-fallback list)
-	}
-	if len(order) == 0 {
-		order = config.DefaultFormatOrder(name)
-	}
-	out := make([]string, 0, len(order)+len(config.LegacyFallbackChain(name)))
-	seen := map[string]bool{}
-	appendExt := func(exts []string) {
-		for _, e := range exts {
-			if e == "" || seen[e] {
-				continue
-			}
-			seen[e] = true
-			out = append(out, e)
-		}
-	}
-	appendExt(order)
-	appendExt(config.LegacyFallbackChain(name))
-	return out
 }
 
 // onDecoded hands one decoded page to the render thread.

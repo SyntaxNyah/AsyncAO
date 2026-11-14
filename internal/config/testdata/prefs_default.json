@@ -1,5 +1,4 @@
 {
-  "globalFallbacksEnabled": false,
   "preferAnimated": true,
   "emoteButtonImages": true,
   "smoothScaling": true,
@@ -126,7 +125,6 @@
   "modcallToast": false,
   "callwordSoundFile": "",
   "debugOverlay": false,
-  "formatAutoDetect": true,
   "themeLayout": true,
   "themeFit": 4,
   "themeFitZoom": 100,
@@ -195,76 +193,6 @@
   "textStayMs": 200,
   "chatRateLimitMs": 0,
   "masterListUrl": "",
-  "assetTypes": {
-    "Background": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "Blip": {
-      "formatOrder": [
-        ".opus"
-      ],
-      "fallbacksEnabled": false
-    },
-    "CharIcon": {
-      "formatOrder": [
-        ".png"
-      ],
-      "fallbacksEnabled": false
-    },
-    "CharSprite": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "DeskOverlay": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "Effect": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "EmoteButton": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "Misc": {
-      "formatOrder": [
-        ".png",
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    },
-    "Music": {
-      "formatOrder": [
-        ".opus"
-      ],
-      "fallbacksEnabled": false
-    },
-    "SFX": {
-      "formatOrder": [
-        ".opus"
-      ],
-      "fallbacksEnabled": false
-    },
-    "ShoutBubble": {
-      "formatOrder": [
-        ".webp"
-      ],
-      "fallbacksEnabled": false
-    }
-  },
-  "learnedFormats": {},
   "showname": "",
   "emoteFavOnly": false,
   "emoteFavStars": false,

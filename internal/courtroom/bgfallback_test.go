@@ -47,7 +47,7 @@ func newBGRig(t *testing.T) *bgRig {
 	mount := t.TempDir()
 	local := assets.NewLocalFetcher([]string{mount})
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(prefs), Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: local, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)

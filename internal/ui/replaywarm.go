@@ -82,16 +82,15 @@ func (a *App) startReplayWarm(rec *sceneRecording) {
 		musicRefs:   musicRefs,
 		created:     now, // anchors gifWarmHardCap so a never-settling ref can't hang the phase
 	}
-	// Seed formats before submitting, under the same auto-detect and per-origin dedupe as the session and export paths.
-	if a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(rec.Origin) {
+	// Read the origin's formats before submitting, under the same per-origin dedupe as the session and export paths.
+	if strings.HasPrefix(rec.Origin, "http") && !a.originSeeded(rec.Origin) {
 		a.markOriginSeeded(rec.Origin)
 		w.seeding = true
 		w.seedOrigin = rec.Origin
 		w.seedDone = make(chan seedResult, gifSeedBuf) // 1-buffered: leak-free like the export seed
 		done := w.seedDone
 		mgr := a.d.Manager
-		prefs := a.d.Prefs
-		go func() { done <- seedOriginFormats(mgr, prefs, rec.Origin) }()
+		go func() { done <- seedOriginFormats(mgr, rec.Origin) }()
 	}
 	a.replayWarm = w
 }
@@ -111,14 +110,10 @@ func (a *App) tickReplayWarm() {
 	}
 	now := time.Now()
 
-	// Hold submission until the format seed lands so the first probe sees the manifest format; republish the resolver
-	// then.
+	// Hold submission until the format seed lands so the first probe sees the manifest format.
 	if w.seeding {
 		select {
-		case res := <-w.seedDone:
-			if res.status == seedApplied {
-				a.d.Resolver.WarmFromPrefs()
-			}
+		case <-w.seedDone:
 			w.seeding = false
 		default:
 			// Still seeding. The hard cap still applies: a dead origin's seed is bounded only by seedOriginFormats'

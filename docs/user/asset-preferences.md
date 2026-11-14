@@ -2,35 +2,21 @@
 
 Open **Settings** from the lobby or the courtroom.
 
-## Format probing
+## Formats
 
-AsyncAO asks the server for exactly **one file format per asset type** by
-default:
-
-| Asset | Default | Why |
-|---|---|---|
-| Character icons | `.png` | servers ship PNG icons, not WebP |
-| Sprites, backgrounds, bubbles, misc | `.webp` | modern, small, animated-capable |
-| Sounds, music, blips | `.opus` | modern, small |
-
-If your server still ships older formats you have two options:
-
-- **Per-type checkboxes** — tick the extra formats (`.apng`, `.gif`, `.png`,
-  `.jpg`) you want probed for that type. The type's default stays first.
-- **Enable format fallbacks globally** — appends the classic legacy chain to
-  every type (sprites: `.apng → .gif → .png`, audio: `.ogg → .wav → .mp3`).
-
-When an asset doesn't exist in *any* enabled format you get a visible warning
-naming the formats tried — that's your cue to tick a fallback box or ask the
-server owner to upgrade their pack.
+AsyncAO reads each server's `extensions.json` when you join and asks for its
+art in exactly the formats and order it lists. A server without one is asked
+in a built-in order (images: `.webp`, `.png`, `.apng`, `.gif`, `.avif`, `.jpg`;
+sounds: `.opus`, `.ogg`, `.mp3`, `.wav`), with the formats that have worked
+there going first. Files in your own folders and packs are found in any
+format. There is nothing to configure.
 
 ## Learned formats
 
-The first format that works for a server is remembered (per server, per asset
-type) and persisted. From then on that server costs one perfectly-aimed
-request per asset — and after the disk cache warms, zero. **Clear Learned
-Formats** resets this memory; changing a type's format list resets it for
-that type automatically.
+What worked on each server, and the exact file each asset was found as, is
+kept in `learned.json` beside your settings, so the next visit asks the right
+file first. **Settings → Assets → Cache → Learned formats → Clear** forgets it;
+**Fix stuck images** forgets it and clears the disk cache together.
 
 ## Play Animations
 

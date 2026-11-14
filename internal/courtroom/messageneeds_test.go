@@ -137,7 +137,7 @@ func recordingRoom(t *testing.T) (*Courtroom, *recordingSource) {
 	t.Cleanup(decoder.Close)
 	src := &recordingSource{}
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(prefs), Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: src, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)

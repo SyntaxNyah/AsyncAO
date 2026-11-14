@@ -481,10 +481,10 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	a.gifExporting = true
 	a.beginExportScaleBracket() // #77: exports render at native (100%) scale, not the live UI scale
 
-	// Seed the recording's origin formats before the warm so it probes the manifest-declared format (see the
-	// seeding-phase field). Same http(s), auto-detect and per-origin dedupe as the session connect path; a non-http
-	// origin (local:// mount) or auto-detect off skips to warming. tickGifSeed gates the first warm tick on the result.
-	if strings.HasPrefix(scene.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(scene.Origin) {
+	// Read the recording's origin's extensions.json before the warm so it asks the listed format first. Same http(s)
+	// and per-origin dedupe as the session connect path; a non-http origin (local:// mount) skips to warming.
+	// tickGifSeed gates the first warm tick on the result.
+	if strings.HasPrefix(scene.Origin, "http") && !a.originSeeded(scene.Origin) {
 		a.markOriginSeeded(scene.Origin)
 		a.startExportSeed(a.gif, scene.Origin)
 		a.warnLine = "Checking the server's format manifest…"
@@ -495,29 +495,22 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 }
 
 // startExportSeed spawns the one bounded format-seed goroutine for an export job and enters the seeding phase, which
-// tickGifExport gates ahead of the warm. The render thread republishes the resolver table on delivery (tickGifSeed).
-// Render thread only.
+// tickGifExport gates ahead of the warm. Render thread only.
 func (a *App) startExportSeed(j *gifExportJob, origin string) {
 	j.seeding = true
 	j.seedOriginTo = origin
 	j.seedDone = make(chan seedResult, gifSeedBuf)
 	done := j.seedDone
 	mgr := a.d.Manager
-	prefs := a.d.Prefs
 	go func() {
-		done <- seedOriginFormats(mgr, prefs, origin) // 1-buffered: always accepts
+		done <- seedOriginFormats(mgr, origin) // 1-buffered: always accepts
 	}()
 }
 
-// tickGifSeed polls the format-seed goroutine without blocking (render thread). On delivery it republishes the resolver
-// table (WarmFromPrefs, as pollManifest does) so the warm's first candidate sees the seeded formats, then enters the
-// warm phase. A Cancel that nils a.gif never reaches here (tickGifExport's j==nil guard fires).
+// tickGifSeed polls the format-seed goroutine without blocking (render thread); on delivery it enters the warm phase. A Cancel that nils a.gif never reaches here (tickGifExport's j==nil guard fires).
 func (a *App) tickGifSeed(j *gifExportJob) {
 	select {
-	case res := <-j.seedDone:
-		if res.status == seedApplied {
-			a.d.Resolver.WarmFromPrefs()
-		}
+	case <-j.seedDone:
 		j.seeding = false
 		a.warnLine = "Loading scene assets…"
 		a.warnAt = time.Now()

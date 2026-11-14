@@ -161,12 +161,10 @@ type sessionState struct {
 	areaLogs     map[string][]icEntry
 	areaLogOrder []string
 	lastICSend   time.Time // chat_ratelimit window
-	// manifestFor: Settings writes "" to force fetchManifestAsync to re-fetch the session origin's extensions.json.
-	manifestFor string
 	// manifestSeeded holds origins whose extensions.json was already fetched and seeded this session, so each is
 	// seeded once. Bounded by the distinct asset origins visited.
 	manifestSeeded map[string]struct{}
-	// manifestStatus records per asset host how the extensions.json probe ended; Settings → Formats reads it.
+	// manifestStatus records per asset host how the extensions.json probe ended; Settings → Assets reads it.
 	// Render thread only, same bound as manifestSeeded.
 	manifestStatus map[string]seedStatus
 	// assetHosts are the connected server's extra asset hosts as last handed to the media system;

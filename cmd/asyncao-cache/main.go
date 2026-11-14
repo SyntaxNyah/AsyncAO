@@ -29,9 +29,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/platform"
 )
@@ -253,7 +253,7 @@ func cmdWarm(args []string) error {
 		for _, name := range names {
 			urls = append(urls, strings.TrimRight(*base, "/")+"/characters/"+name+"/"+charIconStem+ext)
 		}
-		fmt.Printf("warming %d char icons as %s (extension via %s)\n", len(urls), ext, assets.ManifestFileName)
+		fmt.Printf("warming %d char icons as %s (extension via %s)\n", len(urls), ext, media.ManifestFile)
 	default:
 		return fmt.Errorf("warm needs -list, or -base with -chars")
 	}
@@ -335,15 +335,15 @@ func fetch(client *http.Client, url string) ([]byte, int) { //nolint:forbidigo /
 // manifestIconExt reads the extension from extensions.json, defaulting to .png as webAO does.
 func manifestIconExt(base string) string {
 	client := newHTTPClient()
-	data, status := fetch(client, base+"/"+assets.ManifestFileName)
+	data, status := fetch(client, base+"/"+media.ManifestFile)
 	if status != http.StatusOK {
 		return ".png"
 	}
-	m, err := assets.ParseManifest(data)
-	if err != nil || len(m.CharIcon) == 0 {
+	lists, err := media.ParseManifest(data)
+	if err != nil || len(lists[media.ClassCharIcon]) == 0 {
 		return ".png"
 	}
-	return m.CharIcon[0]
+	return lists[media.ClassCharIcon][0]
 }
 
 func readLines(path string) ([]string, error) {

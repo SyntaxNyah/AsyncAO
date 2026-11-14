@@ -59,9 +59,6 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	dir := t.TempDir() // empty pack: background/gs4/defensedesk exists in no format
 	local, cleanup := wireLocalManager(t, a, dir)
 	defer cleanup()
-	// The resolver walks the configured formats; point the desk type at
-	// .png so the probe list is a real (and short) chain over the on-disk root.
-	a.d.Prefs.SetFormatOrder(assets.AssetTypeDeskOverlay.Name(), []string{config.ExtPNG})
 
 	// A real room with a live DeskShow message, so the relay has something to
 	// re-derive (NotifyDeskMissing only touches the scene of the room whose CURRENT
@@ -136,7 +133,6 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 	dir := t.TempDir() // empty pack: background/gs4/<pos> exists in no format
 	local, cleanup := wireLocalManager(t, a, dir)
 	defer cleanup()
-	a.d.Prefs.SetFormatOrder(assets.AssetTypeBackground.Name(), []string{config.ExtPNG})
 
 	urls := courtroom.NewURLBuilder(local.BaseURL())
 	bgBase := urls.PositionScenery("gs4", "wit", nil).Background

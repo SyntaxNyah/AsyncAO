@@ -146,7 +146,7 @@ heap corruption.
 | `internal/config` | preferences + debounced atomic saver; favorites; local mounts; the Wardrobe's `wardrobe.json` | no |
 | `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
 | `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), request priority, master list + tiers + direct connect | no |
-| `internal/assets` | AssetType enum, lock-free resolver (learned formats), `Manager` over `internal/media` (the bridge), the player's folders as a media source, decode pool (magic-byte sniffing), WebP/AVIF CGO binding + fallback, Markov prefetcher | no (decoder is SDL-free by rule) |
+| `internal/assets` | AssetType enum, `Manager` over `internal/media` (the bridge; learned formats and winners kept in `learned.json`), the player's folders as a media source, decode pool (magic-byte sniffing), WebP/AVIF CGO binding + fallback, Markov prefetcher | no (decoder is SDL-free by rule) |
 | `internal/media` | the media system every asset request goes through: `Manager` owns every table on one goroutine, `Get` is safe from any thread, pools run single steps; sources memory → disk cache → `Folders` (the player's folders and .zip packs) → web | no |
 | `internal/protocol` | AO wire (delegated to aolib-go: FantaCode + JSON), MS 2.6/2.8 parse/build, pairing semantics, FeatureSet, WebSocket conn | no |
 | `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, MS both-wire codec | no |
@@ -203,8 +203,8 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
   Theme text colors apply only while the theme's own skin drew: they're
   designed for that skin (black-on-paper), not our flat dark panel.
 - `extensions.json` at the asset origin (webAO convention) is the format
-  manifest; autodetect (default ON) seeds per-host learned formats from
-  it. `.webp.static`/`.webp.animated` pseudo-suffixes normalize to .webp.
+  manifest; it is read on every connect and sets that host's formats and
+  their order, as written. `.webp.static`/`.webp.animated` pseudo-suffixes normalize to .webp.
 - Theme textures live in T1 under `theme://<stem>` keys; the scheme prefix
   can't collide with asset URLs. They heal on eviction via themePage.
 

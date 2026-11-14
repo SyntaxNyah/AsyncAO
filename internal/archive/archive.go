@@ -126,12 +126,13 @@ func DiskPath(rel string) string {
 	return strings.Join(out, "/")
 }
 
-// SeedFormats teaches a replay resolver the archive's formats, so non-webp files resolve on the first probe.
-func SeedFormats(resolver *assets.Resolver, origin string, formats map[string]string) {
-	host := assets.HostOf(origin)
+// SeedFormats gives a replay's origin the archive's recorded formats, so non-webp files resolve on the first probe.
+func SeedFormats(mgr *assets.Manager, origin string, formats map[string]string) {
+	byType := make(map[assets.AssetType]string, len(formats))
 	for name, ext := range formats {
 		if t, ok := assets.TypeFromName(name); ok {
-			resolver.RecordSuccess(host, t, ext)
+			byType[t] = ext
 		}
 	}
+	mgr.AllowFormats(origin, byType)
 }

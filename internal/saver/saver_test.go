@@ -54,13 +54,14 @@ func TestBurstOfChangesIsOneWriteOfTheLatestValue(t *testing.T) {
 		c.value.Store(int64(i))
 		s.Changed()
 	}
-	waitFor(t, func() bool { return c.writes.Load() > 0 })
+	want := strconv.Itoa(burst - 1)
+	waitFor(t, func() bool {
+		data, err := os.ReadFile(path)
+		return err == nil && string(data) == want
+	})
 	time.Sleep(testDelay * 2)
 	if n := c.writes.Load(); n != 1 {
 		t.Errorf("%d writes, want 1", n)
-	}
-	if got := readBack(t, path); got != strconv.Itoa(burst-1) {
-		t.Errorf("file holds %q, want %d", got, burst-1)
 	}
 }
 

@@ -29,12 +29,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 
 ## Streaming & performance
 
-- **Format autodetect (default ON)**: `<origin>/extensions.json` (webAO
-  convention — every server ships its own mix) seeds the per-host learned
-  formats on connect, so each asset class costs ~one probe stone cold.
-  Manual per-type probing in Settings stays authoritative when autodetect
-  is off and covers manifest-less servers. `.webp.static`-style pseudo
-  suffixes are normalized away (animation is a payload property here).
+- **Formats from the server**: `<origin>/extensions.json` (webAO convention
+  — every server ships its own mix) is read on connect and sets that host's
+  formats and their order, so each asset class costs ~one request stone
+  cold. Without one, formats that worked there go first, then a built-in
+  order; what worked and each asset's file are kept in `learned.json`
+  between sessions. `.webp.static`-style pseudo suffixes are normalized
+  away (animation is a payload property here).
   A server can also declare `sfx_extensions` / `blips_extensions` to seed
   its sound-effect and blip formats; audio classes the manifest doesn't
   cover fall back to `.opus` → `.ogg` → `.mp3` → `.wav`.
@@ -46,11 +47,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   searched again. Each host, the server's own included, shows whether its
   format list was read, is absent, couldn't be read, or isn't checked yet,
   and the debug log gets one line per extra host when its result lands.
-- **Desks follow the manifest by default** (Settings → Formats): desk overlays
-  auto-detect from the server's `extensions.json` like every other class
-  (desks share the manifest's background class). Tick "Always use WebP for
-  desks" to pin them to `.webp` on servers whose manifest is wrong for desks;
-  the per-type format picker covers every format either way.
+- **Desks follow the manifest**: desk overlays take their formats from the
+  server's `extensions.json` like every other class (desks share the
+  manifest's background class).
 - **Live-scene self-heal**: if the background, desk, **or a character sprite**
   is evicted from the texture cache mid-message (memory pressure in a packed
   room, or a hover-preview fetch), it is re-demanded at high priority within a

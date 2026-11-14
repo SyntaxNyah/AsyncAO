@@ -543,13 +543,6 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 10
 
 	y = a.drawProxySettings(y, w)
-
-	// Image formats have their own tab, not here: art failing to render is a first-week problem. The pointer stays
-	// because the casing control above is the other reason a server's art fetches nothing.
-	y = a.settingsSection(y, w, "Image & audio formats")
-	y = a.settingsDesc(pad, y, "Which file types AsyncAO asks a server for — and the one-click fix for a server whose art isn't loading — live on their own tab now.", ColTextDim)
-	y += 6
-	y = a.formatsTabPointer(y)
 	return y
 }
 

@@ -22,15 +22,24 @@ const managerWait = 5 * time.Second
 
 // testRig wires a full pipeline against an httptest server.
 type testRig struct {
-	prefs    *config.AssetPreferences
-	resolver *Resolver
-	manager  *Manager
-	decoder  *DecoderPool
-	disk     *cache.DiskCache
-	t2       *cache.ByteBudgetLRU[string, []byte]
+	prefs   *config.AssetPreferences
+	manager *Manager
+	decoder *DecoderPool
+	disk    *cache.DiskCache
+	t2      *cache.ByteBudgetLRU[string, []byte]
 }
 
 // newRig builds a Manager on source; localMode mounts a LocalFetcher source's folders, as "only use my folders" does.
+func newTestPrefs(tb testing.TB) *config.AssetPreferences {
+	tb.Helper()
+	p, err := config.New(filepath.Join(tb.TempDir(), config.PrefsFileName))
+	if err != nil {
+		tb.Fatalf("config.New: %v", err)
+	}
+	tb.Cleanup(func() { _ = p.Close() })
+	return p
+}
+
 func newRig(tb testing.TB, source Fetcher, localMode bool) *testRig {
 	tb.Helper()
 	return newRigAt(tb, source, localMode, "")
@@ -40,7 +49,6 @@ func newRig(tb testing.TB, source Fetcher, localMode bool) *testRig {
 func newRigAt(tb testing.TB, source Fetcher, localMode bool, learnedPath string) *testRig {
 	tb.Helper()
 	prefs := newTestPrefs(tb)
-	resolver := NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		tb.Fatal(err)
@@ -54,7 +62,6 @@ func newRigAt(tb testing.TB, source Fetcher, localMode bool, learnedPath string)
 	tb.Cleanup(decoder.Close)
 
 	m := NewManager(ManagerDeps{
-		Resolver:    resolver,
 		Prefs:       prefs,
 		T2:          t2,
 		Disk:        disk,
@@ -66,7 +73,7 @@ func newRigAt(tb testing.TB, source Fetcher, localMode bool, learnedPath string)
 	if lf, ok := source.(*LocalFetcher); ok && localMode {
 		m.SetFolders(lf.Mounts(), nil)
 	}
-	return &testRig{prefs: prefs, resolver: resolver, manager: m, decoder: decoder, disk: disk, t2: t2}
+	return &testRig{prefs: prefs, manager: m, decoder: decoder, disk: disk, t2: t2}
 }
 
 // TestResolveRawFromLocalArchive is the load-bearing round-trip proof for the
@@ -110,8 +117,8 @@ func TestResolveRawFromLocalArchive(t *testing.T) {
 	if url, data, ok := rig.manager.ResolveRaw(pbase, AssetTypeCharSprite); !ok || string(data) != "PNG" {
 		t.Fatalf("folder .png not resolved: ok=%v url=%q", ok, url)
 	}
-	if ext, ok := rig.resolver.Learned(hostOf(pbase), AssetTypeCharSprite); ok && ext == config.ExtPNG {
-		t.Errorf("a folder hit taught the host %q", ext)
+	if n := rig.manager.LearnedHosts(); n != 0 {
+		t.Errorf("folder hits taught %d hosts a format", n)
 	}
 }
 

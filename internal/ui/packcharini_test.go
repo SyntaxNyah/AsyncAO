@@ -44,12 +44,11 @@ func packApp(t *testing.T, files map[string]string) *App {
 	t.Cleanup(decoder.Close)
 
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(a.d.Prefs),
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()),
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  network.NewClientNotFoundTTL(0, netproxy.Direct()),
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 

@@ -890,7 +890,7 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 	if wipeAll {
 		a.d.Prefs.ResetAll()
 		_ = a.d.Manager.ClearDisk()
-		a.d.Resolver.InvalidateAll()
+		a.d.Manager.ForgetLearned()
 		if a.juke != nil {
 			a.juke.Clear() // the jukebox library lives in its own file — wipe it too
 		}

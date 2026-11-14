@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	loadGoldenSHA256     = "61988be9a6dd905b0877179185bdb0ff91b699ef7a1c357fc9aa1e1683c60d77"
-	loadGoldenCompactSHA = "22e0cb397d2c5b66e5cefe4ff8308b9c1ffe10ad88b61a177fd211370ade6f12"
-	malformedGoldenSHA   = "8b007e5163b90b7f93bdd051b94b0013006a3c6a88d974be4ad7f39b28b2402e"
+	loadGoldenSHA256     = "2f12d3d0ece77327a0c2e4bc5e5be0f051aaa83b88dd41f79413a39bdcd429bd"
+	loadGoldenCompactSHA = "d5fc422f5435bcda0a8dea2066dc7c7016cc9acd84196190592902fef61e1234"
+	malformedGoldenSHA   = "71c9bc35d1f51380302fee3455848ad9e26e69531afd358d9d9c7f3bf7f98bf1"
 	malformedCompactSHA  = "a20792b6c36e1dc8730f83d8949d47d84f3dad3d3ea9d608beda113a3f8a1715"
-	defaultPrefsSHA      = "dc72c873f49d15787f52f53f156c97f95b940edba56e33b5c02c7c77f145236f"
-	prefsGoldenSHA256    = "ee2899f27d1ac3f6c89bb0975e18dd2b262c81e86ec173948e6ce554753d47dd"
+	defaultPrefsSHA      = "da4b6333aacfcf333cac15dca529aedf7747242744a4cd9b1c737470aed7405d"
+	prefsGoldenSHA256    = "32fc839da97d8dd93fc5555036884d1827b796a736c7d934acf97b4d0114ba30"
 	settersGoldenSHA     = "4679f9c7120659feee3b12230c588ae6930c89cffc409d8477a0f726f1b758fc"
 	settersCompactSHA    = "24be0149ad243bfb76a27e118ba5049662fd8c8d530938a8ff819455a2552ce1"
 )

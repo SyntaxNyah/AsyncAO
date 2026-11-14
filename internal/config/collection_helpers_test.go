@@ -94,21 +94,3 @@ func TestCollectionHelpersToggleInt(t *testing.T) {
 		t.Fatalf("remove: got %v now=%v", got, now)
 	}
 }
-
-func TestCollectionHelpersPromoteFront(t *testing.T) {
-	// promote existing to front
-	got := promoteFront([]string{"a", "b", "c"}, "b", 4)
-	if !reflect.DeepEqual(got, []string{"b", "a", "c"}) {
-		t.Fatalf("promote: got %v", got)
-	}
-	// new entry leads, deduped
-	got = promoteFront([]string{"a", "b"}, "x", 4)
-	if !reflect.DeepEqual(got, []string{"x", "a", "b"}) {
-		t.Fatalf("new lead: got %v", got)
-	}
-	// cap bounds the result
-	got = promoteFront([]string{"a", "b", "c"}, "x", 3)
-	if !reflect.DeepEqual(got, []string{"x", "a", "b"}) {
-		t.Fatalf("cap: got %v", got)
-	}
-}

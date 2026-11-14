@@ -61,7 +61,6 @@ func roomFactoryAppMounted(t *testing.T) (*App, string, func()) {
 	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)
 	mount := t.TempDir()
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		cleanup()
@@ -76,27 +75,14 @@ func roomFactoryAppMounted(t *testing.T) (*App, string, func()) {
 	decoder := assets.NewDecoderPool(2)
 	t.Cleanup(decoder.Close)
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   assets.NewLocalFetcher([]string{mount}),
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  assets.NewLocalFetcher([]string{mount}),
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders([]string{mount}, nil)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	// no manifest fetch interposes on the export path
 	return a, mount, cleanup
 }
 

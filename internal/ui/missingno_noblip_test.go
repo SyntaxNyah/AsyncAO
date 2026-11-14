@@ -11,7 +11,6 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -31,7 +30,6 @@ func wireLocalManager(t *testing.T, a *App, dir string) (*assets.LocalFetcher, f
 	}
 	a.d.Store = store
 
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		cleanup()
@@ -48,12 +46,11 @@ func wireLocalManager(t *testing.T, a *App, dir string) (*assets.LocalFetcher, f
 
 	local := assets.NewLocalFetcher([]string{dir})
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   local,
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  local,
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders(local.Mounts(), nil)
@@ -119,7 +116,6 @@ func TestSceneWarmNoMissingnoForFolderOnlySprite(t *testing.T) {
 	// The live speaker's idle base is the GLUED spelling (the sprite's identity),
 	// which does not exist on disk — only its folder-form twin does.
 	glued := local.BaseURL() + "characters/hobo/(a)normal"
-	seedPNGFormat(t, a)
 
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker.Visible = true
@@ -167,7 +163,6 @@ func TestHealSpriteLayerFolderOnlySprite(t *testing.T) {
 	defer cleanup()
 
 	glued := local.BaseURL() + "characters/hobo/(a)normal"
-	seedPNGFormat(t, a)
 
 	layer := &courtroom.SpriteLayer{Visible: true, Active: glued}
 	var askBase string
@@ -223,7 +218,6 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	// Seed the format learn to .png for this host so the folder resolves the bare
 	// PNG (the default probe list is webp-only; a real server would have learned or
 	// the manifest seeded it — see TestResolveRawFromLocalArchive).
-	seedPNGFormat(t, a)
 
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker.Visible = true
@@ -277,7 +271,6 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 	defer cleanup()
 
 	prefixed := local.BaseURL() + "characters/ghost/(a)normal"
-	seedPNGFormat(t, a)
 
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker.Visible = true
@@ -307,12 +300,4 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 			time.Sleep(2 * time.Millisecond)
 		}
 	}
-}
-
-// seedPNGFormat forces the char-sprite probe list to .png so the
-// resolver finds the on-disk PNG fixtures (the default candidate list is
-// webp-only). Mirrors what a real server learns / the archive manifest seeds.
-func seedPNGFormat(t *testing.T, a *App) {
-	t.Helper()
-	a.d.Prefs.SetFormatOrder(assets.AssetTypeCharSprite.Name(), []string{config.ExtPNG})
 }

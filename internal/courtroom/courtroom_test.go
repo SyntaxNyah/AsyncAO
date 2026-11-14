@@ -67,7 +67,6 @@ func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioR
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	resolver := assets.NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +80,7 @@ func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioR
 	t.Cleanup(decoder.Close)
 	local := assets.NewLocalFetcher([]string{t.TempDir()})
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: local, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)

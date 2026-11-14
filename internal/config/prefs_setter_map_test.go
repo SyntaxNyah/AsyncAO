@@ -66,7 +66,6 @@ var setterFieldMap = map[string]setterField{
 	"SetFontCensus":            {field: "FontCensus"},
 	"SetFontEverywhere":        {field: "FontEverywhere"},
 	"SetForceCharNames":        {field: "ForceCharNames"},
-	"SetFormatAutoDetect":      {field: "AutoDetectFormats"},
 	"SetFrameLimiterDisabled":  {field: "DisableFrameLimiter"},
 	"SetFriendGlowPulse":       {field: "FriendGlowPulse"},
 	"SetFriendHighlight":       {field: "FriendHighlight"},

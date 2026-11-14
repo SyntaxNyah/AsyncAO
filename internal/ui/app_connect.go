@@ -1106,19 +1106,6 @@ func (a *App) pickCharacter(idx int) {
 	a.sess.PickCharacter(idx)
 }
 
-// extProfileFor returns the effective format profile (extensions.json text) for an asset host: a user-set per-server
-// profile wins, else the official vanilla server gets the bundled example. "" means fetch the server's own
-// extensions.json.
-func (a *App) extProfileFor(host string) string {
-	if p := a.d.Prefs.Load().ExtProfile(host); p != "" {
-		return p
-	}
-	if a.isOfficialVanilla(host) {
-		return assets.BundledVanillaManifestJSON
-	}
-	return ""
-}
-
 // isOfficialVanilla matches the AO official vanilla base by asset host, or the official vanilla server by connected
 // server key, so joining it uses the vanilla format profile.
 func (a *App) isOfficialVanilla(assetHost string) bool {
@@ -1232,43 +1219,32 @@ func charCaseName(c uint8) string {
 	}
 }
 
-// fetchManifestAsync seeds this host's learned formats from <origin>/extensions.json (webAO convention) so the first
-// asset of each class costs one probe. Auto-detect (Settings) gates the network fetch; manual orders cover servers
-// without a manifest.
+// vanillaManifest is the official vanilla server's formats: it publishes no extensions.json, and its art is PNG.
+const vanillaManifest = `{
+	"charicon_extensions": [".png"],
+	"emote_extensions": [".apng", ".webp", ".png"],
+	"emotions_extensions": [".png"],
+	"background_extensions": [".png"]
+}`
+
+// fetchManifestAsync reads <origin>/extensions.json (webAO convention) into the media system, so the first asset of
+// each class costs one request.
 func (a *App) fetchManifestAsync() {
 	origin := a.urls.Origin()
-	// Settings' re-seed hooks blank manifestFor to force a fresh fetch after a profile or auto-detect change; drop the
-	// origin from the dedupe set so the guard below re-runs.
-	if a.manifestFor == "" {
-		delete(a.manifestSeeded, origin)
-	}
-	a.manifestFor = origin
 	if a.originSeeded(origin) || !strings.HasPrefix(origin, "http") {
 		return
 	}
 	a.markOriginSeeded(origin)
 	host := hostOfURL(origin)
-	// A per-host format profile (user-set, or the built-in official-vanilla example) applies even with auto-detect off;
-	// it seeds instantly, so the first probe already uses the right formats, and wins over the global default for this
-	// host.
-	if profile := a.extProfileFor(host); profile != "" {
-		if m, err := assets.ParseManifest([]byte(profile)); err == nil {
-			n := m.SeedLearned(a.d.Prefs, host)
-			a.d.Resolver.WarmFromPrefs()
-			a.pushDebug(fmt.Sprintf("format profile: seeded %d classes for %s (instant)", n, host))
-			return
-		}
-	}
-	// The network fetch of the server's own extensions.json is gated on auto-detect; the per-server profile above is
-	// not.
-	if !a.d.Prefs.Load().AutoDetectFormats {
+	if a.isOfficialVanilla(host) {
+		a.d.Manager.AllowManifest(origin, []byte(vanillaManifest))
+		a.pushDebug("formats: the vanilla server's built-in list for " + host)
 		return
 	}
 	mgr := a.d.Manager
-	prefs := a.d.Prefs
 	ch := a.manifestRes
 	go func() {
-		res := seedOriginFormats(mgr, prefs, origin)
+		res := seedOriginFormats(mgr, origin)
 		mf := manifestFetch{host: host, seeded: res.seeded, status: res.status, err: res.err}
 		// pollManifest treats a nil err as "seeded". A host with no manifest or an unreadable one is not a seed, so
 		// surface it as an error and let pollManifest log "learn per probe instead".
@@ -1309,7 +1285,7 @@ func (a *App) markOriginSeeded(origin string) {
 type seedStatus int
 
 const (
-	seedSkipped seedStatus = iota // not attempted (non-http origin, or autodetect off)
+	seedSkipped seedStatus = iota // not attempted (non-http origin)
 	seedApplied                   // extensions.json fetched + parsed; N classes seeded
 	seedAbsent                    // no reachable extensions.json (host publishes none)
 	seedFailed                    // reachable but unparseable / transport fault
@@ -1324,17 +1300,11 @@ type seedResult struct {
 	err    error
 }
 
-// seedOriginFormats is the blocking core shared by the session connect path (fetchManifestAsync) and the diagnostic
-// paths (content report, export loader) to seed a host's learned formats from <origin>/extensions.json. It runs off the
-// render thread (FetchRaw blocks; RecordLearned/SeedLearned take the prefs mutex). The caller republishes the resolver
-// table (WarmFromPrefs) on the render thread. absent (a clean 404) is distinct from failed (transport/parse fault) so
-// the panel can say which.
-func seedOriginFormats(mgr *assets.Manager, prefs *config.AssetPreferences, origin string) seedResult {
-	if mgr == nil || prefs == nil || !strings.HasPrefix(origin, "http") {
-		return seedResult{status: seedSkipped}
-	}
-	host := hostOfURL(origin)
-	if host == "" {
+// seedOriginFormats reads origin's extensions.json into the media system; it blocks, so the connect path and the
+// diagnostic passes (content report, export loader) run it off the render thread. absent (a clean 404) is distinct
+// from failed (transport or parse fault) so the panel can say which.
+func seedOriginFormats(mgr *assets.Manager, origin string) seedResult {
+	if mgr == nil || !strings.HasPrefix(origin, "http") || hostOfURL(origin) == "" {
 		return seedResult{status: seedSkipped}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), smallFetchTimeout)
@@ -1346,14 +1316,14 @@ func seedOriginFormats(mgr *assets.Manager, prefs *config.AssetPreferences, orig
 		}
 		return seedResult{status: seedFailed, err: err}
 	}
-	m, perr := assets.ParseManifest(data)
+	lists, perr := media.ParseManifest(data)
 	if perr != nil {
 		return seedResult{status: seedFailed, err: perr}
 	}
-	return seedResult{status: seedApplied, seeded: m.SeedLearned(prefs, host)}
+	return seedResult{status: seedApplied, seeded: len(lists)}
 }
 
-// pollManifest lands autodetect results: republish the resolver snapshot with the seeds and report on the debug lane.
+// pollManifest reports a finished extensions.json read on the debug lane.
 func (a *App) pollManifest() {
 	select {
 	case res := <-a.manifestRes:
@@ -1362,13 +1332,12 @@ func (a *App) pollManifest() {
 			a.pushDebug("extensions.json: " + res.err.Error() + " — formats learn per probe instead")
 			return
 		}
-		a.d.Resolver.WarmFromPrefs()
-		a.pushDebug(fmt.Sprintf("extensions.json: seeded %d format classes for %s", res.seeded, res.host))
+		a.pushDebug(fmt.Sprintf("extensions.json: %d format classes for %s", res.seeded, res.host))
 	default:
 	}
 }
 
-// noteManifestStatus records whether a host published a usable extensions.json, for Settings -> Formats. Render thread
+// noteManifestStatus records whether a host published a usable extensions.json, for Settings -> Assets. Render thread
 // only (the map is unsynchronized); bounded by the distinct asset hosts visited in a session.
 func (a *App) noteManifestStatus(host string, st seedStatus) {
 	if host == "" {

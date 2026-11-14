@@ -189,6 +189,24 @@ func (b *CandidateBuilder) Learn(origin string, class Class, ext string) {
 	h.learned[class][ext]++
 }
 
+// ForgetLearned drops every learned format; the hosts' own lists stay.
+func (b *CandidateBuilder) ForgetLearned() {
+	for _, h := range b.origins {
+		clear(h.learned)
+	}
+}
+
+// LearnedOrigins counts the origins a format was learned for.
+func (b *CandidateBuilder) LearnedOrigins() int {
+	n := 0
+	for _, h := range b.origins {
+		if len(h.learned) > 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // Allow sets the formats and their order from a host's extensions.json.
 func (b *CandidateBuilder) Allow(origin string, allowed map[Class][]string) {
 	h := b.hints(origin)

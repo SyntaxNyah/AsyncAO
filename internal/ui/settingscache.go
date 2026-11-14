@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -115,12 +114,11 @@ func (a *App) drawCacheSettings(y int32) int32 {
 		plural(int(a.d.Manager.Stats().Missing), "asset")+" not found this session", a.drawMissingSettings)
 
 	if a.drawCacheAction(y, "Clear") {
-		a.d.Prefs.ClearLearned()
-		a.d.Resolver.InvalidateAll()
+		a.d.Manager.ForgetLearned()
 		settings.statusLine = "Learned formats cleared."
 	}
 	y = a.drawCacheRow(y, cacheRowLearned, "Learned formats",
-		"for "+plural(learnedServerCount(a.d.Prefs.Load().LearnedFormats), "server"), a.drawLearnedSettings)
+		"for "+plural(a.d.Manager.LearnedHosts(), "server"), a.drawLearnedSettings)
 
 	return a.settingsDesc(a.formX, y+settDetailGap,
 		"Clear the disk cache if a server updated its art and you still see the old version.", ColTextDim) + settSectionGap
@@ -209,17 +207,16 @@ func (a *App) drawMissingSettings(y int32) int32 {
 	return a.settingsDesc(a.formX, y, "Applies after a restart.", ColTextDim)
 }
 
-// drawLearnedSettings is the learned formats' repair, export and import.
+// drawLearnedSettings is the learned formats' repair.
 func (a *App) drawLearnedSettings(y int32) int32 {
 	c := a.ctx
-	const fixLabel, exportLabel, importLabel = "Fix stuck images", "Export…", "Import…"
+	const fixLabel = "Fix stuck images"
 	row := cacheButtonRow{a: a, x: a.formX, y: y}
 	r := row.next(fixLabel)
 	// A server repack or stale CDN needs the learned format and the cached file dropped together; either alone
 	// leaves the other stuck.
 	if c.Button(r, fixLabel) {
-		a.d.Prefs.ClearLearned()
-		a.d.Resolver.InvalidateAll()
+		a.d.Manager.ForgetLearned()
 		settings.statusLine = "Cleared learned formats and the disk cache, so images load fresh."
 		if err := a.d.Manager.ClearDisk(); err != nil {
 			settings.statusLine = "Cleared learned formats, but the disk cache couldn't clear: " + err.Error()
@@ -228,16 +225,6 @@ func (a *App) drawLearnedSettings(y int32) int32 {
 	}
 	c.Tooltip(r, "Clears learned formats and the disk cache together, for art that is wrong everywhere.")
 	a.noteSearchRow(fixLabel, r.Y)
-	r = row.next(exportLabel)
-	if c.Button(r, exportLabel) {
-		exportLearnedAsync(a.d)
-	}
-	c.Tooltip(r, "Writes learned formats beside the program, to carry to another computer.")
-	r = row.next(importLabel)
-	if c.Button(r, importLabel) {
-		importLearnedAsync(a.d)
-	}
-	c.Tooltip(r, "Merges in an exported file, so its servers load right from the first visit.")
 	return row.y + mountCtlH
 }
 
@@ -315,21 +302,6 @@ func folderSize(root string) (bytes int64, files int) {
 		return nil
 	})
 	return bytes, files
-}
-
-// learnedServerCount counts the servers with learned formats; keys are host, separator, asset type. The count is kept
-// for the map's size, so a frame that changed nothing builds no set.
-func learnedServerCount(learned map[string][]string) int {
-	if len(learned) == settings.learnedKeys && settings.learnedKeys > 0 {
-		return settings.learnedServers
-	}
-	hosts := make(map[string]struct{}, len(learned))
-	for key := range learned {
-		host, _, _ := strings.Cut(key, config.LearnedKeySeparator)
-		hosts[host] = struct{}{}
-	}
-	settings.learnedKeys, settings.learnedServers = len(learned), len(hosts)
-	return len(hosts)
 }
 
 // formatBytes shows a byte count in the largest unit that keeps it above one.

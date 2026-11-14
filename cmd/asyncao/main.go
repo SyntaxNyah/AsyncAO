@@ -115,8 +115,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	configQuarantine := prefs.Quarantine()
 	defer prefs.Close()
 
-	resolver := assets.NewResolver(prefs)
-
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		return err
@@ -258,7 +256,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		log.Printf("learned formats won't be kept: %v", err)
 	}
 	manager := assets.NewManager(assets.ManagerDeps{
-		Resolver:    resolver,
 		Prefs:       prefs,
 		T2:          t2,
 		Disk:        disk,
@@ -291,10 +288,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 			s := client.Stats()
 			return s.Requests, s.Cached404s
 		},
-		LearnedHits: func() (int64, int64) {
-			s := resolver.Stats()
-			return s.LearnedHits, s.LearnedMisses
-		},
 	})
 	profiler.Start()
 	defer profiler.Stop()
@@ -322,7 +315,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	app := ui.NewApp(uiCtx, ui.Deps{
 		Profiler:         profiler,
 		Prefs:            prefs,
-		Resolver:         resolver,
 		Manager:          manager,
 		Disk:             disk,
 		Client:           client,

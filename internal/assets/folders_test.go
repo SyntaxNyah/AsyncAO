@@ -1,6 +1,8 @@
 package assets
 
 import (
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
+
 	"context"
 	"image/color"
 	"net/http"
@@ -179,14 +181,11 @@ func TestFolderTextNeverTeachesLearnedFormats(t *testing.T) {
 		map[string]string{},
 		map[string]string{"characters/witch/char.ini": "PACK INI"},
 	)
-	host := HostOf(pr.origin)
-	before := pr.rig.manager.resolver.LearnedList(host, AssetTypeCharSprite)
-
 	if _, err := pr.rig.manager.FetchRaw(context.Background(), pr.base("characters/witch/char.ini")); err != nil {
 		t.Fatalf("FetchRaw: %v", err)
 	}
-	if after := pr.rig.manager.resolver.LearnedList(host, AssetTypeCharSprite); len(after) != len(before) {
-		t.Errorf("the folder taught the server host a format: %v -> %v", before, after)
+	if n := pr.rig.manager.LearnedHosts(); n != 0 {
+		t.Errorf("the folder taught %d hosts a format", n)
 	}
 }
 
@@ -194,13 +193,13 @@ func TestFolderTextNeverTeachesLearnedFormats(t *testing.T) {
 // current host's format order from the folder author's conventions.
 func TestFolderNeverAnswersTheServerFormatList(t *testing.T) {
 	pr := newPackRig(t,
-		map[string]string{"/base/" + ManifestFileName: "SERVER MANIFEST"},
-		map[string]string{ManifestFileName: "PACK MANIFEST"},
+		map[string]string{"/base/" + media.ManifestFile: "SERVER MANIFEST"},
+		map[string]string{media.ManifestFile: "PACK MANIFEST"},
 	)
 
-	data, err := pr.rig.manager.FetchRaw(context.Background(), pr.base(ManifestFileName))
+	data, err := pr.rig.manager.FetchRaw(context.Background(), pr.base(media.ManifestFile))
 	if err != nil {
-		t.Fatalf("FetchRaw(%s): %v", ManifestFileName, err)
+		t.Fatalf("FetchRaw(%s): %v", media.ManifestFile, err)
 	}
 	if string(data) != "SERVER MANIFEST" {
 		t.Errorf("got %q — the folder answered for the server's own format list", data)
@@ -268,7 +267,7 @@ func TestFileDroppedInAfterAMissIsFoundOnRecheck(t *testing.T) {
 func TestFolderSpriteIsFoundInAFormatTheServerDoesNotList(t *testing.T) {
 	const spritePx = 4
 	pr := newPackRig(t,
-		map[string]string{"/base/" + ManifestFileName: `{"emote_extensions": [".webp"]}`},
+		map[string]string{"/base/" + media.ManifestFile: `{"emote_extensions": [".webp"]}`},
 		map[string]string{"characters/witch/normal.png": string(encodePNG(t, spritePx, spritePx, color.White))},
 	)
 	if _, err := pr.rig.manager.FetchManifest(context.Background(), pr.origin); err != nil {

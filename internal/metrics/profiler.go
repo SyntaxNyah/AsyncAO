@@ -21,7 +21,6 @@ const (
 type StatsSource struct {
 	CacheHits   func() (hits, misses int64)
 	NetRequests func() (requests, cached404s int64)
-	LearnedHits func() (hits, misses int64)
 }
 
 // Sample is one 1 Hz snapshot.
