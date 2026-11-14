@@ -26,8 +26,13 @@ if ($Release) {
     # -H=windowsgui links a GUI-subsystem exe so no console window opens on
     # launch (release builds only; dev builds keep the console for logs).
     $ldflags = "-s -w -H=windowsgui"
+    # PowerShell 5.1 turns a native command's stderr into a terminating error under "Stop", even with 2>$null, so
+    # an untagged HEAD's "no tag exactly matches" would end the build here.
+    $ErrorActionPreference = "Continue"
     $ver = (git describe --tags --exact-match 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $ver) {
+    $tagged = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = "Stop"
+    if ($tagged -and $ver) {
         $ldflags = "$ldflags -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=$ver"
         Write-Host "Stamping version $ver"
     }
