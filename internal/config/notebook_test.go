@@ -10,7 +10,7 @@ import (
 // atomic flush, and reload from disk.
 func TestNotebookRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nb.json")
-	nb := &Notebook{path: path}
+	nb := loadNotebookFile(path)
 
 	nb.Add("  first pin  ")
 	nb.Add(strings.Repeat("x", notebookLineMax+100)) // truncates
@@ -33,7 +33,7 @@ func TestNotebookRoundTrip(t *testing.T) {
 
 // TestNotebookCap pins the bound: the oldest pins fall off past the cap.
 func TestNotebookCap(t *testing.T) {
-	nb := &Notebook{path: filepath.Join(t.TempDir(), "nb.json")}
+	nb := loadNotebookFile(filepath.Join(t.TempDir(), "nb.json"))
 	for i := 0; i < notebookLineCap+50; i++ {
 		nb.Add(strings.Repeat("a", 4) + string(rune('0'+i%10)))
 	}
@@ -44,7 +44,7 @@ func TestNotebookCap(t *testing.T) {
 
 // TestNotebookClear pins the Wipe-everything path: Clear empties the notebook.
 func TestNotebookClear(t *testing.T) {
-	nb := &Notebook{path: filepath.Join(t.TempDir(), "nb.json")}
+	nb := loadNotebookFile(filepath.Join(t.TempDir(), "nb.json"))
 	nb.Add("a pin")
 	nb.Add("another")
 	nb.Clear()

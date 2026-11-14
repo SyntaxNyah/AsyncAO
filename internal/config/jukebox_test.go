@@ -8,14 +8,21 @@ import (
 )
 
 func newTestJukebox(t *testing.T) *Jukebox {
-	t.Helper()
-	j := &Jukebox{path: filepath.Join(t.TempDir(), JukeboxFileName)}
-	t.Cleanup(func() { _ = j.Close() }) // stop the debounce timer before TempDir cleanup
+	j, _ := newTestJukeboxAt(t)
 	return j
 }
 
+// newTestJukeboxAt also returns the file it saves to.
+func newTestJukeboxAt(t *testing.T) (*Jukebox, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), JukeboxFileName)
+	j := loadJukeboxFile(path)
+	t.Cleanup(func() { _ = j.Close() }) // stop the waiting write before TempDir cleanup
+	return j, path
+}
+
 func TestJukeboxRoundTrip(t *testing.T) {
-	j := newTestJukebox(t)
+	j, path := newTestJukeboxAt(t)
 	if !j.AddPlaylist("Battle Themes") {
 		t.Fatal("AddPlaylist failed")
 	}
@@ -29,7 +36,7 @@ func TestJukeboxRoundTrip(t *testing.T) {
 		t.Fatalf("Flush: %v", err)
 	}
 
-	got := loadJukeboxFile(j.path).Playlists()
+	got := loadJukeboxFile(path).Playlists()
 	if len(got) != 1 || got[0].Name != "Battle Themes" || len(got[0].Entries) != 2 {
 		t.Fatalf("reloaded = %+v", got)
 	}
@@ -45,7 +52,7 @@ func TestJukeboxRoundTrip(t *testing.T) {
 // (sanitizePlaylists on the load path must carry Fav through, else stars vanish
 // on restart.)
 func TestJukeboxFavRoundTrip(t *testing.T) {
-	j := newTestJukebox(t)
+	j, path := newTestJukeboxAt(t)
 	j.AddPlaylist("P")
 	j.AddEntry(0, "Starred", "https://youtu.be/a")
 	j.AddEntry(0, "Plain", "https://youtu.be/b")
@@ -53,7 +60,7 @@ func TestJukeboxFavRoundTrip(t *testing.T) {
 	if err := j.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
-	got := loadJukeboxFile(j.path).Playlists()
+	got := loadJukeboxFile(path).Playlists()
 	if len(got) != 1 || len(got[0].Entries) != 2 {
 		t.Fatalf("reloaded = %+v", got)
 	}
@@ -68,7 +75,7 @@ func TestJukeboxFavRoundTrip(t *testing.T) {
 	if err := j.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
-	if loadJukeboxFile(j.path).Playlists()[0].Entries[0].Fav {
+	if loadJukeboxFile(path).Playlists()[0].Entries[0].Fav {
 		t.Error("unstar should persist")
 	}
 }

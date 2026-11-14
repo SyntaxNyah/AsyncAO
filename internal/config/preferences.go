@@ -20,6 +20,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/saver"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -1104,7 +1105,7 @@ func (p *AssetPreferences) SaveNow() error {
 	if err != nil {
 		return fmt.Errorf("config: marshaling preferences: %w", err)
 	}
-	return atomicWriteFile(p.path, data, prefsFilePerm)
+	return saver.WriteFile(p.path, data)
 }
 
 // Close stops the saver and flushes; only the first call does work.
@@ -1118,40 +1119,6 @@ func (p *AssetPreferences) Close() error {
 		}
 	})
 	return err
-}
-
-// atomicWriteFile writes a synced temp file and renames it over path, so readers never see a partial file.
-func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, prefsDirPerm); err != nil {
-		return fmt.Errorf("config: creating %s: %w", dir, err)
-	}
-	tmp, err := os.CreateTemp(dir, prefsTmpPattern)
-	if err != nil {
-		return fmt.Errorf("config: creating temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	cleanup := func(err error) error {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		return cleanup(fmt.Errorf("config: writing %s: %w", tmpName, err))
-	}
-	if err := tmp.Sync(); err != nil {
-		return cleanup(fmt.Errorf("config: syncing %s: %w", tmpName, err))
-	}
-	if err := tmp.Close(); err != nil {
-		return cleanup(fmt.Errorf("config: closing %s: %w", tmpName, err))
-	}
-	// Best effort: CreateTemp uses 0600; widen to perm where supported.
-	_ = os.Chmod(tmpName, perm)
-	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("config: replacing %s: %w", path, err)
-	}
-	return nil
 }
 
 // FormatGeneration changes on any probe-list mutation, so derived caches rebuild without holding locks.
@@ -3250,25 +3217,7 @@ func (p *AssetPreferences) ImportSettings(srcPath string) error {
 	if err := json.Unmarshal(data, &probe); err != nil {
 		return fmt.Errorf("config: not a settings file: %w", err)
 	}
-	dir := filepath.Dir(p.path)
-	if err := os.MkdirAll(dir, prefsDirPerm); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, prefsTmpPattern)
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	if err := os.Rename(tmpName, p.path); err != nil {
+	if err := saver.WriteFile(p.path, data); err != nil {
 		return err
 	}
 	// Freeze the saver so the live session can't write its old state over the import.

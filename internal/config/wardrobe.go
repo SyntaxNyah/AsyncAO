@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/text"
+	"github.com/SyntaxNyah/AsyncAO/internal/saver"
 )
 
 const (
@@ -64,14 +65,13 @@ type WardrobeFolder struct {
 	Image string `json:"image,omitempty"`
 }
 
-// Wardrobe is safe for concurrent use; the flush goroutine is the only disk writer. Entry and folder order is the
-// player's own order.
+// Wardrobe is safe for concurrent use; its saver is the only disk writer. Entry and folder order is the player's own
+// order.
 type Wardrobe struct {
+	*saver.Saver
 	mu      sync.Mutex
-	path    string
 	entries []WardrobeEntry
 	folders []WardrobeFolder
-	timer   *time.Timer
 	// rev bumps on every change so the UI rebuilds its views only then.
 	rev int64
 }
@@ -111,7 +111,8 @@ func LoadWardrobe(old *Settings) (*Wardrobe, error) {
 
 // OpenWardrobe is LoadWardrobe at an explicit path. A corrupt file opens empty and is not migrated again.
 func OpenWardrobe(path string, old *Settings) *Wardrobe {
-	w := &Wardrobe{path: path}
+	w := &Wardrobe{}
+	w.Saver = saver.New(path, wardrobeSaveDelay, w.encode)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		w.entries, w.folders = migrateWardrobe(old)
@@ -559,40 +560,18 @@ func (w *Wardrobe) Clear() {
 	w.touchLocked()
 }
 
-// touchLocked bumps the revision and rearms the debounced flush; the caller holds w.mu.
+// touchLocked bumps the revision and schedules a write; the caller holds w.mu.
 func (w *Wardrobe) touchLocked() {
 	w.rev++
-	if w.timer != nil {
-		w.timer.Stop()
-	}
-	w.timer = time.AfterFunc(wardrobeSaveDelay, func() { _ = w.Flush() })
+	w.Changed()
 }
 
-// Flush writes the file atomically; Close calls it so nothing waits only on the debounce.
-func (w *Wardrobe) Flush() error {
+// encode snapshots the Wardrobe for the saver.
+func (w *Wardrobe) encode() ([]byte, error) {
 	w.mu.Lock()
 	snapshot := wardrobeJSON{Entries: cloneWardrobeEntries(w.entries), Folders: slices.Clone(w.folders)}
-	path := w.path
 	w.mu.Unlock()
-	if path == "" {
-		return nil
-	}
-	data, err := json.MarshalIndent(snapshot, jsonMarshalPrefix, jsonMarshalIndent)
-	if err != nil {
-		return err
-	}
-	return atomicWriteFile(path, data, prefsFilePerm)
-}
-
-// Close stops the debounce timer and writes any pending change; the caller guards against nil.
-func (w *Wardrobe) Close() error {
-	w.mu.Lock()
-	if w.timer != nil {
-		w.timer.Stop()
-		w.timer = nil
-	}
-	w.mu.Unlock()
-	return w.Flush()
+	return json.MarshalIndent(snapshot, jsonMarshalPrefix, jsonMarshalIndent)
 }
 
 // WipeWardrobeImages deletes the folder images for Wipe everything.
