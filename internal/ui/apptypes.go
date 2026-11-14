@@ -446,6 +446,7 @@ type sessionState struct {
 	oocSeq            uint64
 	oocLog            []string
 	oocSpeakers       []string // parallel to oocLog: speaker per line ("" = system line); for name colours
+	oocFromServer     []bool   // parallel to oocLog: CT's server flag, which colours the speaker as the server
 	oocScroll         int32
 	musicScroll       int32
 	// Music-list search: the query plus a memoized filter. musicFiltered holds matching indices into a.sess.Music.

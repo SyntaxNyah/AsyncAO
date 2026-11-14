@@ -527,7 +527,7 @@ func TestWrapToWidthMOTD(t *testing.T) {
 func TestOOCWrapURLFullLink(t *testing.T) {
 	a := testTabApp(t)
 	const url = "https://cdn.discordapp.com/attachments/151/151/asyncao-windows-x86_64.zip?ex=6a31e0a4&is=6a308f24&hm=335a54ec&"
-	a.pushOOC("Nyah: "+url, "Nyah")
+	a.pushOOC("Nyah: "+url, "Nyah", false)
 
 	// A narrow column (15 chars at the 8 px/char headless metric) forces the
 	// URL to hard-split across several display rows.
@@ -574,7 +574,7 @@ func TestOOCWrapURLPerParagraph(t *testing.T) {
 	a := testTabApp(t)
 	const u1 = "https://github.com/SyntaxNyah/Nyathena"
 	const u2 = "https://github.com/MangosArentLiterature/Athena"
-	a.pushOOC("Server: Fork:\n"+u1+"\nUpstream:\n"+u2, "Server")
+	a.pushOOC("Server: Fork:\n"+u1+"\nUpstream:\n"+u2, "Server", false)
 
 	lines := a.oocWrapped(800) // wide enough that each URL fits one row
 	if len(a.oocWrapLinkAt) != len(lines)+1 {

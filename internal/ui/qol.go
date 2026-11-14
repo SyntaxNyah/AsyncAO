@@ -1243,7 +1243,6 @@ func (a *App) oocWrapped(width int32) []string {
 	}
 	out := a.oocWrap[:0]
 	name := a.oocWrapName[:0]  // parallel to out: speaker on each entry's first display line
-	cont := a.oocWrapCont[:0]  // parallel to out: wrap continuation rows (hanging indent)
 	src := a.oocWrapSrc[:0]    // parallel to out: source oocLog entry index
 	links := a.oocWrapLink[:0] // NOT parallel: the flat link-span table, rows index it via linkAt below
 	var nextLinkID int32       // link ids are unique across the whole rebuild, so a span identifies its link alone
@@ -1292,16 +1291,14 @@ func (a *App) oocWrapped(width int32) []string {
 			if len(lines) == 0 {
 				out = append(out, "") // blank MOTD spacer lines survive
 				name = append(name, "")
-				cont = append(cont, false)
 				src = append(src, i)
 				remaining-- // a spacer row spends budget too, so the count stays bounded
 				continue
 			}
 			rowBase := len(out) // where this paragraph's rows land — the spans index into the WRAP, not into lines
-			for row, ln := range lines {
+			for _, ln := range lines {
 				out = append(out, ln)
-				cont = append(cont, row > 0) // rows the WRAP made are continuations (hanging indent); the paragraph's own newline isn't
-				src = append(src, i)         // all rows of this entry carry its oocLog index
+				src = append(src, i) // all rows of this entry carry its oocLog index
 				if entryFirst {
 					name = append(name, sp)
 					entryFirst = false
@@ -1319,10 +1316,9 @@ func (a *App) oocWrapped(width int32) []string {
 			}
 		}
 		if truncated {
-			// One marker row for the whole entry, parallel slices in step; cont=true hangs it under the entry.
+			// One marker row for the whole entry, parallel slices in step.
 			out = append(out, "…")
 			name = append(name, "")
-			cont = append(cont, true)
 			src = append(src, i)
 		}
 	}
@@ -1337,7 +1333,7 @@ func (a *App) oocWrapped(width int32) []string {
 		}
 		linkAt = append(linkAt, int32(k))
 	}
-	a.oocWrap, a.oocWrapName, a.oocWrapCont, a.oocWrapSrc = out, name, cont, src
+	a.oocWrap, a.oocWrapName, a.oocWrapSrc = out, name, src
 	a.oocWrapLink, a.oocWrapLinkAt = links, linkAt
 	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, pct, streamer
 	a.oocWrapEpoch = a.logViewEpoch
@@ -1367,14 +1363,9 @@ func (a *App) icRowIsEntryStart(li int) bool {
 }
 
 // logRowIndent is row li's draw indent in log which; selection hit-testing uses the same offset.
+// OOC rows never hang: AO2's server log is plain text, laid out as the server wrote it (#53).
 func (a *App) logRowIndent(which, li int) int32 {
-	if which == logSelIC {
-		if !a.icRowIsEntryStart(li) {
-			return logWrapIndentPx
-		}
-		return 0
-	}
-	if li >= 0 && li < len(a.oocWrapCont) && a.oocWrapCont[li] {
+	if which == logSelIC && !a.icRowIsEntryStart(li) {
 		return logWrapIndentPx
 	}
 	return 0

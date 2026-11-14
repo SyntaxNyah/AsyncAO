@@ -57,8 +57,9 @@ func (c *Ctx) logRowSplit(font, emojiFont *ttf.Font, line, speaker string, nameO
 // drawLogLineNamed draws one wrapped log line, tinting the speaker's name prefix in its per-speaker colour when
 // name colours are on and speaker != "" (the caller passes "" for non-first rows and system lines). The rest draws
 // in col; otherwise a plain draw. Shared by the IC and OOC log paths.
-func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64, bold bool) {
+func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, ink logNameInk, bold bool) {
 	c := a.ctx
+	nameOn := ink.tints()
 	// logRowSplit proves both segments will measure before anything is drawn, so there is no partial-draw state to
 	// fall into the plain-weight fallback below.
 	if nameStart, boldEnd, ok := c.logRowSplit(font, emojiFont, line, speaker, nameOn, bold); ok {
@@ -75,17 +76,47 @@ func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, lin
 			used += pw
 		}
 		nw, _ := c.fontTextWidthWeight(font, speaker, bold) // logRowSplit already proved this succeeds
-		nameCol := col
-		if nameOn {
-			nameCol = nameColor(speaker, sat, val)
-		}
-		c.LabelClippedFontWeight(font, px, y, wrapW-used, speaker, nameCol, bold)
+		c.LabelClippedFontWeight(font, px, y, wrapW-used, speaker, ink.of(speaker, col), bold)
 		used += nw
 		c.LabelClippedFont(font, px+nw, y, wrapW-used, line[boldEnd:], col)
 		return
 	}
 	// Default path: labelEmoji is the plain LabelClippedFont for plain text, the cached multi-font raster for emoji.
 	a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
+}
+
+// logNameInk is how a log row colours its speaker's name: a fixed ink, a colour per speaker, or the line's own.
+type logNameInk struct {
+	perSpeaker bool
+	sat, val   float64
+	fixed      sdl.Color
+	fixedSet   bool
+}
+
+// namePctScale turns the saturation and value prefs, in percent, into 0..1.
+const namePctScale = 100
+
+// logNameInkPref is the player's name-colour setting as a logNameInk; read it once per frame.
+func (a *App) logNameInkPref() logNameInk {
+	s := a.d.Prefs.Load()
+	if !s.NameColors {
+		return logNameInk{}
+	}
+	return logNameInk{perSpeaker: true, sat: float64(s.NameSat) / namePctScale, val: float64(s.NameVal) / namePctScale}
+}
+
+// tints reports whether the name draws in a colour of its own.
+func (n logNameInk) tints() bool { return n.fixedSet || n.perSpeaker }
+
+// of is the name's colour on a line drawn in line.
+func (n logNameInk) of(speaker string, line sdl.Color) sdl.Color {
+	switch {
+	case n.fixedSet:
+		return n.fixed
+	case n.perSpeaker:
+		return nameColor(speaker, n.sat, n.val)
+	}
+	return line
 }
 
 const (

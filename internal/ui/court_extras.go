@@ -1549,7 +1549,7 @@ func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 	a.modReason, _ = c.TextField("modreason", sdl.Rect{X: r.X + pad, Y: r.Y + floatTitleH + 32, W: r.W - 2*pad, H: fieldH}, a.modReason, "What needs attention?")
 	if c.Button(sdl.Rect{X: r.X + pad, Y: r.Y + r.H - btnH - 12, W: 110, H: btnH}, "Call mod") {
 		a.sess.CallMod(strings.TrimSpace(a.modReason))
-		a.pushOOC("CLIENT: Moderator called.", "")
+		a.pushOOC("CLIENT: Moderator called.", "", false)
 		a.showModcall, a.modReason = false, ""
 	}
 }

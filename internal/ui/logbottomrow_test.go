@@ -33,7 +33,7 @@ func TestOOCLogDrawsHalfVisibleBottomRow(t *testing.T) {
 	a.ctx = ctx
 	a.oocPct = DefaultScalePct
 	for range lineCount {
-		a.pushOOC("MMMMMMMMMMMMMMMM", "")
+		a.pushOOC("MMMMMMMMMMMMMMMM", "", false)
 	}
 	lineH := int32(a.elemFont(elemServerChatlog, a.oocPct).Height()) + logRowGapPx
 	list := sdl.Rect{X: listX, Y: listY, W: listW, H: visibleRows*lineH + lineH/2}

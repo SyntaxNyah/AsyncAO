@@ -1143,7 +1143,7 @@ const oocLineCap = 16384
 
 // pushOOC appends an OOC line; speaker is "" for system lines,
 // and the slices stay parallel so display needn't re-parse.
-func (a *App) pushOOC(line, speaker string) {
+func (a *App) pushOOC(line, speaker string, fromServer bool) {
 	// OOC carries AsyncAO's DMs raw, so markers arrive here; the control frame was already decoded by routeIncomingPM.
 	// The head is preserved, keeping the "speaker: " trim working and oocSpeakers a substring of oocLog.
 	line = stripDisplayTail(line, speaker)
@@ -1173,13 +1173,14 @@ func (a *App) pushOOC(line, speaker string) {
 	}
 	a.oocLog = appendCapped(a.oocLog, line, icLogCap)
 	a.oocSpeakers = appendCapped(a.oocSpeakers, speaker, icLogCap)
+	a.oocFromServer = appendCapped(a.oocFromServer, fromServer, icLogCap)
 	a.oocSeq++ // invalidate the wrapped-lines cache
 	// Every active-tab OOC event funnels through here, like AO2's append_server_chatmessage,
 	// so the transcript logs what's shown.
 	a.logDetailedOOC(a.serverName, a.logSession, line) // detailed transcript (opt-in), this tab's own file
 }
 
-func appendCapped(list []string, line string, cap int) []string {
+func appendCapped[T any](list []T, line T, cap int) []T {
 	list = append(list, line)
 	if len(list) > cap {
 		copy(list, list[len(list)-cap:])

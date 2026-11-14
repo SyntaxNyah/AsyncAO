@@ -451,6 +451,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		}
 		s.oocLog = appendCapped(s.oocLog, line, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
+		s.oocFromServer = appendCapped(s.oocFromServer, ev.FromServer, icLogCap)
 		s.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, line) // detailed transcript (opt-in), the PARKED tab's own file
 		// OOC doesn't bump unread by default because servers post auto-messages there. Opt in through Settings.
@@ -466,6 +467,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		modcallLine := "[MOD CALL] " + ev.Text
 		s.oocLog = appendCapped(s.oocLog, modcallLine, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line — no name tint
+		s.oocFromServer = appendCapped(s.oocFromServer, false, icLogCap)
 		s.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, modcallLine) // detailed transcript (opt-in), the PARKED tab's own file
 		t.unread++
@@ -494,6 +496,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		disconnectLine := "SERVER: disconnected: " + ev.Text
 		s.oocLog = appendCapped(s.oocLog, disconnectLine, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line
+		s.oocFromServer = appendCapped(s.oocFromServer, false, icLogCap)
 		s.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, disconnectLine) // detailed transcript (opt-in), the PARKED tab's own file
 	}

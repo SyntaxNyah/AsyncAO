@@ -38,7 +38,7 @@ func TestOOCLinkSpansMultiplePerParagraph(t *testing.T) {
 	const u2 = "www.bbb.example.org"
 	const u3 = "http://ccc.example.net/three"
 	line := "Links: " + u1 + " and " + u2 + " plus " + u3 + "."
-	a.pushOOC(line, "")
+	a.pushOOC(line, "", false)
 
 	rows := a.oocWrapped(int32(len(line)+8) * wrapFallbackCharPx) // wide enough for one row
 	if len(rows) != 1 {
@@ -108,7 +108,7 @@ func TestOOCLinkSpansMultiplePerParagraph(t *testing.T) {
 func TestOOCLinkSpansNoURL(t *testing.T) {
 	a := testTabApp(t)
 	a.oocPct = DefaultScalePct
-	a.pushOOC("Nyah: no links here, just a colon: and a dot.", "Nyah")
+	a.pushOOC("Nyah: no links here, just a colon: and a dot.", "Nyah", false)
 
 	rows := a.oocWrapped(2000)
 	if len(a.oocWrapLink) != 0 {
@@ -132,7 +132,7 @@ func TestOOCLinkSpansWrapContiguous(t *testing.T) {
 	a := testTabApp(t)
 	a.oocPct = DefaultScalePct
 	const url = "https://example.com/a/very/long/path/that/cannot/fit/one/row/at/all.zip"
-	a.pushOOC("see "+url+" ok", "")
+	a.pushOOC("see "+url+" ok", "", false)
 
 	rows := a.oocWrapped(20 * wrapFallbackCharPx) // ~20 chars/row → the URL must split
 	if len(rows) < 3 {
@@ -186,7 +186,7 @@ func TestOOCLinkSpansStreamerMasked(t *testing.T) {
 	a.oocPct = DefaultScalePct
 	const url = "https://example.com/x"
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.StreamerModeOn = true })
-	a.pushOOC("Nyah: grab "+url+" now", "Nyah")
+	a.pushOOC("Nyah: grab "+url+" now", "Nyah", false)
 
 	rows := a.oocWrapped(2000)
 	if len(rows) != 1 {
@@ -217,7 +217,7 @@ func TestOOCLinkSpansStreamerMasked(t *testing.T) {
 func TestOOCRowLinksNoAlloc(t *testing.T) {
 	a := testTabApp(t)
 	a.oocPct = DefaultScalePct
-	a.pushOOC("Nyah: see https://example.com/one and https://example.com/two", "Nyah")
+	a.pushOOC("Nyah: see https://example.com/one and https://example.com/two", "Nyah", false)
 	rows := a.oocWrapped(2000)
 	if len(a.oocWrapLink) != 2 {
 		t.Fatalf("fixture must produce 2 spans, got %d", len(a.oocWrapLink))

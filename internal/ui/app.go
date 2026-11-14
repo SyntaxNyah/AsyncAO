@@ -303,7 +303,6 @@ type App struct {
 	// OOC wrapped-lines cache, also keyed by logViewEpoch: rebuilt only when the log, width or font scale moved.
 	oocWrap     []string
 	oocWrapName []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
-	oocWrapCont []bool   // parallel to oocWrap: true = a wrap continuation row (hanging indent); a paragraph's own newline starts a fresh row, not a continuation
 	oocWrapSrc  []int    // parallel to oocWrap: the source oocLog entry index of each display line (mirrors icWrapLine.entry)
 	// Every URL in a paragraph is separately hoverable. oocWrapLink is the flat table in row order;
 	// oocWrapLinkAt has len(rows)+1 entries, so row r's spans are oocWrapLink[oocWrapLinkAt[r]:oocWrapLinkAt[r+1]].

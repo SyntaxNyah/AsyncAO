@@ -108,6 +108,17 @@ func guardThemeInk(res *themeApply, tbl *themeFontTable) {
 		f.colorSet = false
 		dropped = append(dropped, fmt.Sprintf("%s (on luma %d)", theme.FontElements[el], back))
 	}
+	// The sender names draw on the OOC log, so they are measured against its backdrop.
+	back := colLuma(ColPanel)
+	if res.backdropSampled[elemServerChatlog] {
+		back = res.backdropLuma[elemServerChatlog]
+	}
+	for s, set := range tbl.senderInkSet {
+		if set && absInt(colLuma(tbl.senderInk[s])-back) < minInkSkinContrast {
+			tbl.senderInkSet[s] = false
+			dropped = append(dropped, fmt.Sprintf("%s (on luma %d)", oocSenderKeys[s], back))
+		}
+	}
 	if len(dropped) == 0 {
 		return
 	}
