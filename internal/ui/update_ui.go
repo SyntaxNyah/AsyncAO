@@ -21,8 +21,10 @@ const (
 	updateModalH int32 = 420
 	// updateNotesLineH is the patch-notes line pitch.
 	updateNotesLineH int32 = 18
-	// updateNotesMaxLines bounds the wrapped patch notes; the overflow is on the release page.
-	updateNotesMaxLines = 400
+	// updateNotesMaxBlocks bounds the patch notes' headings, bullets and paragraphs; the overflow is on the release page.
+	updateNotesMaxBlocks = 200
+	// updateNotesGap is the space a blank line in the notes leaves.
+	updateNotesGap int32 = 8
 )
 
 // updateCheckResult is one finished check; prerelease says whether it asked for pre-releases, so a toggle mid-check drops it.
@@ -321,9 +323,26 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	c.Heading(panel.X+pad, panel.Y+10, kind+a.updateRel.Version+" available", ColText)
 	c.Label(panel.X+pad, panel.Y+38, "What's new:", ColAccent)
 
-	// Split on newlines first: WrapText collapses whitespace and would flatten the bullets.
-	lines := a.updateNotesLines(notes.W)
-	contentH := int32(len(lines)) * updateNotesLineH
+	// The release notes are the changelog's markdown: headings bold, bullets with a hanging indent, bold runs inline.
+	blocks := a.updateNotesBlocks()
+	bulletIndent := c.TextWidth(changelogBullet + "  ")
+	blockH := func(b markdownBlock) int32 {
+		switch {
+		case b.level > 0:
+			return updateNotesLineH
+		case b.bullet:
+			return c.markdownHeight(b.text, ColText, notes.W-bulletIndent)
+		default:
+			return c.markdownHeight(b.text, ColText, notes.W)
+		}
+	}
+	contentH := int32(0)
+	for _, b := range blocks {
+		if b.afterBlank {
+			contentH += updateNotesGap
+		}
+		contentH += blockH(b)
+	}
 	maxScroll := contentH - notes.H
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -333,14 +352,26 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	}
 	clipPrev, clipHad := c.pushClip(notes)
 	y := notes.Y - a.updateScroll
-	for _, ln := range lines {
+	for _, b := range blocks {
+		if b.afterBlank {
+			y += updateNotesGap
+		}
 		if y > notes.Y+notes.H {
 			break
 		}
-		if y >= notes.Y-updateNotesLineH && ln != "" {
-			c.LabelClipped(notes.X, y, notes.W, ln, ColText)
+		h := blockH(b)
+		if y+h >= notes.Y {
+			switch {
+			case b.level > 0:
+				c.LabelClippedFontWeight(c.font, notes.X, y, notes.W, b.text, ColText, true)
+			case b.bullet:
+				c.Label(notes.X, y, changelogBullet, ColText)
+				h = c.drawMarkdown(notes.X+bulletIndent, y, notes.W-bulletIndent, b.text, ColText)
+			default:
+				h = c.drawMarkdown(notes.X, y, notes.W, b.text, ColText)
+			}
 		}
-		y += updateNotesLineH
+		y += h
 	}
 	c.popClip(clipPrev, clipHad)
 
@@ -364,22 +395,14 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	a.drawUpdateButton(laterBtn, "Close")
 }
 
-// updateNotesLines wraps the release body for the modal, keeping its line breaks, capped at updateNotesMaxLines.
-func (a *App) updateNotesLines(wrapW int32) []string {
-	c := a.ctx
-	lines := make([]string, 0, 32)
-	for _, raw := range strings.Split(a.updateRel.Notes, "\n") {
-		raw = strings.TrimRight(raw, "\r")
-		if strings.TrimSpace(raw) == "" {
-			lines = append(lines, "") // preserve blank spacers between sections
-		} else {
-			lines = append(lines, c.WrapText(raw, wrapW, updateNotesMaxLines)...)
-		}
-		if len(lines) >= updateNotesMaxLines {
-			break
-		}
+// updateNotesBlocks is the release body split into markdown blocks, capped at updateNotesMaxBlocks; the rest is on the
+// release page.
+func (a *App) updateNotesBlocks() []markdownBlock {
+	blocks := parseMarkdownBlocks(a.updateRel.Notes)
+	if len(blocks) > updateNotesMaxBlocks {
+		blocks = blocks[:updateNotesMaxBlocks]
 	}
-	return lines
+	return blocks
 }
 
 // drawUpdateButton paints one modal button; raw pointIn because hovering() is false under the modal fence.

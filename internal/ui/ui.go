@@ -440,6 +440,9 @@ type Ctx struct {
 	// emojiCache holds multi-font rasters for labels mixing text with colour emoji. Entries own dedicated textures, are
 	// bounded, and are destroyed on purge (purgeTextCache) and on SetEmojiFont.
 	emojiCache map[emojiKey]*render.MessageRaster
+	// markdownCache holds rasterized markdown blocks (markdown.go); markdownLineH is their line height once one is built.
+	markdownCache map[markdownKey]*render.MessageRaster
+	markdownLineH int32
 
 	// cgo scratch rects: the address of a stack rect for Ren.Copy forces a heap escape per draw.
 	drawSrc, drawDst sdl.Rect
@@ -2151,7 +2154,8 @@ func (c *Ctx) purgeTextCache() {
 		}
 	}
 	c.atlas = c.atlas[:0]
-	c.purgeEmojiCache() // emoji rasters carry the same now-dead primary-font pointers
+	c.purgeEmojiCache()    // emoji rasters carry the same now-dead primary-font pointers
+	c.purgeMarkdownCache() // and so do markdown blocks
 	// Keyed by font pointer, so cleared here, where every face-invalidating path passes. SetThemeFaces Closes
 	// per-element faces but does not clear widthCache, so clearing elsewhere could leave dangling pointers.
 	clear(c.panelWidth)

@@ -1094,8 +1094,7 @@ type App struct {
 	aboutFlat  []aboutFlatLine // flattened, wrapped render lines
 	// Changelog: same width-keyed reflow cache as About.
 	changelogScroll int32
-	changelogFlatW  int32
-	changelogFlat   []aboutFlatLine
+	changelogBlocks []changelogBlock
 	// Help screen: same width-keyed reflow cache.
 	helpTab       int
 	helpDocScroll int32

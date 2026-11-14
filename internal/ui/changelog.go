@@ -23,64 +23,53 @@ const (
 	changelogVersionGap int32 = 20
 	// changelogInstalledTag flags the running build's entry in the history.
 	changelogInstalledTag = "    • installed"
+	changelogBullet       = "•"
 )
 
-// buildChangelogFlat reflows the embedded changelog to colW. "## " is a version header (tagged when it names the
-// running build), "### " a sub-header, "- "/"* " a bullet with hanging indent; blank lines are paragraph gaps; the H1
-// is dropped. The file is shipped, not server input, so it needs no line cap.
-func (a *App) buildChangelogFlat(c *Ctx, colW int32) []aboutFlatLine {
-	out := make([]aboutFlatLine, 0, 256)
-	bulletIndent := c.TextWidth("•  ")
+// changelogBlock is one header, bullet or paragraph of the changelog. A header is a plain label; a bullet or paragraph
+// is markdown drawn through the block raster (markdown.go).
+type changelogBlock struct {
+	header string // the header text; empty for a bullet or paragraph
+	md     string // the markdown source of a bullet or paragraph
+	col    sdl.Color
+	gap    int32 // extra space before the block
+	bullet bool
+	// estW and estH cache the height estimate at one width, until the block is rasterized and its height is known.
+	estW, estH int32
+}
+
+// buildChangelogBlocks styles the embedded changelog's blocks: "## " is a version header (tagged when it names the
+// running build), "### " a sub-header, the "# " title is dropped (the screen shows its own). The file is shipped, not
+// server input, so it needs no cap.
+func buildChangelogBlocks() []changelogBlock {
 	cur := strings.TrimPrefix(strings.TrimSpace(update.Version), "v")
 	markInstalled := !update.IsDev()
-	pendingGap := int32(0)
+	src := parseMarkdownBlocks(changelogMD)
+	out := make([]changelogBlock, 0, len(src))
 	seenVersion := false
-	for _, raw := range strings.Split(changelogMD, "\n") {
-		trimmed := strings.TrimSpace(strings.TrimRight(raw, "\r"))
-		switch {
-		case trimmed == "":
-			if pendingGap < changelogParaGap {
-				pendingGap = changelogParaGap
-			}
-		case strings.HasPrefix(trimmed, "## "):
-			title := strings.TrimSpace(trimmed[len("## "):])
+	for _, b := range src {
+		gap := int32(0)
+		if b.afterBlank {
+			gap = changelogParaGap
+		}
+		switch b.level {
+		case markdownTitle:
+			continue
+		case markdownSection:
+			title := b.text
 			if markInstalled && changelogHeaderMatches(title, cur) {
 				title += changelogInstalledTag
 			}
-			gap := changelogVersionGap
+			gap = changelogVersionGap
 			if !seenVersion {
 				gap = 0 // the first header hugs the top hairline
 			}
 			seenVersion = true
-			out = append(out, aboutFlatLine{text: title, col: ColAccent, gap: gap})
-			pendingGap = 0
-		case strings.HasPrefix(trimmed, "# "):
-			continue // document title — the screen already shows its own heading
-		case strings.HasPrefix(trimmed, "### "):
-			out = append(out, aboutFlatLine{text: strings.TrimSpace(trimmed[len("### "):]), col: ColTextDim, gap: pendingGap})
-			pendingGap = 0
-		case strings.HasPrefix(trimmed, "- "), strings.HasPrefix(trimmed, "* "):
-			lines := c.WrapText(strings.TrimSpace(trimmed[2:]), colW-bulletIndent, 0)
-			for i, ln := range lines {
-				fl := aboutFlatLine{text: ln, col: ColText, indent: bulletIndent}
-				if i == 0 {
-					fl.text = "•  " + ln
-					fl.indent = 0
-					fl.gap = pendingGap
-				}
-				out = append(out, fl)
-			}
-			pendingGap = 0
+			out = append(out, changelogBlock{header: title, col: ColAccent, gap: gap})
+		case markdownSub:
+			out = append(out, changelogBlock{header: b.text, col: ColTextDim, gap: gap})
 		default:
-			lines := c.WrapText(trimmed, colW, 0)
-			for i, ln := range lines {
-				fl := aboutFlatLine{text: ln, col: ColText}
-				if i == 0 {
-					fl.gap = pendingGap
-				}
-				out = append(out, fl)
-			}
-			pendingGap = 0
+			out = append(out, changelogBlock{md: b.text, col: ColText, gap: gap, bullet: b.bullet})
 		}
 	}
 	return out
@@ -138,16 +127,30 @@ func (a *App) drawChangelog(w, h int32) {
 		x0 = pad
 	}
 
-	// Reflow only when the column width changes, as drawAbout does.
-	if a.changelogFlat == nil || a.changelogFlatW != colW {
-		a.changelogFlat = a.buildChangelogFlat(c, colW)
-		a.changelogFlatW = colW
+	if a.changelogBlocks == nil {
+		a.changelogBlocks = buildChangelogBlocks()
 	}
-
 	lineH := int32(c.font.Height()) + 4
+	bulletIndent := c.TextWidth(changelogBullet + "  ")
+	blockH := func(b *changelogBlock) int32 {
+		if b.header != "" {
+			return lineH
+		}
+		wrapW := colW
+		if b.bullet {
+			wrapW -= bulletIndent
+		}
+		if h, ok := c.markdownBuiltHeight(b.md, b.col, wrapW); ok {
+			return h
+		}
+		if b.estW != wrapW {
+			b.estW, b.estH = wrapW, c.markdownEstimate(b.md, wrapW)
+		}
+		return b.estH
+	}
 	contentH := int32(0)
-	for _, fl := range a.changelogFlat {
-		contentH += fl.gap + lineH
+	for i := range a.changelogBlocks {
+		contentH += a.changelogBlocks[i].gap + blockH(&a.changelogBlocks[i])
 	}
 	contentH += pad
 
@@ -155,16 +158,25 @@ func (a *App) drawChangelog(w, h int32) {
 	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
 	a.changelogScroll = c.VScrollbar("changelogbar", track, a.changelogScroll, contentH, viewH)
 
-	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
-	_ = c.Ren.SetClipRect(&clip)
-	defer func() { _ = c.Ren.SetClipRect(nil) }()
+	clipPrev, clipHad := c.pushClip(sdl.Rect{X: 0, Y: top, W: w, H: viewH})
+	defer c.popClip(clipPrev, clipHad)
 
 	y := top - a.changelogScroll
-	for _, fl := range a.changelogFlat {
-		y += fl.gap
-		if y+lineH > top && y < top+viewH { // skip lines scrolled out of view
-			c.Label(x0+fl.indent, y, fl.text, fl.col)
+	for i := range a.changelogBlocks {
+		b := &a.changelogBlocks[i]
+		y += b.gap
+		h := blockH(b)
+		if y+h > top && y < top+viewH { // only blocks on screen draw, and so only they are rasterized
+			switch {
+			case b.header != "":
+				c.Label(x0, y, b.header, b.col)
+			case b.bullet:
+				c.Label(x0, y, changelogBullet, b.col)
+				h = c.drawMarkdown(x0+bulletIndent, y, colW-bulletIndent, b.md, b.col)
+			default:
+				h = c.drawMarkdown(x0, y, colW, b.md, b.col)
+			}
 		}
-		y += lineH
+		y += h
 	}
 }
