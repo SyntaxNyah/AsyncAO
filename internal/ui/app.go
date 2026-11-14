@@ -210,8 +210,8 @@ type App struct {
 	// First click opens the full description under the row; a second click on the same row joins.
 	selServer  int
 	descLines  []string
-	descLinks  []string // clickable URLs found in the description
-	helpScroll int32    // ScreenServerHelp scroll position
+	descLinks  []linkSpan // clickable URLs in descLines
+	helpScroll int32      // ScreenServerHelp scroll position
 
 	// --- the active server session (every per-server field) ---
 	// sessionState is embedded so the whole session parks and restores as one struct move on tab switch.
@@ -308,7 +308,7 @@ type App struct {
 	oocWrapSrc  []int    // parallel to oocWrap: the source oocLog entry index of each display line (mirrors icWrapLine.entry)
 	// Every URL in a paragraph is separately hoverable. oocWrapLink is the flat table in row order;
 	// oocWrapLinkAt has len(rows)+1 entries, so row r's spans are oocWrapLink[oocWrapLinkAt[r]:oocWrapLinkAt[r+1]].
-	oocWrapLink   []oocLinkSpan
+	oocWrapLink   []linkSpan
 	oocWrapLinkAt []int32
 	oocWrapSeq    uint64
 	oocWrapEpoch  uint64

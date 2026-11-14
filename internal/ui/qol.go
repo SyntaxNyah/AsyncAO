@@ -1107,30 +1107,31 @@ const oocWrapMinCharsPerRow = 4
 // Derived from oocLineCap so a legitimate entry is never clipped; the "…" marker needs a synthetic width.
 const oocWrapMaxLinesPerEntry = oocLineCap / oocWrapMinCharsPerRow
 
-// oocLinkSpan is one clickable link on one wrapped OOC row: its byte range in the displayed text, pixel range and URL.
+// linkSpan is one clickable link on one wrapped row: its byte range in the displayed text, pixel range and URL.
 // A link the wrap hard-split contributes one span per row sharing an id, so the highlight covers the whole link.
-type oocLinkSpan struct {
-	row    int32  // display-row index into a.oocWrap
-	lo, hi int32  // byte range inside a.oocWrap[row] (the drawn text)
+type linkSpan struct {
+	row    int32  // display-row index into the wrapped rows
+	lo, hi int32  // byte range inside the row (the drawn text)
 	x0, x1 int32  // pixel range relative to the row's TEXT origin (hanging indent NOT included)
 	link   int32  // link id; the pieces of one wrapped link share it and are contiguous in the table
 	url    string // what a click opens — read from the UNMASKED paragraph (streamer mode masks display only)
 }
 
-// oocLinksPerParagraphMax bounds the clickable links of one paragraph (hard rule 4); links past it still display.
-const oocLinksPerParagraphMax = 64
+// linksPerParagraphMax bounds the clickable links of one paragraph (hard rule 4); links past it still display.
+const linksPerParagraphMax = 64
 
-// appendLinkSpans records the link regions of one wrapped paragraph; only inside oocWrapped's cached rebuild.
-// Positions come from masked, the drawn text, since streamer mode shifts offsets; the URL to open comes from raw.
-func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw, masked string, nextID int32) ([]oocLinkSpan, int32) {
-	rawLinks := extractURLs(raw, oocLinksPerParagraphMax)
+// wrappedLinkSpans records the byte ranges of the links in one wrapped paragraph; callers measure x0/x1 in their face.
+// Positions come from drawn, the text the rows hold, since streamer mode and ellipses shift offsets; the URL to open
+// comes from raw.
+func wrappedLinkSpans(dst []linkSpan, rows []string, rowBase int, raw, drawn string, nextID int32) ([]linkSpan, int32) {
+	rawLinks := extractURLs(raw, linksPerParagraphMax)
 	if len(rawLinks) == 0 || len(rows) == 0 {
 		return dst, nextID // the overwhelming common case: no link in this paragraph, no work
 	}
 	start, startID := len(dst), nextID
 	rawAt := 0          // cursor into rawLinks
 	rowIdx, pos := 0, 0 // walk position: row, byte offset within it
-	for _, tok := range strings.Fields(masked) {
+	for _, tok := range strings.Fields(drawn) {
 		// Masking can eat or rewrite a link, so pair by exact match scanning forward from the cursor,
 		// falling back to the next unconsumed raw link when the drawn text no longer matches.
 		tlo, thi := urlTokenRange(tok)
@@ -1179,7 +1180,7 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 				// Intersect with the link's trimmed range; brackets and a sentence period are not part of it.
 				ovLo, ovHi := max(consumed, tlo), min(consumed+n, thi)
 				if ovHi > ovLo {
-					dst = append(dst, oocLinkSpan{
+					dst = append(dst, linkSpan{
 						row:  int32(rowBase + rowIdx),
 						lo:   int32(pos + ovLo - consumed),
 						hi:   int32(pos + ovHi - consumed),
@@ -1194,12 +1195,12 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 			nextID++
 		}
 	}
-	return a.measureLinkSpans(dst, start, rows, rowBase), nextID
+	return dst, nextID
 }
 
 // measureLinkSpans fills the pixel range of dst[start:] in the face each row draws in, so tint and hit test match.
 // A row the per-glyph raster draws has no advance to trust here, so its first link covers the whole row.
-func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowBase int) []oocLinkSpan {
+func (a *App) measureLinkSpans(dst []linkSpan, start int, rows []string, rowBase int) []linkSpan {
 	w := start
 	for k := start; k < len(dst); k++ {
 		s := dst[k]
@@ -1222,7 +1223,7 @@ func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowB
 }
 
 // oocRowLinks returns row li's link spans, a view into the flat table with no allocation.
-func (a *App) oocRowLinks(li int) []oocLinkSpan {
+func (a *App) oocRowLinks(li int) []linkSpan {
 	if li < 0 || li+1 >= len(a.oocWrapLinkAt) {
 		return nil
 	}
@@ -1309,7 +1310,9 @@ func (a *App) oocWrapped(width int32) []string {
 				}
 			}
 			// Each URL on the line gets its own span, positioned on the drawn rows but opening the link as it arrived.
-			links, nextLinkID = a.appendLinkSpans(links, lines, rowBase, rawPara, trimmed, nextLinkID)
+			linkStart := len(links)
+			links, nextLinkID = wrappedLinkSpans(links, lines, rowBase, rawPara, trimmed, nextLinkID)
+			links = a.measureLinkSpans(links, linkStart, lines, rowBase)
 			remaining -= len(lines)
 			if truncated {
 				break // clipped this paragraph — no point wrapping later ones

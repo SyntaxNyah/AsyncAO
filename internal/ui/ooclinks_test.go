@@ -17,7 +17,7 @@ import (
 
 // spanText is the drawn text a span covers — the assertion that matters most,
 // since a span's whole job is to point at the characters the user sees.
-func spanText(a *App, s oocLinkSpan) string {
+func spanText(a *App, s linkSpan) string {
 	if int(s.row) >= len(a.oocWrap) {
 		return ""
 	}
