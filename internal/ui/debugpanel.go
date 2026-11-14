@@ -427,19 +427,20 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 	}
 }
 
-// RedrawSummary counts the frame ring: how many frames redrew one region alone, and why the others drew in full.
+// RedrawSummary counts the frames recorded in the ring: how many redrew one region alone, and why the others drew in
+// full. Until the ring fills, its recorded slots are the first ones.
 func (a *App) RedrawSummary() string {
 	var counts [reasonCount]int
 	partial := 0
-	for i, r := range a.frameReasons {
+	for i := range a.frameReasonsFilled {
 		if a.framePartial[i] {
 			partial++
 			continue
 		}
-		counts[r]++
+		counts[a.frameReasons[i]]++
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Redraws, last %d: %d partial · %d full", perfHUDFrames, partial, perfHUDFrames-partial)
+	fmt.Fprintf(&b, "Redraws, last %d: %d partial · %d full", a.frameReasonsFilled, partial, a.frameReasonsFilled-partial)
 	sep := " — "
 	for r := range reasonCount {
 		if counts[r] == 0 {

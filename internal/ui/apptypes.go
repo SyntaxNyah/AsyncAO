@@ -88,7 +88,8 @@ type sessionState struct {
 	frameDebug       sdl.Rect
 	frameDebugDrawn  bool
 	// The last drawn frame's regions. stageRectOK is false when it drew no stage, several, a pinned tab beside it, or a
-	// stage that moved; chatRectOK when it drew no chatbox or a rotated one; debugRectOK when the F8 panel was closed.
+	// stage that moved; chatRect holds every place the chatbox drew since the stage last moved, and chatRectOK is false
+	// before it first draws there and after a rotated one; debugRectOK is false when the F8 panel was closed.
 	stageRect   sdl.Rect
 	stageRectOK bool
 	chatRect    sdl.Rect

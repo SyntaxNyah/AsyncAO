@@ -129,9 +129,19 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.drawnAnimChrome = a.frameAnimChrome
 		a.drawnDemandPending = a.frameDemandPending
 		// A stage that moved since the last frame waits one more full frame: a partial frame redraws the old rect.
-		a.stageRectOK = a.frameStages == 1 && !a.splitActive() && a.frameStageRect == a.stageRect
+		stageMoved := a.frameStageRect != a.stageRect
+		a.stageRectOK = a.frameStages == 1 && !a.splitActive() && !stageMoved
 		a.stageRect = a.frameStageRect
-		a.chatRectOK, a.chatRect = a.frameChatDrawn && !a.frameChatRotated, a.frameChat
+		// The chatbox hides during a pre-animation or shout, so its rect sticks: every place it drew since the stage
+		// last moved.
+		switch {
+		case a.frameChatRotated || (stageMoved && !a.frameChatDrawn):
+			a.chatRectOK = false
+		case a.frameChatDrawn && a.chatRectOK && !stageMoved:
+			a.chatRect = a.chatRect.Union(&a.frameChat)
+		case a.frameChatDrawn:
+			a.chatRect, a.chatRectOK = a.frameChat, true
+		}
 		a.debugRectOK, a.debugRect = a.frameDebugDrawn, a.frameDebug
 	}()
 	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register

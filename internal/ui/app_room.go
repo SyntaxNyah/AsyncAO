@@ -904,6 +904,7 @@ func (a *App) NoteRedraw(partial, focused, sawEvent bool) {
 	_, a.frameReasons[a.frameReasonIdx] = a.nextFrameNeed(focused, sawEvent)
 	a.framePartial[a.frameReasonIdx] = partial
 	a.frameReasonIdx = (a.frameReasonIdx + 1) % perfHUDFrames
+	a.frameReasonsFilled = min(a.frameReasonsFilled+1, perfHUDFrames)
 }
 
 func (a *App) nextFrameNeed(focused, sawEvent bool) (frameNeed, frameReason) {

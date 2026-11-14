@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image"
-	"strings"
 	"testing"
 	"time"
 
@@ -94,9 +93,23 @@ func TestPartialRedraw(t *testing.T) {
 			region, ok, a.stageRect, a.chatRect)
 	}
 
+	// A pre-animation or shout hides the chatbox mid-message; where it drew must stay in the region.
+	shown := a.chatRect
+	a.room.Scene.IsBlankPost = true
+	driveFrame(a)
+	region, ok = a.PartialRedraw(focused, noEvent)
+	if !a.roomBusy() {
+		t.Fatal("the message finished before the hidden-chatbox frame")
+	}
+	if !ok || !contains(region, shown) {
+		t.Errorf("with the chatbox hidden mid-message the partial region = %+v (ok %v), want it to keep %+v",
+			region, ok, shown)
+	}
+
 	a.NoteRedraw(true, focused, noEvent)
 	a.NoteRedraw(false, focused, sawEvent)
-	if got := a.RedrawSummary(); !strings.Contains(got, "1 partial") || !strings.Contains(got, "input 1") {
-		t.Errorf("redraw summary = %q, want one partial frame and one full frame for input", got)
+	const want = "Redraws, last 2: 1 partial · 1 full — input 1" // the ring's empty slots count for nothing
+	if got := a.RedrawSummary(); got != want {
+		t.Errorf("redraw summary = %q, want %q", got, want)
 	}
 }

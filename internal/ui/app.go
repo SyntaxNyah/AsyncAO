@@ -248,11 +248,13 @@ type App struct {
 	perfHUD    bool
 	frameDts   [perfHUDFrames]float32 // milliseconds
 	frameDtIdx int
-	// frameReasons is why each of the same frames was drawn, and framePartial whether it redrew one region alone.
-	frameReasons   [perfHUDFrames]frameReason
-	framePartial   [perfHUDFrames]bool
-	frameReasonIdx int
-	previewBase    string
+	// frameReasons is why each of the same frames was drawn, and framePartial whether it redrew one region alone;
+	// frameReasonsFilled counts the slots recorded so far, as the ring starts empty.
+	frameReasons       [perfHUDFrames]frameReason
+	framePartial       [perfHUDFrames]bool
+	frameReasonIdx     int
+	frameReasonsFilled int
+	previewBase        string
 	// previewName is the display name of the emote behind previewBase, stamped by previewEmote so the caption never
 	// scans a.emotes per frame. previewNameFor is that base: consumers return the name only while it equals
 	// previewBase, so every other previewBase setter invalidates the caption automatically.
