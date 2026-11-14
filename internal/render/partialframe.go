@@ -2,31 +2,32 @@ package render
 
 import "github.com/SyntaxNyah/AsyncAO/internal/sdl"
 
-// stageFrameMargin is the logical border kept around the stage, for draws whose edges round outward.
-const stageFrameMargin = 1
+// partialFrameMargin is the logical border kept around the region, for draws whose edges round outward.
+const partialFrameMargin = 1
 
-// StageFrame redraws only the stage on SDL's software renderer, whose window keeps the last frame's pixels. The frame
-// draws into a stage-sized texture under a viewport shifted so window coordinates land on it; anything outside the
-// stage falls off the texture's edge, whatever clip the drawing sets. End copies the texture into the window.
-type StageFrame struct {
+// PartialFrame redraws one region of the window on SDL's software renderer, whose window keeps the last frame's pixels.
+// The frame draws into a region-sized texture under a viewport shifted so window coordinates land on it; anything
+// outside the region falls off the texture's edge, whatever clip the drawing sets. End copies the texture into the
+// window.
+type PartialFrame struct {
 	tex        *sdl.Texture
 	texW, texH int32
 	viewport   sdl.Rect
 	dst        sdl.Rect
 }
 
-// Begin points a frame drawn at scalePct onto the stage texture, for a window of outW×outH pixels in which only the
-// logical rect stage changed. The texture's corner is moved to a logical point whose pixel position is whole, so every
-// draw lands on the same pixels as in a full frame. False leaves the frame to draw in full.
-func (f *StageFrame) Begin(ren *sdl.Renderer, stage sdl.Rect, scalePct, outW, outH int32) bool {
-	if scalePct <= 0 || stage.W <= 0 || stage.H <= 0 {
+// Begin points a frame drawn at scalePct onto the region's texture, for a window of outW×outH pixels in which only the
+// logical rect region changed. The texture's corner is moved to a logical point whose pixel position is whole, so
+// every draw lands on the same pixels as in a full frame. False leaves the frame to draw in full.
+func (f *PartialFrame) Begin(ren *sdl.Renderer, region sdl.Rect, scalePct, outW, outH int32) bool {
+	if scalePct <= 0 || region.W <= 0 || region.H <= 0 {
 		return false
 	}
 	step := percentMax / gcd(scalePct, percentMax) // the smallest logical step that is a whole number of pixels
-	x0 := max(snapDown(stage.X-stageFrameMargin, step), 0)
-	y0 := max(snapDown(stage.Y-stageFrameMargin, step), 0)
-	x1 := snapUp(stage.X+stage.W+stageFrameMargin, step)
-	y1 := snapUp(stage.Y+stage.H+stageFrameMargin, step)
+	x0 := max(snapDown(region.X-partialFrameMargin, step), 0)
+	y0 := max(snapDown(region.Y-partialFrameMargin, step), 0)
+	x1 := snapUp(region.X+region.W+partialFrameMargin, step)
+	y1 := snapUp(region.Y+region.H+partialFrameMargin, step)
 	px0, py0 := x0*scalePct/percentMax, y0*scalePct/percentMax
 	px1, py1 := min(x1*scalePct/percentMax, outW), min(y1*scalePct/percentMax, outH)
 	if px1 <= px0 || py1 <= py0 {
@@ -45,20 +46,20 @@ func (f *StageFrame) Begin(ren *sdl.Renderer, stage sdl.Rect, scalePct, outW, ou
 	return true
 }
 
-// End copies the redrawn stage into the window and leaves the window at scale 1.
-func (f *StageFrame) End(ren *sdl.Renderer) {
+// End copies the redrawn region into the window and leaves the window at scale 1.
+func (f *PartialFrame) End(ren *sdl.Renderer) {
 	_ = ren.SetRenderTarget(nil)
 	_ = ren.SetScale(1, 1)
 	_ = f.tex.SetBlendMode(sdl.BLENDMODE_NONE)
 	_ = ren.Copy(f.tex, nil, &f.dst)
 }
 
-// Release destroys the stage texture; render thread only.
-func (f *StageFrame) Release() {
+// Release destroys the region's texture; render thread only.
+func (f *PartialFrame) Release() {
 	if f.tex != nil {
 		_ = f.tex.Destroy()
 	}
-	*f = StageFrame{}
+	*f = PartialFrame{}
 }
 
 func gcd(a, b int32) int32 {

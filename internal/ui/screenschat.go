@@ -15,6 +15,14 @@ import (
 
 // drawChatOverlay paints the message box (showname + spoken text) over the stage. movableBox (classic layout only) lets
 // the layout editor drag the box; w,h give the override its window-fraction frame.
+// noteChatDrawn adds r to the region the chatbox drew into this frame.
+func (a *App) noteChatDrawn(r sdl.Rect) {
+	if a.frameChatDrawn {
+		r = a.frameChat.Union(&r)
+	}
+	a.frameChat, a.frameChatDrawn = r, true
+}
+
 func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	c := a.ctx
 	sc := a.renderScene() // live room, slideshow override, OR the replay scene (M16)
@@ -124,6 +132,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	msgClip := chatCrawlClip(box, textRect.Y, a.msAnim)
 	a.handleChatSelect(textRect, msgScroll, sc)
 	// Snapshot the geometry for Debug -> Session.
+	a.noteChatDrawn(box)
 	a.chatDiag.vpH, a.chatDiag.boxY, a.chatDiag.boxH = vp.H, box.Y, box.H
 	a.chatDiag.textY, a.chatDiag.wrapW = textRect.Y, wrapW
 	a.chatDiag.renderPct, a.chatDiag.devScale = c.RenderScalePct(), a.ctx.textDevPct

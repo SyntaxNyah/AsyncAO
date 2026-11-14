@@ -1069,6 +1069,9 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// Shared with the export's themed chatbox so frames match what the player saw. Resolved before the skin blit
 	// because the art depends on the showname's measured width; AO2 orders it the same way (courtroom.cpp:3301-3373).
 	nameBox, msgBox := chatboxTextRects(box, lay, box.Y+chatBoxTopStrip)
+	a.noteChatDrawn(box)
+	a.noteChatDrawn(msgBox)
+	a.frameChatRotated = a.frameChatRotated || lay.angle(themeChatboxKey) != 0
 
 	nameCol := ColAccent
 	if skinned && sc.ChatSkinNameHas {
@@ -1133,6 +1136,7 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	// names. showname_align spans the label's widget rect (courtroom.cpp:3338-3354). Y stays at the rect's top: AO2's
 	// horizontal-only alignment clears QLabel's default AlignVCenter (courtroom.cpp:93).
 	nameX, nameW := a.shownameSpanFor(nameBox, snFont, snEmoji, sc.ShownameText, nameCol)
+	a.noteChatDrawn(nameBox) // after the ladder, which can widen it
 	// Only the theme's showname_bold bolds here, unlike the classic overlay's "Bold names" pref.
 	// The weight is in the raster: a one-pixel second pass lands on a different sub-pixel phase at fractional UI scale.
 	a.labelEmojiWeight(snFont, snEmoji, nameX, nameBox.Y, nameW, sc.ShownameText, nameCol, a.elemBold(elemShowname))

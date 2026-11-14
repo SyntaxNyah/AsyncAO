@@ -57,6 +57,7 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 	}
 	wasActive := a.debugWin.dragging || a.debugWin.resizing // detect the drag/resize-end frame for slot persistence
 	panel := a.debugPanelRect(w, h)
+	a.frameDebug, a.frameDebugDrawn = panel, true
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -426,18 +427,22 @@ func (a *App) drawFrameBars(r sdl.Rect) {
 	}
 }
 
-// redrawSummary counts the frame ring's reasons: how many frames drew the stage alone, and why the others drew in full.
+// redrawSummary counts the frame ring: how many frames redrew one region alone, and why the others drew in full.
 func (a *App) redrawSummary() string {
 	var counts [reasonCount]int
-	for _, r := range a.frameReasons {
+	partial := 0
+	for i, r := range a.frameReasons {
+		if a.framePartial[i] {
+			partial++
+			continue
+		}
 		counts[r]++
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Redraws, last %d: %d stage only · %d full", perfHUDFrames, counts[reasonStage],
-		perfHUDFrames-counts[reasonStage])
+	fmt.Fprintf(&b, "Redraws, last %d: %d partial · %d full", perfHUDFrames, partial, perfHUDFrames-partial)
 	sep := " — "
 	for r := range reasonCount {
-		if r == reasonStage || counts[r] == 0 {
+		if counts[r] == 0 {
 			continue
 		}
 		fmt.Fprintf(&b, "%s%s %d", sep, frameReasonLabels[r], counts[r])

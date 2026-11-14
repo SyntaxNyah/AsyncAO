@@ -10,10 +10,11 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
-// TestStageFrameMatchesFullFrame pins a stage-only frame to a full one: inside the stage every pixel matches what a
-// full frame draws, at render scales whose stage corner isn't a whole pixel, and the rest of the window is left as it
-// was. The pre-scaled sprites switch to scale 1 mid-frame, so the stage's shifted viewport must survive that.
-func TestStageFrameMatchesFullFrame(t *testing.T) {
+// TestPartialFrameMatchesFullFrame pins a partial frame to a full one: inside the redrawn region, here the stage, every
+// pixel matches what a full frame draws, at render scales whose region corner isn't a whole pixel, and the rest of the
+// window is left as it was. The pre-scaled sprites switch to scale 1 mid-frame, so the shifted viewport must survive
+// that.
+func TestPartialFrameMatchesFullFrame(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
 	store, err := NewTextureStoreBudget(ren, 0)
@@ -53,7 +54,7 @@ func TestStageFrameMatchesFullFrame(t *testing.T) {
 
 		_ = ren.SetDrawColor(magenta[2], magenta[1], magenta[0], channelMax)
 		_ = ren.Clear()
-		var f StageFrame
+		var f PartialFrame
 		if !f.Begin(ren, stage, pct, prescaleWinW, prescaleWinH) {
 			t.Fatalf("%d%%: Begin refused a stage inside the window", pct)
 		}

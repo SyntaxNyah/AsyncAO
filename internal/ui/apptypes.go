@@ -77,13 +77,24 @@ type sessionState struct {
 	// active cap.
 	frameAnimChrome bool
 	drawnAnimChrome bool
-	// frameStages counts this frame's courtroom stage draws and frameStageRect holds the last one. stageRect is where
-	// the last frame drew its one stage; stageRectOK is false when it drew none, several, a pinned tab beside it, or a
-	// stage that moved.
-	frameStages    int
-	frameStageRect sdl.Rect
-	stageRect      sdl.Rect
-	stageRectOK    bool
+	// What this frame drew where, for a partial redraw of the next: frameStages counts the courtroom stage draws and
+	// frameStageRect holds the last; frameChat holds everything the chatbox drew into, and frameChatDrawn says it drew
+	// at all; frameChatRotated marks a rotated skin, whose corners reach past its rect; frameDebug is the F8 panel.
+	frameStages      int
+	frameStageRect   sdl.Rect
+	frameChat        sdl.Rect
+	frameChatDrawn   bool
+	frameChatRotated bool
+	frameDebug       sdl.Rect
+	frameDebugDrawn  bool
+	// The last drawn frame's regions. stageRectOK is false when it drew no stage, several, a pinned tab beside it, or a
+	// stage that moved; chatRectOK when it drew no chatbox or a rotated one; debugRectOK when the F8 panel was closed.
+	stageRect   sdl.Rect
+	stageRectOK bool
+	chatRect    sdl.Rect
+	chatRectOK  bool
+	debugRect   sdl.Rect
+	debugRectOK bool
 	// lastPacerTier records which FramePace branch set the last budget — a
 	// lastPacerTier records which FramePace branch set the last budget; diagnostic only, never read by pacing.
 	lastPacerTier pacerTier

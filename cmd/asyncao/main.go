@@ -219,8 +219,8 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	// macOS Retina: fold the 2x drawable into the render scale, since SetLogicalSize would break hit-testing.
 	retinaScale := host.RetinaScale(ren, window)
 	// Declared after ren so its texture is released first.
-	var stageFrame render.StageFrame
-	defer stageFrame.Release()
+	var partialFrame render.PartialFrame
+	defer partialFrame.Release()
 	// SDL defaults to no blending, which draws every alpha fill opaque.
 	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
@@ -480,11 +480,11 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 			continue
 		}
 
-		// SDL's software renderer keeps the window's pixels, so a frame only the stage's animation asked for redraws the
-		// stage alone.
-		stage, stageOnly := sdl.Rect{}, false
+		// SDL's software renderer keeps the window's pixels, so a frame only the stage's animation or a playing message
+		// asked for redraws that region alone.
+		region, partial := sdl.Rect{}, false
 		if graphics.Software && !limiterOff && retinaScale == 1 {
-			stage, stageOnly = app.StageOnly(focused, sawEvent)
+			region, partial = app.PartialRedraw(focused, sawEvent)
 		}
 
 		// Draw at logical size and let the GPU scale the frame; the kit unprojects the mouse to match.
@@ -495,11 +495,11 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		lw := int32(float32(w) / scale)
 		lh := int32(float32(h) / scale)
 		stalls.FrameStart()
-		stageOnly = stageOnly && stageFrame.Begin(ren, stage, int32(app.UIScale()), w, h)
-		app.NoteRedraw(stageOnly, focused, sawEvent)
-		if stageOnly {
+		partial = partial && partialFrame.Begin(ren, region, int32(app.UIScale()), w, h)
+		app.NoteRedraw(partial, focused, sawEvent)
+		if partial {
 			app.Frame(dt, lw, lh)
-			stageFrame.End(ren)
+			partialFrame.End(ren)
 		} else {
 			_ = ren.SetDrawColor(0, 0, 0, 255)
 			_ = ren.Clear()

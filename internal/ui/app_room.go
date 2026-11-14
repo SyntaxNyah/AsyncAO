@@ -837,8 +837,9 @@ func backstopBudget(b time.Duration) time.Duration {
 type frameNeed uint8
 
 const (
-	needNone  frameNeed = iota // the last drawn frame is still right
-	needStage                  // only the stage's animation moved
+	needNone    frameNeed = iota // the last drawn frame is still right
+	needStage                    // only the stage's animation moved
+	needMessage                  // a message is playing: the stage and the chatbox move
 	needFull
 )
 
@@ -847,12 +848,11 @@ type frameReason uint8
 
 const (
 	reasonNone       frameReason = iota // nothing asked; a deadline or the idle tick drew it
-	reasonStage                         // the stage's animation, drawn alone
-	reasonStageFull                     // the stage's animation, drawn in full: no single stage, or a GPU renderer
+	reasonStage                         // the stage's animation
+	reasonMessage                       // a message playing
 	reasonInput                         // input this pass
 	reasonScreen                        // a screen that always draws
 	reasonFullRate                      // recent input or an effect in flight
-	reasonMessage                       // a message playing
 	reasonWarning                       // a warning showing
 	reasonFonts                         // fonts loading
 	reasonAnimChrome                    // animated UI outside the stage
@@ -862,9 +862,9 @@ const (
 
 // frameReasonLabels names each frameReason in the debug panel.
 var frameReasonLabels = [reasonCount]string{
-	reasonNone: "deadline", reasonStage: "stage only", reasonStageFull: "stage, drawn full", reasonInput: "input",
-	reasonScreen: "screen", reasonFullRate: "recent input", reasonMessage: "message", reasonWarning: "warning",
-	reasonFonts: "fonts", reasonAnimChrome: "animated UI", reasonDamage: "changes",
+	reasonNone: "deadline", reasonStage: "stage", reasonMessage: "message", reasonInput: "input", reasonScreen: "screen",
+	reasonFullRate: "recent input", reasonWarning: "warning", reasonFonts: "fonts", reasonAnimChrome: "animated UI",
+	reasonDamage: "changes",
 }
 
 // SkipFrame reports that the last drawn frame is still right, so the loop may skip render and present and just pump.
@@ -875,25 +875,34 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	return need == needNone
 }
 
-// StageOnly returns where the last full frame drew the stage when nothing but the stage's animation needs drawing, so
-// a renderer that keeps the window's pixels can redraw that rect alone.
-func (a *App) StageOnly(focused, sawEvent bool) (sdl.Rect, bool) {
-	if need, _ := a.nextFrameNeed(focused, sawEvent); !a.stageRectOK || need != needStage {
+// PartialRedraw returns the one region that can change when only the stage's animation or a playing message needs
+// drawing, so a renderer that keeps the window's pixels can redraw that region alone: the stage, the chatbox while a
+// message plays, and the F8 panel while it is open, all where the last frame drew them.
+func (a *App) PartialRedraw(focused, sawEvent bool) (sdl.Rect, bool) {
+	need, _ := a.nextFrameNeed(focused, sawEvent)
+	if !a.stageRectOK || (need != needStage && need != needMessage) {
 		return sdl.Rect{}, false
 	}
-	return a.stageRect, true
+	region := a.stageRect
+	if need == needMessage {
+		if !a.chatRectOK {
+			return sdl.Rect{}, false
+		}
+		region = region.Union(&a.chatRect)
+	}
+	if a.showDebugPanel {
+		if !a.debugRectOK {
+			return sdl.Rect{}, false
+		}
+		region = region.Union(&a.debugRect)
+	}
+	return region, true
 }
 
-// NoteRedraw records why the frame about to be drawn is drawn, and whether it is the stage alone.
-func (a *App) NoteRedraw(stageOnly, focused, sawEvent bool) {
-	_, reason := a.nextFrameNeed(focused, sawEvent)
-	switch {
-	case stageOnly:
-		reason = reasonStage
-	case reason == reasonStage:
-		reason = reasonStageFull
-	}
-	a.frameReasons[a.frameReasonIdx] = reason
+// NoteRedraw records why the frame about to be drawn is drawn, and whether it redraws one region or the whole window.
+func (a *App) NoteRedraw(partial, focused, sawEvent bool) {
+	_, a.frameReasons[a.frameReasonIdx] = a.nextFrameNeed(focused, sawEvent)
+	a.framePartial[a.frameReasonIdx] = partial
 	a.frameReasonIdx = (a.frameReasonIdx + 1) % perfHUDFrames
 }
 
@@ -915,8 +924,6 @@ func (a *App) nextFrameNeed(focused, sawEvent bool) (frameNeed, frameReason) {
 	switch {
 	case a.wantsFullRate():
 		return needFull, reasonFullRate
-	case a.roomBusy():
-		return needFull, reasonMessage
 	case a.warnActive():
 		return needFull, reasonWarning
 	case a.fontWorkPending():
@@ -930,6 +937,10 @@ func (a *App) nextFrameNeed(focused, sawEvent bool) (frameNeed, frameReason) {
 	}
 	if a.RenderNeeded() {
 		return needFull, reasonDamage // pending damage: packets landed / textures moved / a caret flip is showing
+	}
+	// After the checks above: a message's arrival and end are damage, so the log and lists redraw in full then.
+	if a.roomBusy() {
+		return needMessage, reasonMessage
 	}
 	if a.d.Viewport != nil && a.room != nil {
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {

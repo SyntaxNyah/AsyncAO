@@ -248,8 +248,9 @@ type App struct {
 	perfHUD    bool
 	frameDts   [perfHUDFrames]float32 // milliseconds
 	frameDtIdx int
-	// frameReasons is why each of the same frames was drawn.
+	// frameReasons is why each of the same frames was drawn, and framePartial whether it redrew one region alone.
 	frameReasons   [perfHUDFrames]frameReason
+	framePartial   [perfHUDFrames]bool
 	frameReasonIdx int
 	previewBase    string
 	// previewName is the display name of the emote behind previewBase, stamped by previewEmote so the caption never

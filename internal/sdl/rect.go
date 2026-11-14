@@ -25,6 +25,20 @@ func (a *Rect) Intersect(b *Rect) (Rect, bool) {
 	return out, bool(ok)
 }
 
+// Union returns the smallest rectangle holding both a and b; an empty one adds nothing. Plain Go: handing the rects
+// to cgo would move them to the heap on every call.
+func (a *Rect) Union(b *Rect) Rect {
+	if a.W <= 0 || a.H <= 0 {
+		return *b
+	}
+	if b.W <= 0 || b.H <= 0 {
+		return *a
+	}
+	x0, y0 := min(a.X, b.X), min(a.Y, b.Y)
+	x1, y1 := max(a.X+a.W, b.X+b.W), max(a.Y+a.H, b.Y+b.H)
+	return Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
+}
+
 func (a *Rect) c() *C.SDL_Rect { return (*C.SDL_Rect)(unsafe.Pointer(a)) }
 
 // frect converts r to SDL3's float rectangle; nil stays nil (the whole target).
