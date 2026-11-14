@@ -96,17 +96,15 @@ func TestResolveRawFromLocalArchive(t *testing.T) {
 		t.Errorf("relpath = %q, want characters/Phoenix/(a)normal.webp", rel)
 	}
 
-	// Robustness: a NON-default format (.png, e.g. an older server) MISSES until
-	// the archive's recorded format is seeded for the archive host — which is
-	// exactly what replaying a bundled archive does from its format manifest.
+	// The player's folders are searched in every format, whatever the host's list says, and a hit there teaches the
+	// host nothing.
 	write("characters/Edgeworth/(a)normal.png", []byte("PNG"))
 	pbase := local.BaseURL() + "characters/Edgeworth/(a)normal"
-	if _, _, ok := rig.manager.ResolveRaw(pbase, AssetTypeCharSprite); ok {
-		t.Fatal("expected .png to MISS before seeding (default probe list is webp-only)")
-	}
-	rig.resolver.RecordSuccess(hostOf(pbase), AssetTypeCharSprite, config.ExtPNG)
 	if url, data, ok := rig.manager.ResolveRaw(pbase, AssetTypeCharSprite); !ok || string(data) != "PNG" {
-		t.Fatalf("seeded .png archive asset not resolved: ok=%v url=%q", ok, url)
+		t.Fatalf("folder .png not resolved: ok=%v url=%q", ok, url)
+	}
+	if ext, ok := rig.resolver.Learned(hostOf(pbase), AssetTypeCharSprite); ok && ext == config.ExtPNG {
+		t.Errorf("a folder hit taught the host %q", ext)
 	}
 }
 

@@ -75,8 +75,8 @@ in **Status**. Update Status in the same commit that completes a step.
   - [ ] first release run: signing, the Flatpak and publishing have never run; use a `v0.0.0-ci.1` prerelease and delete it
   - [ ] `netproxy` against a real proxy, which has not been tried
   - [ ] the owner requires `ci-ok`; until then a red PR can merge, though it cannot release untested
-  - [ ] fix the real CodeQL findings, in their own PR: RGB values wrap instead of clamping (`theme.go`, `stylesheet.go`), and
-        check `ResizeWindow`'s sizes. The workflow-permission alerts close once this branch merges
+  - [x] CodeQL findings: RGB values clamp through `parse.Uint8`, every `ResizeWindow` size goes through
+        `ClampWindowSize`, and the workflow-permission alerts closed with the merge. No alert is open (checked 2026-11-14)
 - [ ] 3. Feature extraction and stable boundaries (decided 2026-11-01; replaces splitting the monolith first). Take tertiary
       functions out of `courtroom.Courtroom` and `internal/ui` into purpose-built types that own their state. Every move
       starts from a benchmark and is measured again after it; a cheap rewrite or optimisation found on the way is welcome.
