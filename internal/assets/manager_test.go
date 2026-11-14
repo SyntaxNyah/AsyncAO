@@ -33,6 +33,12 @@ type testRig struct {
 // newRig builds a Manager on source; localMode mounts a LocalFetcher source's folders, as "only use my folders" does.
 func newRig(tb testing.TB, source Fetcher, localMode bool) *testRig {
 	tb.Helper()
+	return newRigAt(tb, source, localMode, "")
+}
+
+// newRigAt is newRig keeping learned formats and winners in learnedPath.
+func newRigAt(tb testing.TB, source Fetcher, localMode bool, learnedPath string) *testRig {
+	tb.Helper()
 	prefs := newTestPrefs(tb)
 	resolver := NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
@@ -48,12 +54,13 @@ func newRig(tb testing.TB, source Fetcher, localMode bool) *testRig {
 	tb.Cleanup(decoder.Close)
 
 	m := NewManager(ManagerDeps{
-		Resolver: resolver,
-		Prefs:    prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   source,
-		Decoder:  decoder,
+		Resolver:    resolver,
+		Prefs:       prefs,
+		T2:          t2,
+		Disk:        disk,
+		Source:      source,
+		Decoder:     decoder,
+		LearnedPath: learnedPath,
 	})
 	tb.Cleanup(m.CloseMedia)
 	if lf, ok := source.(*LocalFetcher); ok && localMode {

@@ -799,6 +799,18 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, PrefsFileName), nil
 }
 
+// LearnedFileName holds the media system's learned formats and winners, beside the prefs file.
+const LearnedFileName = "learned.json"
+
+// LearnedPath is learned.json beside the prefs file.
+func LearnedPath() (string, error) {
+	base, err := DefaultPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(base), LearnedFileName), nil
+}
+
 // New loads preferences and starts the saver; an error reports a bad file replaced by defaults. Close flushes.
 func New(path string) (*AssetPreferences, error) {
 	return newWithDebounce(path, DefaultSaveDebounce)

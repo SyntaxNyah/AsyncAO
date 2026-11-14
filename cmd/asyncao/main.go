@@ -253,15 +253,20 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	// --- asset pipeline ---
 	// Packages beside the executable; the UI appends them after the manual mounts, so an explicit folder wins.
 	autoMounts := config.DiscoverPackages(config.ExecutableDir())
+	learnedPath, err := config.LearnedPath()
+	if err != nil {
+		log.Printf("learned formats won't be kept: %v", err)
+	}
 	manager := assets.NewManager(assets.ManagerDeps{
-		Resolver:   resolver,
-		Prefs:      prefs,
-		T2:         t2,
-		Disk:       disk,
-		Source:     client,
-		Decoder:    decoder,
-		T1Contains: store.ContainsAnimated,
-		T1Failed:   store.FailedRecently,
+		Resolver:    resolver,
+		Prefs:       prefs,
+		T2:          t2,
+		Disk:        disk,
+		Source:      client,
+		Decoder:     decoder,
+		T1Contains:  store.ContainsAnimated,
+		T1Failed:    store.FailedRecently,
+		LearnedPath: learnedPath,
 	})
 	defer manager.CloseMedia()
 	// 0 = unlimited.

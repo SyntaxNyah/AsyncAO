@@ -76,6 +76,8 @@ type Manager struct {
 	disk     *cache.DiskCache
 	client   Fetcher
 	decoder  *DecoderPool
+	// learnedPath is where the media system's learned formats and winners are kept between sessions.
+	learnedPath string
 
 	// t1Contains reports whether a texture is uploaded; pass the upload's key: base if probed, full URL if exact.
 	t1Contains func(url string) bool
@@ -199,6 +201,8 @@ type ManagerDeps struct {
 	Decoder    *DecoderPool
 	T1Contains func(url string) bool
 	T1Failed   func(base string) bool
+	// LearnedPath is the learned.json the media system's learned formats and winners are kept in; "" keeps none.
+	LearnedPath string
 }
 
 // NewManager builds the Manager and starts its media system; CloseMedia stops it.
@@ -212,6 +216,7 @@ func NewManager(deps ManagerDeps) *Manager {
 		decoder:     deps.Decoder,
 		t1Contains:  deps.T1Contains,
 		t1Failed:    deps.T1Failed,
+		learnedPath: deps.LearnedPath,
 		decodedCh:   make(chan DecodedAsset, decodedChanCap),
 		audioCh:     make(chan AudioAsset, audioChanCap),
 		warningCh:   make(chan Warning, warningChanCap),
