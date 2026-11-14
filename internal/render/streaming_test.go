@@ -149,7 +149,7 @@ func TestAppendStreamDropsOutOfOrder(t *testing.T) {
 // frame (never latch finished, never wrap) until the stream completes, then
 // play to its natural end.
 func TestStreamingPreanimHoldsOnPrefix(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	v.speakerAnim.reset("characters/x/intro")
 
 	prefix := &TexturePage{
@@ -186,7 +186,7 @@ func TestStreamingPreanimHoldsOnPrefix(t *testing.T) {
 // mapping during streaming: a growing prefix maps its kept ordinal as identity
 // (no decimation happened), and only a COMPLETE page uses the decimation map.
 func TestReportSpeakerFrameIdentityWhileStreaming(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	v.speakerAnim.reset("x")
 	var got int
 	v.OnFrameShown = func(src int) { got = src }
@@ -348,7 +348,7 @@ func TestResolveRestartsFromNilCursor(t *testing.T) {
 // cursor that somehow exceeds the page's frame count is clamped instead of
 // panicking on the Delays index.
 func TestAdvanceMaxClampsStaleCursor(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	v.speakerAnim.reset("x")
 	page := &TexturePage{
 		Frames:  make([]*sdl.Texture, 2),

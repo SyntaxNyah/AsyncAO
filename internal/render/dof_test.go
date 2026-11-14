@@ -22,7 +22,7 @@ func TestDepthOfFieldZeroAlloc(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 	vp.SetSpriteFX(SpriteFX{DoF: true})
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}

@@ -42,7 +42,7 @@ func TestViewportEntrance(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 
 	scene.Speaker.Name = "Phoenix" // first speaker of the session: no slide

@@ -83,7 +83,7 @@ func TestSplashFitRectKeepsTheAspectAndCentres(t *testing.T) {
 			t.Fatalf("dst %+v is already inside the stage %+v — this case proves nothing", dst, stage)
 		}
 
-		v := NewViewport(store)
+		v := NewViewport(store, false)
 		v.syncAnim(&v.shoutAnim, base)
 		_ = ren.SetClipRect(nil)
 		_ = ren.SetDrawColor(0, 0, 0, 255)

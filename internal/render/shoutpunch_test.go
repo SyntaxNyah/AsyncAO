@@ -46,7 +46,7 @@ func TestViewportShoutPunch(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 
 	scene.ShoutBase = ""

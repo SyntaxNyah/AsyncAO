@@ -37,6 +37,7 @@ func sceneryScaleMode(user, design courtroom.ScalingMode, stretch bool, nativeH,
 // drawScenery draws the background or desk with the background design.ini's geometry and filter; dimPct's ColorMod is
 // restored as the page is shared.
 func (v *Viewport) drawScenery(ren *sdl.Renderer, scene *courtroom.Scene, base string, anim *animState, vp sdl.Rect, dimPct int) {
+	defer v.flushLayer(ren)
 	if base == "" {
 		return
 	}

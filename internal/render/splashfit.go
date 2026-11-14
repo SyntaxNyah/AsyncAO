@@ -25,6 +25,7 @@ func splashFitRect(vp sdl.Rect, srcW, srcH int32) sdl.Rect {
 // Wide art fit by height would otherwise paint over the chatbox.
 // The clip and destination are fields because a local rect heap-escapes through cgo; SDL retains neither.
 func (v *Viewport) drawSplash(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect) {
+	defer v.flushLayer(ren)
 	if base == "" {
 		return
 	}

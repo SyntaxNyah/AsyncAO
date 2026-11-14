@@ -29,7 +29,7 @@ func TestShakeClipsTheBackgroundToTheStage(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := &courtroom.Scene{}
 	scene.BackgroundBase = "bg"
 	scene.ShakeLeft = courtroom.ScreenshakeDuration // full-strength shake

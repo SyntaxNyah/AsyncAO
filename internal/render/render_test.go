@@ -160,7 +160,7 @@ func BenchmarkRenderFrame(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 	const frameDt = 16 * time.Millisecond
@@ -215,7 +215,7 @@ func TestRenderFrameZeroAllocs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 
@@ -244,7 +244,7 @@ func TestFrameShownZeroAllocs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	var shown int
 	vp.OnFrameShown = func(src int) { shown += src } // non-nil: exercises the report path
 	scene := benchScene(store)
@@ -280,7 +280,7 @@ func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 
@@ -318,7 +318,7 @@ func TestTransmittedSpriteStyleZeroAlloc(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 	scene.Speaker.Style = courtroom.SpriteStyle{Tint: true, R: 255, G: 60, B: 60, Opacity: 60, Glow: true, Wobble: true, Spin: true, Motion: courtroom.MotionDrift, Brightness: 70, Scale: 130, Rotation: 64, FlipH: true}
 	scene.Pair.Style = courtroom.SpriteStyle{HueCycle: true, Opacity: 80, Glow: true, Scale: 80, Rotation: 200, Path: [16]uint8{0x88, 0xF8, 0x8F, 0x08}, PathLen: 4} // #34 custom path on the hot path (array size matches courtroom maxPathPoints)
@@ -426,7 +426,7 @@ func TestViewportStickyScenery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := &courtroom.Scene{BackgroundBase: "bg/defenseempty"}
 	vp.Update(scene, time.Millisecond)
 	if vp.bgAnim.base != "bg/defenseempty" {

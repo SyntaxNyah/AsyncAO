@@ -836,11 +836,11 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	// Distinctive primary state that must survive the pinned pass untouched.
 	a.serverName = "PrimaryServer"
 	a.screen = ScreenCourtroom
-	primaryVP := render.NewViewport(nil)
+	primaryVP := render.NewViewport(nil, false)
 	a.d.Viewport = primaryVP
 	// A pinned client whose swapped-in session is nil → the inner drawCourtroom
 	// early-returns (and sets a.screen=lobby, which the snapshot must undo).
-	a.splitVP = render.NewViewport(nil)
+	a.splitVP = render.NewViewport(nil, false)
 	a.splitRoom = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
 	a.splitTab = &courtTab{state: sessionState{serverName: "PinnedServer"}} // sess stays nil
 

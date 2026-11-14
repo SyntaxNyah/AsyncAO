@@ -35,7 +35,7 @@ func TestSpriteLoadHoldPrevious(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	preanims := 0
 	vp.OnPreanimDone = func() { preanims++ }
 
@@ -134,7 +134,7 @@ func TestHoldPreviousYieldsToFirstFrame(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
 	scene := &courtroom.Scene{}
 	scene.Speaker.Visible = true
@@ -190,7 +190,7 @@ func TestSpeakerSwapCrossfade(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	vp.SetCrossfade(400 * time.Millisecond)
 	scene := &courtroom.Scene{}
 	scene.Speaker.Visible = true
@@ -268,7 +268,7 @@ func TestHoldMaxAgeAndTint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
 	scene := &courtroom.Scene{}
 	scene.Speaker.Visible = true
@@ -339,7 +339,7 @@ func TestSpriteMaskClipsToStage(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := &courtroom.Scene{}
 	scene.Speaker.Visible = true
 	scene.Speaker.Active = "spk"

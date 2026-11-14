@@ -33,7 +33,7 @@ func TestViewportRenderDefersToAnActiveClip(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := &courtroom.Scene{BackgroundBase: "bg"}
 
 	// The stage, and the zoomed (expanded) destination the camera renders into:

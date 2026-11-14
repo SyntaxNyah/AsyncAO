@@ -49,7 +49,7 @@ func TestMissingnoOnlyOnConfirmedMissing(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
 	vp.SetMissingno(true)
 
@@ -154,7 +154,7 @@ func TestMissingnoDisabledHoldsPrevious(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
 	vp.SetMissingno(false) // OFF
 	scene := &courtroom.Scene{}
@@ -214,7 +214,7 @@ func TestMissingnoNeverFlashesForPreanim(t *testing.T) {
 	}
 	defer ct.Close()
 
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
 	vp.SetMissingno(true) // ON — the exemption must hold even with the pref enabled
 

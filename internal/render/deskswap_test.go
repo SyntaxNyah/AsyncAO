@@ -28,7 +28,7 @@ func deskSwapRig(t *testing.T) (*sdl.Renderer, *TextureStore, *Viewport) {
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
-	v := NewViewport(store)
+	v := NewViewport(store, false)
 
 	if err := store.Upload(deskTestBgA, decodedFixture()); err != nil {
 		t.Fatalf("upload bgA: %v", err)

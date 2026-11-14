@@ -23,7 +23,7 @@ func TestReflectionZeroAlloc(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 	vp.SetSpriteFX(SpriteFX{Reflection: true, ReflectStrength: 30})
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}

@@ -25,7 +25,7 @@ func TestSpriteOutlineShadowZeroAlloc(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	scene := benchScene(store)
 	// Outline + shadow composed with the cheap-bracket effects, on both layers, plus a
 	// rotation so the silhouette blits exercise the CopyEx angle/flip path.

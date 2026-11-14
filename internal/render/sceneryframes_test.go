@@ -38,7 +38,7 @@ func TestTheSceneryOnScreenKeepsAnimatingWhenTheSpeakerChanges(t *testing.T) {
 		}
 	}
 	upload(sceneryTestBg, sceneryTestDesk, sceneryTestFirst)
-	v := NewViewport(store)
+	v := NewViewport(store, false)
 	scene := &courtroom.Scene{BackgroundBase: sceneryTestBg, DeskBase: sceneryTestDesk}
 	scene.Speaker.IdleBase = sceneryTestFirst
 	v.Update(scene, sceneryTestStep)

@@ -162,7 +162,7 @@ func (a *App) pinToSplit(t *courtTab) {
 		return
 	}
 	if a.splitVP == nil {
-		a.splitVP = render.NewViewport(a.d.Store)
+		a.splitVP = render.NewViewport(a.d.Store, a.d.FlushLayers)
 	}
 	a.splitTab = t
 	// The split row cache is keyed by the pinned session's icLogSeq, which can collide across tabs.

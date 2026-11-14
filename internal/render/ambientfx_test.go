@@ -13,7 +13,7 @@ import (
 // stage report nothing; a drawn sprite plus a clock-driven wash / transmitted
 // style / weather reports animating; static styles (a plain tint) do not.
 func TestAmbientAnimating(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 
 	// A wash knob with no sprite drawn: quiet — this exact case burned CPU in

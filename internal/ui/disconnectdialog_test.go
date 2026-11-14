@@ -19,7 +19,7 @@ func froomApp(t *testing.T) *App {
 	a := testTabApp(t)
 	name, _ := a.d.Prefs.Load().Theme()
 	a.themeAppliedName = name
-	a.d.Viewport = render.NewViewport(nil)
+	a.d.Viewport = render.NewViewport(nil, false)
 	a.serverName, a.serverKey = "Test Server", "ws://test.example"
 	a.lastConnName, a.lastConnURL = "Test Server", "ws://test.example"
 	a.tabs = []*courtTab{{}}

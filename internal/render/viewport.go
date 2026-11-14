@@ -294,6 +294,8 @@ type Viewport struct {
 	store *TextureStore
 	// prescale keeps each layer's frame scaled to its size, for SDL's software renderer.
 	prescale bool
+	// flushLayers runs SDL's queued draws after each layer, so a CPU profile shows each layer's cost (-debug).
+	flushLayers bool
 
 	speakerAnim   animState
 	pairAnim      animState
@@ -437,8 +439,16 @@ const (
 	screenShakeYFreqMul = 1.3
 )
 
-func NewViewport(store *TextureStore) *Viewport {
-	return &Viewport{store: store, prescale: store != nil && store.software}
+func NewViewport(store *TextureStore, flushLayers bool) *Viewport {
+	return &Viewport{store: store, prescale: store != nil && store.software, flushLayers: flushLayers}
+}
+
+// flushLayer runs SDL's queued draws now, so their cost lands under the layer that queued them. SDL otherwise runs
+// them at the next texture update or present, wherever that falls in the frame.
+func (v *Viewport) flushLayer(ren *sdl.Renderer) {
+	if v.flushLayers {
+		_ = ren.Flush()
+	}
 }
 
 // SetSpriteFX sets the sprite colour and motion effects; the App calls it once per frame before Update.
@@ -736,7 +746,8 @@ func (v *Viewport) RebindScenery(bgBase, deskBase string) {
 
 // Render draws in AO order: background, characters (pair z-order), desk, shout; the flash paints over all.
 func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
-	stage := vp // the unmodified stage frame, for the #10 post-FX overlays (not the punched art)
+	v.flushLayer(ren) // the UI drawn before the stage
+	stage := vp       // the unmodified stage frame, for the #10 post-FX overlays (not the punched art)
 	// Inflate around the centre so every blit scales together; before the shake so the two compose.
 	if v.fx.ShoutPunch && v.punchLeft > 0 {
 		if s := punchScale(v.punchLeft); s > 0 {
@@ -923,6 +934,7 @@ func effectiveShoutBase(scene *courtroom.Scene, store *TextureStore) string {
 
 // drawFill stretches a layer across the viewport; dimPct's ColorMod is restored as the T1 page is shared.
 func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect, dimPct int) {
+	defer v.flushLayer(ren)
 	if base == "" {
 		return
 	}
@@ -976,6 +988,7 @@ func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl
 
 // drawOverlayInStage clips to the stage, as Qt clips a child to ui_viewport (courtroom.cpp:3218-3232).
 func (v *Viewport) drawOverlayInStage(ren *sdl.Renderer, scene *courtroom.Scene, vp, stage sdl.Rect, layer uint8) {
+	defer v.flushLayer(ren)
 	o := &scene.Overlay
 	if o.Base == "" || o.Layer != layer || v.overlayHidden(o) {
 		return
@@ -1049,6 +1062,7 @@ const (
 
 // drawReflections mirrors the speaker and pair below the floor line, between the sprite and desk draws.
 func (v *Viewport) drawReflections(ren *sdl.Renderer, scene *courtroom.Scene, vp, spkVP sdl.Rect) {
+	defer v.flushLayer(ren)
 	floorY := vp.Y + vp.H*reflectFloorPct/percentMax
 	alpha := reflectAlpha(v.fx.ReflectStrength)
 	// Confine to the stage, unless a clip is already active (the zoom path), so the camera-zoom clip isn't overwritten.
@@ -1112,6 +1126,7 @@ const (
 
 // drawBackgroundDoF draws the bg soft-focused and dimmed, restoring alpha as the T1 page is shared.
 func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, scene *courtroom.Scene, anim *animState, vp sdl.Rect) {
+	defer v.flushLayer(ren)
 	if scene.BackgroundBase == "" {
 		return
 	}
@@ -1212,6 +1227,7 @@ const (
 
 // drawSprite draws a layer at viewport height, bottom-centred, offset; hueShift offsets its rainbow phase.
 func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, anim *animState, vp sdl.Rect, hueShift time.Duration, dimPct int) {
+	defer v.flushLayer(ren)
 	if !layer.Visible || layer.Active == "" {
 		return
 	}

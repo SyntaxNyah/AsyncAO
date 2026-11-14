@@ -105,7 +105,7 @@ func TestPrescaledDrawMatchesDirectDraw(t *testing.T) {
 			t.Fatalf("upload %s: %v", base, err)
 		}
 	}
-	cached := NewViewport(store)
+	cached := NewViewport(store, false)
 	if !cached.prescale {
 		t.Fatal("a viewport on SDL's software renderer did not pre-scale")
 	}
@@ -176,7 +176,7 @@ func TestCoversStage(t *testing.T) {
 		{"no background", courtroom.Scene{}, false},
 	}
 	for _, tc := range cases {
-		v := NewViewport(store)
+		v := NewViewport(store, false)
 		v.Update(&tc.scene, 0)
 		if got := v.CoversStage(&tc.scene, vp); got != tc.want {
 			t.Errorf("%s: CoversStage = %v, want %v", tc.name, got, tc.want)

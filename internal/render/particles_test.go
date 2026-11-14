@@ -24,7 +24,7 @@ func TestParticleWeatherZeroAlloc(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	defer vp.PurgePostFX() // frees the cached weather dot texture
 	scene := benchScene(store)
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}

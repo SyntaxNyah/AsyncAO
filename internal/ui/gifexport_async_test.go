@@ -224,7 +224,7 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a.d.Store = store
-	a.d.Viewport = render.NewViewport(store)
+	a.d.Viewport = render.NewViewport(store, false)
 
 	// A minimal streaming-shaped Manager (a LocalFetcher over an empty dir), built
 	// on the SAME renderer as the capture target: the warm refs simply won't

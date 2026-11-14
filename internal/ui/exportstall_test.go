@@ -60,7 +60,7 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a.d.Store = store
-	a.d.Viewport = render.NewViewport(store)
+	a.d.Viewport = render.NewViewport(store, false)
 	a.d.Audio = &render.Audio{} // disabled device: a safe no-op AudioSink
 
 	resolver := assets.NewResolver(a.d.Prefs)

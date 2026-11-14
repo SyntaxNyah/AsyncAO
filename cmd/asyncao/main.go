@@ -44,7 +44,7 @@ func main() {
 	var (
 		flagServer      = flag.String("server", "", "skip the lobby and connect to this ws:// or wss:// URL")
 		flagMaster      = flag.String("master", network.DefaultMasterServerURL, "master server list endpoint")
-		flagDebug       = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr+" and write the log to asyncao-debug.log")
+		flagDebug       = flag.Bool("debug", false, "expose pprof on "+debugPprofAddr+", draw the stage layer by layer for profiling, and write the log to asyncao-debug.log")
 		flagVsync       = flag.Bool("vsync", true, "use vsync presentation")
 		flagSoftGPU     = flag.Bool("software-gpu", false, "draw on the CPU, for broken GPU drivers")
 		flagGPURecovery = flag.Int("gpu-recovery", 0, "set by the client when it restarts after a GPU device loss: losses so far")
@@ -258,7 +258,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	// 0 = unlimited.
 	manager.SetDiskBudget(int64(prefs.Load().DiskCacheBudgetMiBVal) << 20)
 
-	viewport := render.NewViewport(store)
+	viewport := render.NewViewport(store, debugMode)
 	mixer, err := rt.Audio.OpenMixer()
 	if err != nil {
 		log.Printf("audio disabled: %v", err)
@@ -314,6 +314,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		Client:           client,
 		Store:            store,
 		Viewport:         viewport,
+		FlushLayers:      debugMode,
 		Pump:             nil, // set below (needs app for liveness)
 		Audio:            audio,
 		GraphicsName:     graphics.Name,

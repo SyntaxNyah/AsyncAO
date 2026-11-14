@@ -321,7 +321,7 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	}
 	a := testTabApp(t)
 	a.room = &courtroom.Courtroom{}
-	a.d.Viewport = render.NewViewport(store)
+	a.d.Viewport = render.NewViewport(store, false)
 	a.d.Prefs.Update(func(sn *config.Settings) { sn.UnfocusedFPSVal = 10 }) // pin the unfocused cap (shipped default is now 5)
 	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
 
@@ -387,7 +387,7 @@ func TestFramePaceCeremonyBeatsSlowAnim(t *testing.T) {
 	}
 	a := testTabApp(t)
 	a.room = newRoomForTest(t) // a real room: enqueue runs the full begin() path
-	a.d.Viewport = render.NewViewport(store)
+	a.d.Viewport = render.NewViewport(store, false)
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {

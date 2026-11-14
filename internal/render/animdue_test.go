@@ -14,7 +14,7 @@ import (
 // and a running ramp (crossfade) reports 0 = continuous. Pages are built by
 // hand (frame textures are never dereferenced), so no SDL init is needed.
 func TestNextAnimDue(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 	scene.Speaker.Visible = true
 
@@ -89,7 +89,7 @@ func TestNextAnimDue(t *testing.T) {
 // frame count, and NextAnimDue must still schedule a deadline (never panic)
 // while the next Update's advance clamps the cursor back into range.
 func TestNextAnimDueClampsStaleCursor(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 	scene.Speaker.Visible = true
 	v.speakerAnim.page = &TexturePage{
@@ -112,7 +112,7 @@ func TestNextAnimDueClampsStaleCursor(t *testing.T) {
 // brake: the idle-CPU-burn class). Playback speed is untouched: advance()
 // folds every elapsed frame per step.
 func TestNextAnimDueFloor(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 	scene.Speaker.Visible = true
 	v.speakerAnim.page = &TexturePage{
@@ -136,7 +136,7 @@ func TestNextAnimDueFloor(t *testing.T) {
 // full rate for it redrew an unchanging stage forever. The blend still runs
 // at full rate once the sprite lands (coldFor resets on residency).
 func TestNextAnimDueColdCrossfade(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 	v.crossfade = 200 * time.Millisecond
 	v.speakerAnim.fadeLeft = 120 * time.Millisecond
@@ -156,7 +156,7 @@ func TestNextAnimDueColdCrossfade(t *testing.T) {
 // burst only flipped frames when something else forced a redraw — the playtest's
 // "the animation is throttled, it only draws when the caret does".
 func TestNextAnimDueSpeedline(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 
 	// A staged but UNRESOLVED speedline (base set, no page yet) schedules nothing —
@@ -201,7 +201,7 @@ func TestNextAnimDueSpeedline(t *testing.T) {
 // TestNextAnimDueAllocs pins the pacer's clock at zero allocations — it runs
 // once per frame on the main thread, so it must never touch the heap.
 func TestNextAnimDueAllocs(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 	scene.Speaker.Visible = true
 	v.speakerAnim.page = &TexturePage{
@@ -233,7 +233,7 @@ func TestFinishedOneShotRestartsAsLoop(t *testing.T) {
 
 	// (a) Drive a one-shot to completion. Each 100 ms step advances one frame; the
 	// step that lands on the last frame latches finished and reports done ONCE.
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	v.speakerAnim.reset("characters/x/intro") // bind a base so it's a real layer
 	done := 0
 	for i := 0; i < 3; i++ {
@@ -281,7 +281,7 @@ func TestFinishedOneShotRestartsAsLoop(t *testing.T) {
 	// (c) Control: a layer that was NEVER a one-shot (idle/talk always runs with
 	// playOnce=false) is never finished, so the guard never touches it — it just
 	// loops. Advancing it many times keeps finished false and never reports done.
-	idle := NewViewport(nil)
+	idle := NewViewport(nil, false)
 	idle.speakerAnim.reset("characters/x/(a)normal")
 	for i := 0; i < 12; i++ {
 		if idle.advanceSpeaker(page, 100*time.Millisecond, false) {
@@ -294,7 +294,7 @@ func TestFinishedOneShotRestartsAsLoop(t *testing.T) {
 
 	// 0-alloc on the guarded path (the collision restart + a loop step), matching
 	// the render loop's zero-allocation contract.
-	guarded := NewViewport(nil)
+	guarded := NewViewport(nil, false)
 	guarded.speakerAnim.reset("characters/x/intro")
 	guarded.speakerAnim.finished = true // pre-latch: exercise the restart branch every run
 	if n := testing.AllocsPerRun(1000, func() {
@@ -309,7 +309,7 @@ func TestFinishedOneShotRestartsAsLoop(t *testing.T) {
 // It is re-decoding, so finishing on that frame would skip the animation.
 func TestStilledPageDoesNotFinishPreanim(t *testing.T) {
 	const step = 100 * time.Millisecond
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	v.speakerAnim.reset("characters/x/intro")
 	stilled := &TexturePage{Frames: make([]*sdl.Texture, 1), Delays: []time.Duration{0}, Animated: true, Stilled: true}
 	if v.advanceSpeaker(stilled, step, true) || v.speakerAnim.finished {
@@ -325,7 +325,7 @@ func TestStilledPageDoesNotFinishPreanim(t *testing.T) {
 // still-decoding talk loop (the swap stutter). The FULL frame set then plays the
 // preanim to its natural last frame and completes exactly once.
 func TestProgressivePartialDoesNotFinishPreanim(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	v.speakerAnim.reset("characters/x/intro")
 
 	partial := &TexturePage{
@@ -365,7 +365,7 @@ func TestProgressivePartialDoesNotFinishPreanim(t *testing.T) {
 
 	// Control: a NON-partial single-frame playOnce still completes immediately
 	// (a genuinely static one-shot is its own whole animation).
-	single := NewViewport(nil)
+	single := NewViewport(nil, false)
 	single.speakerAnim.reset("characters/x/intro")
 	static := &TexturePage{
 		Frames: make([]*sdl.Texture, 1),

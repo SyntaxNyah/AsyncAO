@@ -24,7 +24,7 @@ func TestPostFXZeroAlloc(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vp := NewViewport(store)
+	vp := NewViewport(store, false)
 	defer vp.PurgePostFX()
 	scene := benchScene(store)
 	vp.SetPostFX(PostFX{Vignette: true, Scanlines: true, Grain: true, CRT: true})

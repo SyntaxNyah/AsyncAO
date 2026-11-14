@@ -123,7 +123,7 @@ func TestOverlayAdvanceIsUnchangedWithoutAClamp(t *testing.T) {
 // TestSameEffectTwiceRestartsViaGen — syncOverlay watches the generation as well
 // as the base, because animState.reset only fires on a base change.
 func TestOverlaySyncRestartsOnGenBump(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	o := courtroom.SceneOverlay{Base: "fx://wash", Gen: 1}
 	v.syncOverlay(&o)
 	if v.overlayAnim.base != "fx://wash" {
@@ -155,7 +155,7 @@ func TestOverlaySyncRestartsOnGenBump(t *testing.T) {
 // pacer up: a finished non-looping clip, and a resolved SINGLE-frame overlay
 // (a still picture with no next deadline).
 func TestAmbientAnimatingReportsALiveOverlay(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 	if v.AmbientAnimating(scene) {
 		t.Fatal("an empty stage must not report animating")
@@ -188,7 +188,7 @@ func TestAmbientAnimatingReportsALiveOverlay(t *testing.T) {
 // TestNextAnimDueIncludesTheOverlayDeadline — the ROADMAP's named pacing trap:
 // an idle-capped client must wake exactly when the next overlay frame is due.
 func TestNextAnimDueIncludesTheOverlayDeadline(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	scene := &courtroom.Scene{}
 	if _, ok := v.NextAnimDue(scene); ok {
 		t.Fatal("an empty stage schedules nothing")
@@ -217,7 +217,7 @@ func TestNextAnimDueIncludesTheOverlayDeadline(t *testing.T) {
 // TestFinishedCulledOverlayStopsHoldingFrames — cull hides a finished PLAY-ONCE
 // clip; without cull the last frame is HELD (animationlayer.cpp:660-666).
 func TestFinishedCulledOverlayStopsHoldingFrames(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	culled := &courtroom.SceneOverlay{Base: "fx://x", Cull: true}
 	plain := &courtroom.SceneOverlay{Base: "fx://x"}
 	v.overlayAnim.finished = false
@@ -247,7 +247,7 @@ func TestFinishedCulledOverlayStopsHoldingFrames(t *testing.T) {
 // TestOverlayScaleModePrecedence — the user's explicit mode beats the effect's
 // own request, which beats the geometry rule (internal/courtroom/scaling.go).
 func TestOverlayScaleModePrecedence(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	o := &courtroom.SceneOverlay{Scaling: courtroom.ScalingSmooth}
 	if got := v.overlayScaleMode(o, 64, 600); got != sdl.ScaleModeLinear {
 		t.Errorf("effect asked smooth, got %v", got)
@@ -279,7 +279,7 @@ func TestOverlayScaleModePrecedence(t *testing.T) {
 // `scaling` key still wins in both branches, as it does in canon (the
 // m_resize_mode block runs after the geometry rule).
 func TestStretchedOverlayKeepsSmoothScaling(t *testing.T) {
-	v := NewViewport(nil)
+	v := NewViewport(nil, false)
 	stretched := &courtroom.SceneOverlay{Stretch: true} // Scaling auto
 	if got := v.overlayScaleMode(stretched, 64, 600); got != sdl.ScaleModeLinear {
 		t.Errorf("a STRETCHED overlay scaled %v — canon's enlarge→nearest rule lives inside the "+
@@ -303,7 +303,7 @@ func TestStretchedOverlayKeepsSmoothScaling(t *testing.T) {
 // all four rungs against a NIL renderer and a NIL store: anything that reached
 // either would panic here, and anything that scheduled a blit could not.
 func TestNoOverlayFrameIsByteIdentical(t *testing.T) {
-	v := NewViewport(nil) // nil store: resolve() would deref it
+	v := NewViewport(nil, false) // nil store: resolve() would deref it
 	scene := &courtroom.Scene{}
 	vp := sdl.Rect{X: 0, Y: 0, W: 800, H: 600}
 	layers := []uint8{
@@ -356,7 +356,7 @@ func TestOverlayDrawZeroAlloc(t *testing.T) {
 	if err := store.Upload(base, decodedFixture()); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	v := NewViewport(store)
+	v := NewViewport(store, false)
 	scene := &courtroom.Scene{Overlay: courtroom.SceneOverlay{
 		Base: base, Layer: courtroom.OverlayLayerOver, Loop: true, Gen: 1,
 	}}
@@ -454,7 +454,7 @@ func TestOverlayIsClippedToTheStage(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			scene := &courtroom.Scene{Overlay: tc.o}
-			v := NewViewport(store)
+			v := NewViewport(store, false)
 			v.syncOverlay(&scene.Overlay)
 
 			dst := overlayDstRect(&scene.Overlay, stage, page.W, page.H)
@@ -512,7 +512,7 @@ func TestOverlayIsClippedToTheStage(t *testing.T) {
 		scene := &courtroom.Scene{Overlay: courtroom.SceneOverlay{
 			Base: base, Layer: courtroom.OverlayLayerBehind, Loop: true, Gen: 4,
 		}}
-		v := NewViewport(store)
+		v := NewViewport(store, false)
 		v.syncOverlay(&scene.Overlay)
 		outer := sdl.Rect{X: 8, Y: 9, W: 100, H: 101}
 		_ = ren.SetClipRect(&outer)

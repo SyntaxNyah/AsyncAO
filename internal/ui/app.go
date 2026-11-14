@@ -112,8 +112,10 @@ type Deps struct {
 	Client   *network.Client
 	Store    *render.TextureStore
 	Viewport *render.Viewport
-	Pump     *render.Pump
-	Audio    *render.Audio
+	// FlushLayers makes every viewport the App creates run SDL's queued draws after each layer (-debug).
+	FlushLayers bool
+	Pump        *render.Pump
+	Audio       *render.Audio
 	// Capabilities says what this platform supports; the zero value supports everything.
 	Capabilities platform.Capabilities
 	// Sockets opens every outbound connection, by the proxy setting in force.

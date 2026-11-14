@@ -49,7 +49,7 @@ func TestALiveEffectOverlayHoldsTheFrameRate(t *testing.T) {
 	a := testTabApp(t)
 	a.ctx.Ren = ren
 	a.room = &courtroom.Courtroom{}
-	a.d.Viewport = render.NewViewport(store)
+	a.d.Viewport = render.NewViewport(store, false)
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {
@@ -146,7 +146,7 @@ func TestAParkedLoopWakesForAnEffect(t *testing.T) {
 	a := testTabApp(t)
 	a.ctx.Ren = ren
 	a.room = &courtroom.Courtroom{}
-	a.d.Viewport = render.NewViewport(store)
+	a.d.Viewport = render.NewViewport(store, false)
 	a.d.Prefs.Update(func(
 		sn *config.
 			Settings) {

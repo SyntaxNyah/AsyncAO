@@ -86,7 +86,7 @@ func TestASlidePausesTheCharactersAndKeepsFramesComing(t *testing.T) {
 	scene.Speaker = courtroom.SpriteLayer{Visible: true, Active: speaker, IdleBase: speaker}
 	scene.Slide = courtroom.SlideScene{Active: true, Total: elapsed, Left: elapsed}
 
-	v := NewViewport(store)
+	v := NewViewport(store, false)
 	if due, ok := v.NextAnimDue(scene); !ok || due != 0 {
 		t.Errorf("next frame due %v %v during a slide, want now", due, ok)
 	}

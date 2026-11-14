@@ -26,7 +26,7 @@ func TestRebindSceneryForcesNewBaseAcrossSwitch(t *testing.T) {
 	if err != nil {
 		t.Skipf("texture store unavailable: %v", err)
 	}
-	v := NewViewport(store)
+	v := NewViewport(store, false)
 
 	const (
 		bgA   = "live://background/tabA/defenseempty"

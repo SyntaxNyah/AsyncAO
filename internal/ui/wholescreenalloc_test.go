@@ -76,7 +76,7 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 		t.Skipf("texture store unavailable: %v", err)
 	}
 	a.d.Store = store
-	a.d.Viewport = render.NewViewport(store)
+	a.d.Viewport = render.NewViewport(store, false)
 
 	// A minimal, quiescent session: no visible timers/clocks (they'd change text
 	// every frame), no players/areas panels that vary.

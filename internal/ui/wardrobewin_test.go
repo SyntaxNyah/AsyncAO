@@ -215,7 +215,7 @@ func TestWardrobeWearWithNoCharacterTakesAFreeSlotFirst(t *testing.T) {
 	a := emotePreviewFollowTestApp(t) // entering the courtroom fetches the char.ini, so it needs a real Manager
 	a.iniChar = ""
 	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})
-	a.d.Viewport = render.NewViewport(nil)
+	a.d.Viewport = render.NewViewport(nil, false)
 	const charINILoads = 2 // entering and then wearing each load a char.ini, and nothing polls them here
 	a.charINIres = make(chan charINIFetch, charINILoads)
 	a.sess.Chars[0].Taken = true
