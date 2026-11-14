@@ -94,7 +94,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// the same icPct or wrap and draw disagree.
 	icPct := a.elemPct(elemICChatlog, a.logPct)
 	font := a.elemFont(elemICChatlog, a.logPct)
-	lineH := int32(font.Height()) + 2
+	lineH := int32(font.Height()) + logRowGapPx
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
 	rows := a.icWrapped(wrapW-logWrapIndentPx, a.d.Prefs.Load().ICTimestamps) // per-frame pref read, like the IC counter
@@ -185,7 +185,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	clipPrev, clipHad := c.pushClip(list)
 	y := list.Y - visScroll
 	for ri := range rows {
-		if y > list.Y+list.H-lineH {
+		if y >= list.Y+list.H {
 			break
 		}
 		if y >= list.Y-lineH {
@@ -309,7 +309,7 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	oocInk := a.elemInkOr(elemServerChatlog, canvasInk, ColText)
 	// The theme's server_chatlog size/family/bold (AO2 folds ms_chatlog in), folded with the OOC zoom.
 	font := a.elemFont(elemServerChatlog, a.oocPct)
-	lineH := int32(font.Height()) + 2
+	lineH := int32(font.Height()) + logRowGapPx
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
 	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
@@ -349,7 +349,7 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	clipPrev, clipHad := c.pushClip(list) // top/bottom row clipped to the rect, not the tabs
 	y := list.Y - a.oocScroll
 	for li, line := range lines {
-		if y > list.Y+list.H-lineH {
+		if y >= list.Y+list.H {
 			break
 		}
 		if y >= list.Y-lineH {
@@ -497,7 +497,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 
 	// Same server_chatlog resolution as drawOOCLogList (this is the other copy of the OOC scrollback).
 	font := a.elemFont(elemServerChatlog, a.oocPct)
-	lineH := int32(font.Height()) + 2
+	lineH := int32(font.Height()) + logRowGapPx
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
 	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
@@ -538,7 +538,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the fields below
 	y := list.Y - a.oocScroll
 	for li, line := range lines {
-		if y > list.Y+list.H-lineH {
+		if y >= list.Y+list.H {
 			break
 		}
 		if y >= list.Y-lineH {

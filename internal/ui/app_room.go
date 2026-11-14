@@ -555,7 +555,7 @@ type splitLogRow struct {
 func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 	c := a.ctx
 	font := c.LogFont(a.logPct)
-	lineH := int32(font.Height()) + 2
+	lineH := int32(font.Height()) + logRowGapPx
 	wrapW := r.W - 8
 	if wrapW != a.splitWrapW || s.icLogSeq != a.splitWrapSeq || a.splitPinEpoch != a.splitWrapEpoch ||
 		a.logPct != a.splitWrapPct || c.fontChainGen != a.splitWrapGen {
