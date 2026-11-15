@@ -571,9 +571,9 @@ func TestClampPositionToDisplaysRecentresAnUnreachablePosition(t *testing.T) {
 	}
 }
 
-// --- previewFitRect (aspect-preserving, non-stretch Present) -----------------
+// --- FitRect (aspect-preserving, non-stretch Present) -----------------
 
-func TestPreviewFitRectPreservesAspectAndCentres(t *testing.T) {
+func TestFitRectPreservesAspectAndCentres(t *testing.T) {
 	cases := []struct {
 		name                   string
 		winW, winH, srcW, srcH int32
@@ -586,9 +586,9 @@ func TestPreviewFitRectPreservesAspectAndCentres(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := previewFitRect(c.winW, c.winH, c.srcW, c.srcH)
+			got := FitRect(sdl.Rect{W: c.winW, H: c.winH}, c.srcW, c.srcH)
 			if got.W != c.wantW || got.H != c.wantH {
-				t.Fatalf("previewFitRect(%d,%d,%d,%d) size = %dx%d, want %dx%d",
+				t.Fatalf("FitRect(%d,%d,%d,%d) size = %dx%d, want %dx%d",
 					c.winW, c.winH, c.srcW, c.srcH, got.W, got.H, c.wantW, c.wantH)
 			}
 			// Centred on both axes.
@@ -602,15 +602,25 @@ func TestPreviewFitRectPreservesAspectAndCentres(t *testing.T) {
 	}
 }
 
-// TestPreviewFitRectDegenerateInputsFillTheWindow pins the fallback: a
+// TestFitRectDegenerateInputsFillTheWindow pins the fallback: a
 // source with no usable size must not divide by zero or return a
 // zero-area rect nobody can see — it fills the window instead.
-func TestPreviewFitRectDegenerateInputsFillTheWindow(t *testing.T) {
+func TestFitRectDegenerateInputsFillTheWindow(t *testing.T) {
 	for _, c := range []struct{ srcW, srcH int32 }{{0, 100}, {100, 0}, {-5, 100}} {
-		got := previewFitRect(320, 240, c.srcW, c.srcH)
+		got := FitRect(sdl.Rect{W: 320, H: 240}, c.srcW, c.srcH)
 		if got.W != 320 || got.H != 240 {
-			t.Errorf("previewFitRect(320,240,%d,%d) = %+v, want the whole 320x240 window", c.srcW, c.srcH, got)
+			t.Errorf("FitRect(320,240,%d,%d) = %+v, want the whole 320x240 window", c.srcW, c.srcH, got)
 		}
+	}
+}
+
+// TestFitRectKeepsTheBoxOffset: a square icon in the effects dropdown's 23x28 cell keeps its shape, inside the cell (#77).
+func TestFitRectKeepsTheBoxOffset(t *testing.T) {
+	const cellX, cellY, cellW, cellH, iconSide = 40, 60, 23, 28, 64
+	got := FitRect(sdl.Rect{X: cellX, Y: cellY, W: cellW, H: cellH}, iconSide, iconSide)
+	want := sdl.Rect{X: cellX, Y: cellY + (cellH-cellW)/2, W: cellW, H: cellW}
+	if got != want {
+		t.Errorf("FitRect = %+v, want %+v", got, want)
 	}
 }
 
