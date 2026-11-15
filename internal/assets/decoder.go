@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kettek/apng"
 	xdraw "golang.org/x/image/draw"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
@@ -87,12 +86,9 @@ func downscaleDecoded(d *Decoded, target int) *Decoded {
 		SourceFrames: d.SourceFrames,
 	}
 	for _, frame := range d.Frames {
-		small, token := newPooledRGBA(target, target)
+		small := image.NewRGBA(image.Rect(0, 0, target, target))
 		xdraw.ApproxBiLinear.Scale(small, small.Rect, frame, frame.Rect, xdraw.Src, nil)
 		out.Frames = append(out.Frames, small)
-		if token != nil {
-			out.pooledPix = append(out.pooledPix, token)
-		}
 	}
 	d.Release()
 	return out
@@ -117,12 +113,9 @@ func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
 		SourceFrames: d.SourceFrames, // see downscaleDecoded: pixels shrink, the frame space does not
 	}
 	for _, frame := range d.Frames {
-		small, token := newPooledRGBA(newW, maxH)
+		small := image.NewRGBA(image.Rect(0, 0, newW, maxH))
 		xdraw.CatmullRom.Scale(small, small.Rect, frame, frame.Rect, xdraw.Src, nil)
 		out.Frames = append(out.Frames, small)
-		if token != nil {
-			out.pooledPix = append(out.pooledPix, token)
-		}
 	}
 	d.Release()
 	return out
@@ -172,9 +165,9 @@ func decodeTargetDimsBudgeted(width, height, maxH, frames int) (tw, th int, down
 
 // downscaleFrame uses an area-average filter, as ApproxBiLinear skips source pixels and aliases.
 // Alpha is averaged premultiplied so transparent pixels cannot darken an edge.
-func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
+func downscaleFrame(src *image.RGBA, tw, th int) *image.RGBA {
 	sw, sh := src.Rect.Dx(), src.Rect.Dy()
-	out, token := newPooledRGBA(tw, th)
+	out := image.NewRGBA(image.Rect(0, 0, tw, th))
 	spix, dpix := src.Pix, out.Pix
 	sstride, dstride := src.Stride, out.Stride
 
@@ -213,7 +206,7 @@ func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
 			dpix[q+3] = uint8(sumA / uint32((x1-x0)*(y1-y0)))
 		}
 	}
-	return out, token
+	return out
 }
 
 // boundedFrameCount reports how many evenly spaced frames fit the budget, at least one.
@@ -704,11 +697,8 @@ func fitEstablishingPrefix(first *Decoded, data []byte, maxH int) *Decoded {
 		SourceFrames: first.SourceFrames, // pixels shrink, the frame space does not
 	}
 	for _, frame := range first.Frames {
-		small, token := downscaleFrame(frame, tw, th)
+		small := downscaleFrame(frame, tw, th)
 		out.Frames = append(out.Frames, small)
-		if token != nil {
-			out.pooledPix = append(out.pooledPix, token)
-		}
 	}
 	first.Release()
 	return out
@@ -853,7 +843,7 @@ func decodeJPEG(data []byte) (*Decoded, error) {
 
 // staticDecoded wraps a still image, converting to RGBA when needed.
 func staticDecoded(img image.Image) *Decoded {
-	rgba, token := toRGBA(img)
+	rgba := toRGBA(img)
 	d := &Decoded{
 		Frames:   []*image.RGBA{rgba},
 		Delays:   []time.Duration{0},
@@ -861,33 +851,18 @@ func staticDecoded(img image.Image) *Decoded {
 		Width:    rgba.Rect.Dx(),
 		Height:   rgba.Rect.Dy(),
 	}
-	if token != nil {
-		d.pooledPix = append(d.pooledPix, token)
-	}
 	return d
 }
 
-// toRGBA returns img as *image.RGBA; the pool token is nil when img was already RGBA.
-func toRGBA(img image.Image) (*image.RGBA, *[]byte) {
+// toRGBA returns img as *image.RGBA, converting only when it isn't one.
+func toRGBA(img image.Image) *image.RGBA {
 	if rgba, ok := img.(*image.RGBA); ok {
-		return rgba, nil
+		return rgba
 	}
 	bounds := img.Bounds()
-	rgba, token := newPooledRGBA(bounds.Dx(), bounds.Dy())
+	rgba := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	draw.Draw(rgba, rgba.Rect, img, bounds.Min, draw.Src)
-	return rgba, token
-}
-
-// newPooledRGBA builds a w×h RGBA image whose Pix comes from the pixel pool.
-func newPooledRGBA(w, h int) (*image.RGBA, *[]byte) {
-	const bytesPerPixel = 4
-	n := w * h * bytesPerPixel
-	buf, token := getPixBuf(n)
-	return &image.RGBA{
-		Pix:    buf,
-		Stride: w * bytesPerPixel,
-		Rect:   image.Rect(0, 0, w, h),
-	}, token
+	return rgba
 }
 
 // decodeGIF composes a GIF onto a persistent canvas, honoring disposal, producing full-canvas RGBA frames.
@@ -930,11 +905,8 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	}
 
 	// The backdrop snapshot supports DisposalPrevious.
-	canvas, canvasTok := newPooledRGBA(width, height)
-	defer putPixBuf(canvasTok)
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
 	var prevSnapshot *image.RGBA
-	var snapTok *[]byte
-	defer func() { putPixBuf(snapTok) }()
 
 	// Compose every source frame, because a kept frame depends on the disposal before it; copy out only the kept ones.
 	for i := 0; i < walk; i++ {
@@ -946,7 +918,7 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 
 		if disposal == gif.DisposalPrevious {
 			if prevSnapshot == nil {
-				prevSnapshot, snapTok = newPooledRGBA(width, height)
+				prevSnapshot = image.NewRGBA(image.Rect(0, 0, width, height))
 			}
 			copy(prevSnapshot.Pix, canvas.Pix)
 		}
@@ -954,20 +926,13 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
 
 		if folded, keepIt := dec.step(i, gifFrameDelay(g, i)); keepIt {
-			out, token := newPooledRGBA(width, height)
+			out := image.NewRGBA(image.Rect(0, 0, width, height))
 			copy(out.Pix, canvas.Pix)
 			if down {
-				small, smallTok := downscaleFrame(out, tw, th)
-				putPixBuf(token)
+				small := downscaleFrame(out, tw, th)
 				d.Frames = append(d.Frames, small)
-				if smallTok != nil {
-					d.pooledPix = append(d.pooledPix, smallTok)
-				}
 			} else {
 				d.Frames = append(d.Frames, out)
-				if token != nil {
-					d.pooledPix = append(d.pooledPix, token)
-				}
 			}
 			d.Delays = append(d.Delays, folded)
 		}
@@ -1010,27 +975,18 @@ func clearRect(canvas *image.RGBA, r image.Rectangle) {
 
 // decodeAPNG composes APNG frames onto a persistent canvas, as decodeGIF does.
 func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
-	a, err := apng.DecodeAll(bytes.NewReader(data))
+	file, err := parseAPNG(data)
 	if err != nil {
-		return nil, fmt.Errorf("assets: apng decode: %w", err)
+		return nil, err
 	}
-	if len(a.Frames) == 0 {
-		return nil, fmt.Errorf("assets: apng has no frames")
-	}
-
-	first := a.Frames[0].Image.Bounds()
-	width, height := first.Dx(), first.Dy()
-
-	// Frames flagged IsDefault are the static fallback image, not part of the animation.
-	animFrames := make([]apng.Frame, 0, len(a.Frames))
-	for _, f := range a.Frames {
-		if !f.IsDefault {
-			animFrames = append(animFrames, f)
-		}
+	animFrames := file.frames
+	if len(animFrames) == 0 && file.still != nil {
+		animFrames = []apngFrame{*file.still}
 	}
 	if len(animFrames) == 0 {
-		animFrames = a.Frames
+		return nil, fmt.Errorf("assets: apng has no frames")
 	}
+	width, height := file.width, file.height
 
 	total := len(animFrames)
 	animated := total > 1
@@ -1043,7 +999,7 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	dec := newFrameDecimator(walk, keep)
 	sourceDelays := make([]time.Duration, walk)
 	for i := 0; i < walk; i++ {
-		sourceDelays[i] = apngFrameDelay(animFrames[i])
+		sourceDelays[i] = animFrames[i].delay()
 	}
 
 	d := &Decoded{
@@ -1055,58 +1011,47 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		Delays:       make([]time.Duration, 0, keep),
 	}
 
-	canvas, canvasTok := newPooledRGBA(width, height)
-	defer putPixBuf(canvasTok)
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
 	var prevSnapshot *image.RGBA
-	var snapTok *[]byte
-	defer func() { putPixBuf(snapTok) }()
 
 	// Compose every source frame, because a kept frame depends on the dispose and blend before it.
 	for i := 0; i < walk; i++ {
-		frame := animFrames[i]
-		target := image.Rect(
-			frame.XOffset,
-			frame.YOffset,
-			frame.XOffset+frame.Image.Bounds().Dx(),
-			frame.YOffset+frame.Image.Bounds().Dy(),
-		)
+		frame := &animFrames[i]
+		target := frame.rect
+		img, err := file.decode(frame)
+		if err != nil {
+			return nil, fmt.Errorf("assets: apng frame %d: %w", i, err)
+		}
 
-		if frame.DisposeOp == apng.DISPOSE_OP_PREVIOUS {
+		if frame.dispose == apngDisposePrevious {
 			if prevSnapshot == nil {
-				prevSnapshot, snapTok = newPooledRGBA(width, height)
+				prevSnapshot = image.NewRGBA(image.Rect(0, 0, width, height))
 			}
 			copy(prevSnapshot.Pix, canvas.Pix)
 		}
 
 		op := draw.Over
-		if frame.BlendOp == apng.BLEND_OP_SOURCE {
+		if frame.blend == apngBlendSource {
 			op = draw.Src
 		}
-		draw.Draw(canvas, target, frame.Image, frame.Image.Bounds().Min, op)
+		draw.Draw(canvas, target, img, img.Bounds().Min, op)
 
-		if folded, keepIt := dec.step(i, apngFrameDelay(frame)); keepIt {
-			out, token := newPooledRGBA(width, height)
+		if folded, keepIt := dec.step(i, frame.delay()); keepIt {
+			out := image.NewRGBA(image.Rect(0, 0, width, height))
 			copy(out.Pix, canvas.Pix)
 			if down {
-				small, smallTok := downscaleFrame(out, tw, th)
-				putPixBuf(token)
+				small := downscaleFrame(out, tw, th)
 				d.Frames = append(d.Frames, small)
-				if smallTok != nil {
-					d.pooledPix = append(d.pooledPix, smallTok)
-				}
 			} else {
 				d.Frames = append(d.Frames, out)
-				if token != nil {
-					d.pooledPix = append(d.pooledPix, token)
-				}
 			}
 			d.Delays = append(d.Delays, folded)
 		}
 
-		switch frame.DisposeOp {
-		case apng.DISPOSE_OP_BACKGROUND:
+		switch frame.dispose {
+		case apngDisposeBackground:
 			clearRect(canvas, target)
-		case apng.DISPOSE_OP_PREVIOUS:
+		case apngDisposePrevious:
 			if prevSnapshot != nil {
 				copy(canvas.Pix, prevSnapshot.Pix)
 			}
@@ -1114,17 +1059,4 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	}
 	spreadLoopDelays(d, sourceDelays)
 	return d, nil
-}
-
-func apngFrameDelay(f apng.Frame) time.Duration {
-	num := f.DelayNumerator
-	den := f.DelayDenominator
-	if den == 0 {
-		den = 100 // APNG spec: zero denominator means 1/100 s units
-	}
-	delay := time.Duration(num) * time.Second / time.Duration(den)
-	if delay <= 0 {
-		return defaultZeroFrameDelay
-	}
-	return delay
 }
