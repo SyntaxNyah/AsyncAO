@@ -147,12 +147,15 @@ func newCountingServer(t *testing.T, payloads map[string][]byte) *countingServer
 	return cs
 }
 
+// total counts requests for files; a character folder's listing is mapping's, not a probe for an asset.
 func (cs *countingServer) total() int {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	n := 0
-	for _, c := range cs.requests {
-		n += c
+	for path, c := range cs.requests {
+		if !strings.HasSuffix(path, "/") {
+			n += c
+		}
 	}
 	return n
 }

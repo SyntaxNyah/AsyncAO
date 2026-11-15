@@ -124,15 +124,21 @@ type RemoteSource struct {
 	exists     map[File]struct{}
 	missing    map[File]time.Time
 	answered   map[string]bool
+	// listed, walks and refused are character mapping's (charmap.go): folders by decoded URL, character walks by
+	// decoded root, and hosts that answered a folder with no listing this session.
+	listed  map[string]*listedFolder
+	walks   map[string]*walk
+	refused map[string]bool
 }
 
 // NewRemoteSource asks through fetch.
 func NewRemoteSource(ctx context.Context, fetch Fetcher, missingTTL time.Duration, clock func() time.Time) *RemoteSource {
 	return &RemoteSource{fetch: fetch, ctx: ctx, clock: clock, missingTTL: missingTTL,
-		exists: map[File]struct{}{}, missing: map[File]time.Time{}, answered: map[string]bool{}}
+		exists: map[File]struct{}{}, missing: map[File]time.Time{}, answered: map[string]bool{},
+		listed: map[string]*listedFolder{}, walks: map[string]*walk{}, refused: map[string]bool{}}
 }
 
-// Has answers from the tables; a file never asked about is Unknown, and only that costs a request.
+// Has answers from the tables and the character maps; a file neither proves is Unknown, and only that costs a request.
 func (s *RemoteSource) Has(f File) Answer {
 	if _, ok := s.exists[f]; ok {
 		return Yes
@@ -142,6 +148,9 @@ func (s *RemoteSource) Has(f File) Answer {
 			return No
 		}
 		delete(s.missing, f)
+	}
+	if s.mapAbsent(f) {
+		return No
 	}
 	return Unknown
 }
@@ -181,8 +190,9 @@ func (s *RemoteSource) Observe(f File, _ []byte, err error) {
 	}
 }
 
-// ForgetMissing drops known-missing answers for files under prefix, so they are asked about again.
+// ForgetMissing drops known-missing answers and the character maps under prefix, so they are asked about again.
 func (s *RemoteSource) ForgetMissing(prefix string) {
+	s.forgetMaps(folderKey(prefix))
 	for f := range s.missing {
 		if strings.HasPrefix(string(f), prefix) {
 			delete(s.missing, f)
