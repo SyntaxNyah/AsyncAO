@@ -66,6 +66,8 @@ type LearnedHost struct {
 	Formats map[Class]map[string]int `json:"f,omitempty"`
 	// Winners are one line per key; see winnerLine.
 	Winners []string `json:"w,omitempty"`
+	// Maps are the character maps, by root relative to the host (whole when outside it).
+	Maps map[string]*LearnedMap `json:"m,omitempty"`
 }
 
 var errLearnedTooLarge = errors.New("media: learned file too large")
@@ -76,11 +78,12 @@ type Memory struct {
 	origins []string
 	formats map[string]map[Class]map[string]int
 	winners map[Key]File
+	maps    map[string]savedMap
 }
 
-// Remember copies what m and b have learned; call it on the Manager's goroutine (Do or Call).
-func Remember(m *Manager, b *CandidateBuilder) Memory {
-	mem := Memory{formats: map[string]map[Class]map[string]int{}, winners: maps.Clone(m.winners)}
+// Remember copies what m, b and s have learned; call it on the Manager's goroutine (Do or Call).
+func Remember(m *Manager, b *CandidateBuilder, s *RemoteSource) Memory {
+	mem := Memory{formats: map[string]map[Class]map[string]int{}, winners: maps.Clone(m.winners), maps: s.rememberMaps()}
 	for origin, h := range b.origins {
 		mem.origins = append(mem.origins, origin)
 		if len(h.learned) == 0 {
@@ -119,6 +122,17 @@ func (mem Memory) Learned() Learned {
 			h := host(group)
 			h.Winners = append(h.Winners, line)
 		}
+	}
+	roots := slices.SortedFunc(maps.Keys(mem.maps), func(x, y string) int {
+		return mem.maps[y].at.Compare(mem.maps[x].at)
+	})
+	for _, root := range roots[:min(len(roots), learnedMapsCap)] {
+		group := originAmong(Key{Path: root}, slices.Values(mem.origins))
+		h := host(group)
+		if h.Maps == nil {
+			h.Maps = map[string]*LearnedMap{}
+		}
+		h.Maps[strings.TrimPrefix(root, group)] = learnedMap(root, mem.maps[root])
 	}
 	return l
 }
@@ -206,7 +220,7 @@ func readWinner(group, line string) (Key, File, bool) {
 // would get wrong; any goroutine. Saved counts are halved, so a host that changed its formats is relearned in a few
 // sessions.
 func (l Learned) Memory() Memory {
-	mem := Memory{formats: map[string]map[Class]map[string]int{}, winners: map[Key]File{}}
+	mem := Memory{formats: map[string]map[Class]map[string]int{}, winners: map[Key]File{}, maps: map[string]savedMap{}}
 	if l.Version != LearnedVersion {
 		return mem
 	}
@@ -239,13 +253,23 @@ func (l Learned) Memory() Memory {
 				mem.winners[k] = f
 			}
 		}
+		for rel, lm := range h.Maps {
+			root := rel
+			if !strings.Contains(rel, "://") {
+				root = origin + rel
+			}
+			if sm, ok := readMap(root, lm); ok && len(mem.maps) < learnedMapsCap {
+				mem.maps[root] = sm
+			}
+		}
 	}
 	return mem
 }
 
 // Recall adds mem to what m and b know, keeping what this session already learned; call it on the Manager's
 // goroutine. m may keep mem's maps, so mem is not used again.
-func Recall(m *Manager, b *CandidateBuilder, mem Memory) {
+func Recall(m *Manager, b *CandidateBuilder, s *RemoteSource, mem Memory) {
+	s.recallMaps(mem.maps)
 	for origin, classes := range mem.formats {
 		hints := b.hints(origin)
 		for class, counts := range classes {

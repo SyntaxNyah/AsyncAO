@@ -10,10 +10,10 @@ import (
 )
 
 // rememberFile is what a session would write to learned.json.
-func rememberFile(t *testing.T, m *Manager, b *CandidateBuilder) []byte {
+func rememberFile(t *testing.T, r *remoteRig) []byte {
 	t.Helper()
 	var mem Memory
-	if !m.Call(func() { mem = Remember(m, b) }) {
+	if !r.m.Call(func() { mem = Remember(r.m, r.builder, r.remote) }) {
 		t.Fatal("manager stopped")
 	}
 	data, err := EncodeLearned(mem.Learned())
@@ -24,14 +24,14 @@ func rememberFile(t *testing.T, m *Manager, b *CandidateBuilder) []byte {
 }
 
 // recallFile is what the next session does with it.
-func recallFile(t *testing.T, m *Manager, b *CandidateBuilder, data []byte) {
+func recallFile(t *testing.T, r *remoteRig, data []byte) {
 	t.Helper()
 	l, err := DecodeLearned(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mem := l.Memory()
-	m.Call(func() { Recall(m, b, mem) })
+	r.m.Call(func() { Recall(r.m, r.builder, r.remote, mem) })
 }
 
 func TestNextSessionAsksTheLearnedFormatAndWinnerFirst(t *testing.T) {
@@ -41,10 +41,10 @@ func TestNextSessionAsksTheLearnedFormatAndWinnerFirst(t *testing.T) {
 	}
 	first := newRemoteRig(t, files)
 	waitFinal(t, first.m.Get(sprite("a"), Now, 0))
-	saved := rememberFile(t, first.m, first.builder)
+	saved := rememberFile(t, first)
 
 	next := newRemoteRig(t, files)
-	recallFile(t, next.m, next.builder, saved)
+	recallFile(t, next, saved)
 	waitFinal(t, next.m.Get(sprite("a"), Now, 0))
 	waitFinal(t, next.m.Get(sprite("b"), Now, 0))
 	want := []string{testOrigin + "a" + config.ExtPNG, testOrigin + "b" + config.ExtPNG}
@@ -71,11 +71,11 @@ func TestEveryWinnerShapeSurvivesTheFile(t *testing.T) {
 		r.builder.Allow(testOrigin, map[Class][]string{ClassEmote: {config.ExtWebP}})
 		maps.Copy(r.m.winners, saved)
 	})
-	data := rememberFile(t, r.m, r.builder)
+	data := rememberFile(t, r)
 
 	next := newRemoteRig(t, nil)
 	next.m.Call(func() { next.builder.Allow(testOrigin, map[Class][]string{ClassEmote: {config.ExtWebP}}) })
-	recallFile(t, next.m, next.builder, data)
+	recallFile(t, next, data)
 	var got map[Key]File
 	next.m.Call(func() { got = maps.Clone(next.m.winners) })
 	delete(saved, tabbed) // a line can't hold a tab, so that one is left out
@@ -88,10 +88,10 @@ func TestRecallIgnoresAnotherVersionAndDamage(t *testing.T) {
 	r := newRemoteRig(t, nil)
 	formats := map[Class]map[string]int{ClassEmote: {config.ExtPNG: 1, ".exe": 1}, ClassExact: {config.ExtPNG: 1}}
 	r.m.Call(func() {
-		Recall(r.m, r.builder, Learned{Version: LearnedVersion + 1, Hosts: map[string]*LearnedHost{
+		Recall(r.m, r.builder, r.remote, Learned{Version: LearnedVersion + 1, Hosts: map[string]*LearnedHost{
 			testOrigin: {Formats: formats, Winners: []string{"0\t0\t2\t0\t0\t0\ta\t+.png"}},
 		}}.Memory())
-		Recall(r.m, r.builder, Learned{Version: LearnedVersion, Hosts: map[string]*LearnedHost{
+		Recall(r.m, r.builder, r.remote, Learned{Version: LearnedVersion, Hosts: map[string]*LearnedHost{
 			testOrigin: {Formats: map[Class]map[string]int{ClassEmote: {".exe": 1}},
 				Winners: []string{"short", "0\t0\t99\t0\t0\t0\ta\t+.png", "0\t0\t2\t0\t0\t9\ta\t+.png",
 					"0\t0\t2\t0\t256\t0\ta\t+.png", "0\t0\t2\t-1\t0\t0\ta\t+.png"}},
@@ -99,7 +99,7 @@ func TestRecallIgnoresAnotherVersionAndDamage(t *testing.T) {
 		}}.Memory())
 	})
 	var mem Memory
-	r.m.Call(func() { mem = Remember(r.m, r.builder) })
+	r.m.Call(func() { mem = Remember(r.m, r.builder, r.remote) })
 	if l := mem.Learned(); len(l.Hosts) != 0 {
 		t.Fatalf("recalled %+v", l.Hosts[testOrigin])
 	}

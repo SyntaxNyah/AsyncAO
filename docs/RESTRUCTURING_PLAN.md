@@ -101,7 +101,12 @@ in **Status**. Update Status in the same commit that completes a step.
           `internal/saver`; the disk index is not saved, and the disk is asked until its startup scan lands; 404s are
           never saved. The old resolver, `prefs.LearnedFormats`, the Formats tab and every format override setting
           are gone; archive, export and replay use the media table
-    - [ ] sources still to build: character mapping
+    - [x] character mapping (2026-11-15): the first sprite asked of a character lists its folder, five deep, on the
+          origin and each extra host, so a file the listings leave out is answered absent with no request. Only a real
+          listing (one with a parent link) is trusted; a host that gives none keeps the per-file search for the
+          session. Maps are kept in `learned.json` and walked again after seven days or on Retry missing. Measured on a
+          host with no `extensions.json`, half the sprites bare-named: a cold session went from 241 requests to 121
+          plus 20 listings, 7.4 s to 3.7 s at 30 ms a request
     - [x] extra asset hosts per server: the user adds them in a fixed order with no speed ranking, the ASS packet's host is always
           first; Settings → Assets edits them. Raw fetch paths not on the media system yet don't ask them
     - [x] the client runs on it: `assets.Manager`'s requests go through `internal/media`, so callers and `Pump` are unchanged, and
@@ -127,8 +132,8 @@ in **Status**. Update Status in the same commit that completes a step.
           Settings → Check folders now end every folder check's trust. The old pipeline (network pool, mount index and
           layer, conclusive-miss set, Local-only mode in the Manager) and `-old-media` are deleted, and with them the wait
           gate's refusal re-ask: high-priority requests are never refused
-    - [ ] known problems from the benchmark: on a host with no `extensions.json`, 200 missing sprites cost 2,400 requests against the
-          old 1,600 until character mapping exists; peak heap with files asked for every frame is 384-617 MiB, unexplained
+    - [ ] known problem from the benchmark: peak heap with files asked for every frame is 384-617 MiB, unexplained (the
+          request count on hosts with no `extensions.json` is answered by character mapping above)
     - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate

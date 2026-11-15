@@ -165,7 +165,7 @@ func (b *mediaBridge) recallLearned() {
 		}
 		return l.Memory()
 	}, func(v any) {
-		media.Recall(b.media, b.builder, v.(media.Memory))
+		media.Recall(b.media, b.builder, b.remote, v.(media.Memory))
 		b.recalled = true
 		b.learnedHosts.Store(int64(b.builder.LearnedOrigins()))
 		if b.foundEarly {
@@ -183,7 +183,7 @@ func (b *mediaBridge) encodeLearned() ([]byte, error) {
 			err = errLearnedNotRecalled
 			return
 		}
-		mem = media.Remember(b.media, b.builder)
+		mem = media.Remember(b.media, b.builder, b.remote)
 	})
 	if !ran {
 		return nil, errMediaStopped
@@ -264,7 +264,19 @@ func (b *mediaBridge) askChain(base string, alts []string, t AssetType, p networ
 		b.m.t1Hits.Add(1)
 		return
 	}
+	b.mapCharacterOf(base, t)
 	b.ask(chainKey(base, t), flagsOf(false, sticky), p, alts...)
+}
+
+// mapCharacterOf maps the folder of a character whose sprites are asked for, so everyone who appears is mapped and a
+// roster of icons is not.
+func (b *mediaBridge) mapCharacterOf(base string, t AssetType) {
+	if t != AssetTypeCharSprite && t != AssetTypeEmoteButton || !strings.HasPrefix(base, "http") {
+		return
+	}
+	if root := media.CharacterRoot(base); root != "" {
+		b.media.Do(func() { media.MapCharacter(b.media, b.network, b.remote, b.builder, root) })
+	}
 }
 
 func (b *mediaBridge) askExact(url string, t AssetType, p network.Priority) {
