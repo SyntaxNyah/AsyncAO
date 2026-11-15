@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
@@ -40,7 +41,7 @@ func TestLearnedFormatOutlivesTheSession(t *testing.T) {
 
 	first := newRigAt(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false, learned)
 	waitRecalled(t, first.manager)
-	first.manager.Prefetch(cs.srv.URL+"/characters/a/(a)x", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	first.manager.Media().Get(ChainKey(cs.srv.URL+"/characters/a/(a)x", AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	waitDecoded(t, first).Asset.Release()
 	first.manager.CloseMedia()
 	if _, err := os.Stat(learned); err != nil {
@@ -50,7 +51,7 @@ func TestLearnedFormatOutlivesTheSession(t *testing.T) {
 	next := newRigAt(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false, learned)
 	waitRecalled(t, next.manager)
 	before := cs.total()
-	next.manager.Prefetch(cs.srv.URL+"/characters/a/(a)y", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	next.manager.Media().Get(ChainKey(cs.srv.URL+"/characters/a/(a)y", AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	waitDecoded(t, next).Asset.Release()
 	if n := cs.total() - before; n != 1 {
 		t.Errorf("the next session needed %d requests, want 1", n)

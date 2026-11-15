@@ -1468,7 +1468,7 @@ func (a *App) prefetchCharIcons() {
 		if i >= charIconWarmup {
 			break
 		}
-		a.d.Manager.Prefetch(a.urls.CharIcon(c.Name), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
+		a.d.Manager.Media().Get(assets.ChainKey(a.urls.CharIcon(c.Name), assets.AssetTypeCharIcon), media.Later, 0) // AssetType: CharIcon
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -29,12 +29,12 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 	if e.Preanim != "" && e.Preanim != "-" { // "-" / "" = no preanim (AO convention)
 		a.previewBase = a.urls.Emote(char, e.Preanim, courtroom.EmotePreanim)
 		a.previewName, a.previewNameFor = name, a.previewBase
-		a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preanim preview)
+		a.d.Manager.Media().Get(assets.ChainKey(a.previewBase, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (preanim preview)
 		return
 	}
 	a.previewBase = a.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
 	a.previewName, a.previewNameFor = name, a.previewBase
-	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+	a.d.Manager.Media().Get(assets.ChainKey(a.previewBase, assets.AssetTypeCharSprite), media.Now, 0, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk)...) // AssetType: CharSprite (preview)
 }
 
 // followPinnedPreview retargets an open, pinned preview box to the picked emote; others are left alone.
@@ -205,8 +205,8 @@ func (a *App) selectEmote(i int) {
 	a.icPreanim = emoteHasPreanim(&a.emotes[i]) // "Pre" auto-follows the pick (AO2-Client ui_pre, emotes.cpp:211-221)
 	me := a.activeCharName()
 	// Warm both states: _on for the selected cell and _off, which it falls back to while _on streams in.
-	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh)  // AssetType: EmoteButton (on)
-	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, false), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (off fallback)
+	a.d.Manager.Media().Get(assets.ChainKey(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton), media.Now, 0)  // AssetType: EmoteButton (on)
+	a.d.Manager.Media().Get(assets.ChainKey(a.urls.EmoteButton(me, i+1, false), assets.AssetTypeEmoteButton), media.Now, 0) // AssetType: EmoteButton (off fallback)
 	a.speculateEmote(me, &a.emotes[i])
 	a.followPinnedPreview(me, &a.emotes[i]) // a pinned box follows the pick; a closed one stays closed
 	a.ctx.FocusField("ic")
@@ -732,7 +732,7 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	} else {
 		c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
 		if a.sess.Background != "" {
-			a.d.Manager.PrefetchChain(base, scenery.Alts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (pair preview)
+			a.d.Manager.Media().Get(assets.ChainKey(base, assets.AssetTypeBackground), media.Now, 0, scenery.Alts...) // AssetType: Background (pair preview)
 		}
 	}
 	c.Border(pv, ColPanelHi)
@@ -818,7 +818,7 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 			_, known := a.ghostWarm[name]
 			if known || len(a.ghostWarm) < ghostWarmCap {
 				a.ghostWarm[name] = base
-				a.d.Manager.PrefetchChain(base, alts, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (ghost editor)
+				a.d.Manager.Media().Get(assets.ChainKey(base, assets.AssetTypeCharSprite), media.Now, 0, alts...) // AssetType: CharSprite (ghost editor)
 			}
 		}
 		c.Label(pv.X+pv.W/2-c.TextWidth(name)/2, pv.Y+pv.H/2, name, ColTextDim)

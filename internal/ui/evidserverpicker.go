@@ -12,7 +12,6 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/media"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -189,7 +188,7 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 			c.copy(page.Frames[0], nil, &rc)
 		} else {
 			c.Fill(rc, ColPanelHi)
-			a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (server evidence picker thumbnail)
+			a.d.Manager.Media().Get(assets.ExactKey(url, assets.AssetTypeMisc), media.Later, 0) // AssetType: Misc (server evidence picker thumbnail)
 		}
 		c.Border(rc, ColPanelHi)
 		c.LabelClipped(cx, cy+evidServerCell+2, evidServerCell, name, ColTextDim)

@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -710,7 +711,7 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 			if r.Base == "" {
 				continue // prefetchChain drops an empty base — don't count a no-op submit
 			}
-			a.d.Manager.PrefetchChain(r.Base, r.Alts, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
+			a.d.Manager.Media().Get(assets.ChainKey(r.Base, r.Type), media.Now, 0, r.Alts...) // AssetType: from SceneAssets
 			if j.warmInFlight == nil {
 				j.warmInFlight = make(map[string]struct{})
 			}

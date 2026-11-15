@@ -12,7 +12,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -353,7 +353,7 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 	}
 	out.Base = cands[0]
 	// AssetType: Effect (the one network rung of the effect ladder)
-	a.d.Manager.PrefetchChain(cands[0], cands[1:], assets.AssetTypeEffect, network.PriorityHigh)
+	a.d.Manager.Media().Get(assets.ChainKey(cands[0], assets.AssetTypeEffect), media.Now, 0, cands[1:]...)
 	return out, true
 }
 

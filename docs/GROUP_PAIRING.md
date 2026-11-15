@@ -48,8 +48,8 @@ list). There is no size limit.
 - **`ChatMessage` now contains a slice (`Additional`).** Any `==` / `!=`
   comparison of a `ChatMessage` value no longer compiles — use
   `reflect.DeepEqual` in tests (see `demoms_test.go`).
-- **Prefetch is eager.** `begin()` prefetches each member's idle sprite with
-  `network.PriorityHigh`, so the first frame isn't missing layers.
+- **Prefetch is eager.** `begin()` asks for each member's idle sprite at
+  `media.Now`, so the first frame isn't missing layers.
 - **Offset is not forced.** `drawSprite` applies `layer.OffsetX/Y` (percent of
   viewport) per layer; the value flows per member from the roster/MS, never
   zeroed except for AO2-faithful desk-mod handling on the speaker.

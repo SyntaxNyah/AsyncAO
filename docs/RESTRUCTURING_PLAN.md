@@ -150,7 +150,10 @@ in **Status**. Update Status in the same commit that completes a step.
       - [x] courtroom: asks `media.Get(assets.ChainKey(base, t), …)`. What the bridge did per request (skip a texture
             already uploaded, start character mapping, warn on a repeat ask while missing, count refusals) is media's
             `Skip`/`Asked`/`MissingAgain` hooks and `Refused()`
-      - [ ] screens, theme and audio
+      - [x] screens and audio (2026-11-15): every request in `ui` and `render` is `media.Get` with `assets.ChainKey`,
+            `ExactKey` or `RawKey`; the theme had no requests of its own. `Manager.Prefetch*` and `network.Priority` are
+            gone, and `media.Get` answers a key with no path as Missing. The synchronous `ResolveRaw*` export lookups
+            (archive, content job) stay until the bridge is deleted, as their own step
       - [ ] music streaming
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate

@@ -6,7 +6,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 )
 
 // Replay pre-warm for flat (non-bundled) recordings. A bundled .aorec reads local files, but a flat one streams from
@@ -147,7 +147,7 @@ func (a *App) tickReplayWarm() {
 			if r.Base == "" {
 				continue
 			}
-			a.d.Manager.PrefetchChain(r.Base, r.Alts, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
+			a.d.Manager.Media().Get(assets.ChainKey(r.Base, r.Type), media.Now, 0, r.Alts...) // AssetType: from SceneAssets
 			if w.warmInFlight == nil {
 				w.warmInFlight = make(map[string]struct{})
 			}
@@ -161,7 +161,7 @@ func (a *App) tickReplayWarm() {
 	// Exact URLs (music carries its extension) use PrefetchExact, not the format-probing path.
 	if !w.musicDone {
 		for _, m := range w.musicRefs {
-			a.d.Manager.PrefetchExact(m.Base, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music (Exact)
+			a.d.Manager.Media().Get(assets.ExactKey(m.Base, assets.AssetTypeMusic), media.Now, 0) // AssetType: Music (Exact)
 		}
 		w.musicDone = true
 	}

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 )
 
 const (
@@ -98,7 +98,7 @@ func TestBackgroundDecodesWaitForUploads(t *testing.T) {
 	}
 	rig := newBridgeRig(t, host)
 	for _, base := range bases[:claimBigAsks] {
-		rig.manager.Prefetch(base, AssetTypeBackground, network.PriorityLow) // AssetType: Background
+		rig.manager.Media().Get(ChainKey(base, AssetTypeBackground), media.Later, 0) // AssetType: Background
 	}
 
 	var held []Delivery
@@ -110,7 +110,7 @@ func TestBackgroundDecodesWaitForUploads(t *testing.T) {
 		t.Fatalf("%d background decodes delivered while none were uploaded, want %d", len(held), claimBigShare)
 	}
 
-	rig.manager.Prefetch(bases[claimBigAsks], AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+	rig.manager.Media().Get(ChainKey(bases[claimBigAsks], AssetTypeBackground), media.Now, 0) // AssetType: Background
 	waitUntil(t, "the current message's decode", func() bool { take(); return len(held) > claimBigShare })
 
 	for _, d := range held {

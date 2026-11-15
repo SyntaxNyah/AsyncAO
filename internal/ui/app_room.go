@@ -11,7 +11,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -1393,7 +1393,7 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 	}
 	(*stamps)[idx] = now
 	a.iconAskBudget--
-	a.d.Manager.PrefetchChain(base, alts, t, network.PriorityLow)
+	a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Later, 0, alts...)
 	return true
 }
 
@@ -1413,7 +1413,7 @@ func (a *App) warmCharINI(name string) {
 		return
 	}
 	a.iniWarmed = name
-	a.d.Manager.PrefetchRaw(a.charINIURL(name), network.PriorityLow) // raw text: char.ini
+	a.d.Manager.Media().Get(assets.RawKey(a.charINIURL(name)), media.Later, media.Quiet) // raw text: char.ini
 }
 
 // previewEmoteCap bounds one previewed character's parsed emote list (hard rule 4).
@@ -1494,7 +1494,7 @@ func (a *App) previewPortraitAnim(name string) string {
 func (a *App) setCharPortraitPreview(name string) {
 	anim := a.previewPortraitAnim(name)
 	a.previewBase = a.urls.Emote(name, anim, courtroom.EmoteIdle)
-	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(name, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+	a.d.Manager.Media().Get(assets.ChainKey(a.previewBase, assets.AssetTypeCharSprite), media.Now, 0, a.urls.EmoteAlts(name, anim, courtroom.EmoteIdle)...) // AssetType: CharSprite (preview)
 }
 
 // correctPortraitPreview moves an open portrait only if "normal" is still shown and the pack has no such emote.
@@ -1595,7 +1595,7 @@ func (a *App) pollCharINI() {
 				break
 			}
 			// A mixed-naming pack may ship this emote unprefixed; one spelling would 404 and flag it missing.
-			a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
+			a.d.Manager.Media().Get(assets.ChainKey(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite), media.Later, 0, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle)...) // AssetType: CharSprite
 		}
 	default:
 	}

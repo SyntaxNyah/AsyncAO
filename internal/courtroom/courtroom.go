@@ -406,10 +406,9 @@ type Courtroom struct {
 	RealizationSFX string
 }
 
-// ask asks the media system for base, then each alt while earlier names miss, as CharLayer::load_image does; an empty
-// base or no media system asks nothing.
+// ask asks the media system for base, then each alt while earlier names miss, as CharLayer::load_image does.
 func (c *Courtroom) ask(base string, alts []string, t assets.AssetType) {
-	if base == "" || c.media == nil || !t.Valid() {
+	if c.media == nil {
 		return
 	}
 	c.media.Get(assets.ChainKey(base, t), media.Now, 0, alts...)

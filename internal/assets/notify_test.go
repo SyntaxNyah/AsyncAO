@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 )
 
 // TestManagerDeliveryNotify pins the decode-delivery wake hook (the
@@ -37,7 +37,7 @@ func TestManagerDeliveryNotify(t *testing.T) {
 
 	base := local.BaseURL() + "characters/witch/emotions/button1_off"
 	rig.manager.AllowFormats(local.BaseURL(), map[AssetType]string{AssetTypeEmoteButton: config.ExtPNG})
-	rig.manager.Prefetch(base, AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (test)
+	rig.manager.Media().Get(ChainKey(base, AssetTypeEmoteButton), media.Now, 0) // AssetType: EmoteButton (test)
 
 	deadline := time.After(managerWait)
 	select {

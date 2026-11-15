@@ -11,6 +11,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -793,13 +794,13 @@ func (a *App) healScenery() {
 	// each heal would evict another live base forever.
 	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneHealAllowed(sc.BackgroundBase) {
 		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
-		a.d.Manager.PrefetchChain(sc.BackgroundBase, sc.BackgroundAlts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+		a.d.Manager.Media().Get(assets.ChainKey(sc.BackgroundBase, assets.AssetTypeBackground), media.Now, 0, sc.BackgroundAlts...) // AssetType: Background
 	}
 	// A conclusively 404'd base never becomes Contains, so without IsMissing this re-demands a known-absent desk.
 	// The background arm skips the check: Background is never marked, to keep the viewport's hold-previous behaviour.
 	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneHealAllowed(sc.DeskBase) {
 		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
-		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
+		a.d.Manager.Media().Get(assets.ChainKey(sc.DeskBase, assets.AssetTypeDeskOverlay), media.Now, 0) // AssetType: DeskOverlay
 	}
 	a.healSpriteLayer(&sc.Speaker, &a.spkAskBase, &a.spkAskAt, now)
 	a.healSpriteLayer(&sc.Pair, &a.pairAskBase, &a.pairAskAt, now)
@@ -821,7 +822,7 @@ func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, ask
 		return // per-scene futility budget spent (over-tier churn / permanent 404) — quiet until the scene changes
 	}
 	*askBase, *askAt = layer.Active, now
-	a.d.Manager.PrefetchChain(layer.Active, courtroom.SpriteHealAlts(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
+	a.d.Manager.Media().Get(assets.ChainKey(layer.Active, assets.AssetTypeCharSprite), media.Now, 0, courtroom.SpriteHealAlts(layer.Active)...) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
 }
 
 // icEntry is one IC log line with its AO text color preserved.
