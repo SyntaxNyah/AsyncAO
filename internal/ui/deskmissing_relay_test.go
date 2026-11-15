@@ -7,7 +7,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -97,7 +97,7 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	if bgBase == deskBase {
 		t.Fatal("test setup: the bg and desk bases must differ for the type-gate control")
 	}
-	a.d.Manager.Prefetch(bgBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+	a.d.Manager.Media().Get(assets.ChainKey(bgBase, assets.AssetTypeBackground), media.Now, 0) // AssetType: Background
 	ctrl := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(ctrl) {
 		a.drainWarnings()

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -74,7 +74,7 @@ func (a *App) demandMsgIcon(base string) {
 		a.msgIconAsk = make(map[string]time.Time, msgIconAskCap)
 	}
 	a.msgIconAsk[base] = time.Now()
-	a.d.Manager.Prefetch(base, assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
+	a.d.Manager.Media().Get(assets.ChainKey(base, assets.AssetTypeCharIcon), media.Later, 0) // AssetType: CharIcon
 }
 
 // drawMsgCharIcon paints a small char icon for char (resolved folder) into cell, falling back to an initial disc in the

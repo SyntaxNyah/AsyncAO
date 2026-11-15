@@ -210,6 +210,8 @@ type Manager struct {
 	refused atomic.Int64
 	// skipped is what Get returns when Config.Skip says the caller holds the key already.
 	skipped *Asset
+	// unnamed is what Get returns for a key with no path: Missing, as it names no file.
+	unnamed *Asset
 }
 
 // NewManager starts a Manager's goroutine.
@@ -227,6 +229,8 @@ func NewManager(cfg Config) *Manager {
 		active: map[Key]*request{}, queues: map[*Pool]*poolQueue{}, hostBusy: map[string]int{}, winners: map[Key]File{}}
 	m.skipped = newAsset(Key{}, Later, 0, nil)
 	m.skipped.finish(Ready, nil, nil, cfg.Clock())
+	m.unnamed = newAsset(Key{}, Later, 0, nil)
+	m.unnamed.finish(Missing, nil, nil, cfg.Clock())
 	go m.run()
 	return m
 }
@@ -238,9 +242,12 @@ func (m *Manager) Close() {
 }
 
 // Get returns the Asset for key from any thread and never blocks: a repeat ask takes no lock and posts nothing. A key the
-// Skip hook says the caller holds already returns a shared finished Asset with no key.
+// Skip hook says the caller holds already returns a shared finished Asset with no key, and so does a key with no path.
 // alts are the other names it may be found under, best first, each asked only once every earlier one is known absent.
 func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *Asset {
+	if key.Path == "" {
+		return m.unnamed
+	}
 	if m.cfg.Skip != nil && m.cfg.Skip(key) {
 		return m.skipped
 	}

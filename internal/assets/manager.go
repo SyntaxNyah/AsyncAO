@@ -307,43 +307,6 @@ func (m *Manager) reportMusicFailure(url string, err error) {
 	}
 }
 
-// Prefetch asks for base (URL without extension), with no other spelling.
-func (m *Manager) Prefetch(base string, t AssetType, prio network.Priority) {
-	m.PrefetchChain(base, nil, t, prio)
-}
-
-// PrefetchChain asks for base, then each alt while earlier names miss, like CharLayer::load_image ("(a)X" then "X");
-// call sites bound the length (hard rule 4).
-func (m *Manager) PrefetchChain(base string, alts []string, t AssetType, prio network.Priority) {
-	if base == "" || !t.Valid() {
-		return
-	}
-	m.bridge.askChain(base, alts, t, prio, false)
-}
-
-// PrefetchSticky is Prefetch for assets that survive room changes, such as UI chrome.
-func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority) {
-	if base == "" || !t.Valid() {
-		return
-	}
-	m.bridge.askChain(base, nil, t, prio, true)
-}
-
-// PrefetchExact asks for a complete URL with no candidate probing, such as a music track.
-func (m *Manager) PrefetchExact(url string, t AssetType, prio network.Priority) {
-	if url == "" || !t.Valid() {
-		return
-	}
-	m.bridge.askExact(url, t, prio)
-}
-
-// PrefetchRaw warms the caches for a complete URL without decoding (char.ini on hover); silent on 404.
-func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
-	if url != "" {
-		m.bridge.askRaw(url, prio)
-	}
-}
-
 // IsMissing reports whether base is remembered as found nowhere, so asking again now costs no request; nil-safe.
 func (m *Manager) IsMissing(base string, t AssetType) bool {
 	if m == nil {

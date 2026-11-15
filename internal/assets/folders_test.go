@@ -213,7 +213,7 @@ func TestPrefetchRawSkipsWhatTheFolderHolds(t *testing.T) {
 		map[string]string{"characters/witch/char.ini": "PACK INI"},
 	)
 
-	pr.rig.manager.PrefetchRaw(pr.base("characters/witch/char.ini"), network.PriorityLow)
+	pr.rig.manager.Media().Get(RawKey(pr.base("characters/witch/char.ini")), media.Later, media.Quiet)
 
 	if awaitNetFetches(t, pr.rig.manager, 1) {
 		t.Error("the warm asked the server for a file the folder holds")
@@ -226,7 +226,7 @@ func TestPrefetchRawStillWarmsWhatTheFolderLacks(t *testing.T) {
 		map[string]string{"characters/witch/char.ini": "PACK INI"},
 	)
 
-	pr.rig.manager.PrefetchRaw(pr.base("characters/other/char.ini"), network.PriorityLow)
+	pr.rig.manager.Media().Get(RawKey(pr.base("characters/other/char.ini")), media.Later, media.Quiet)
 
 	if !awaitNetFetches(t, pr.rig.manager, 1) {
 		t.Error("the server was never asked — mounting a folder disarmed the warm for everything else")
@@ -274,7 +274,7 @@ func TestFolderSpriteIsFoundInAFormatTheServerDoesNotList(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := pr.base("characters/witch/normal")
-	pr.rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	pr.rig.manager.Media().Get(ChainKey(base, AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	if d := nextDecoded(t, pr.rig, base); d.Err != nil {
 		t.Fatalf("the folder's .png was not used: %v", d.Err)
 	}

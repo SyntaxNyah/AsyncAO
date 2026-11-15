@@ -8,7 +8,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/parse"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -420,7 +420,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		} else {
 			c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
 			if a.sess.Background != "" {
-				a.d.Manager.PrefetchChain(bgBase, scenery.Alts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (style preview)
+				a.d.Manager.Media().Get(assets.ChainKey(bgBase, assets.AssetTypeBackground), media.Now, 0, scenery.Alts...) // AssetType: Background (style preview)
 			}
 		}
 		if me := a.activeCharName(); me != "" && a.d.Viewport != nil {
@@ -431,7 +431,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			sbase := a.urls.Emote(me, anim, courtroom.EmoteIdle)
 			if a.stylePrevWarm != sbase { // warm once per emote base, not per frame
 				a.stylePrevWarm = sbase
-				a.d.Manager.PrefetchChain(sbase, a.urls.EmoteAlts(me, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (style preview)
+				a.d.Manager.Media().Get(assets.ChainKey(sbase, assets.AssetTypeCharSprite), media.Now, 0, a.urls.EmoteAlts(me, anim, courtroom.EmoteIdle)...) // AssetType: CharSprite (style preview)
 			}
 			a.d.Viewport.RenderStylePreview(c.Ren, sbase, styleFromPref(p), pv)
 		} else {

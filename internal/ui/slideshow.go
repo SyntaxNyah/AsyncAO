@@ -8,7 +8,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 )
 
 // updateSlideshow advances the rotation, clearing the override when the slideshow is off or the room isn't idle.
@@ -34,7 +34,7 @@ func (a *App) updateSlideshow(phase courtroom.MessagePhase) {
 	a.slideAt = a.now()
 	a.slideIdx = (a.slideIdx + 1) % len(names)
 	// Low priority so it never competes with live assets.
-	a.d.Manager.Prefetch(a.slideBG, assets.AssetTypeBackground, network.PriorityLow) // AssetType: Background (slideshow)
+	a.d.Manager.Media().Get(assets.ChainKey(a.slideBG, assets.AssetTypeBackground), media.Later, 0) // AssetType: Background (slideshow)
 }
 
 // renderScene returns the scene to draw: the replay, the live scene, or a copy with the rotating background and no

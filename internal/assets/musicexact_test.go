@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
@@ -39,7 +40,7 @@ func TestMP3MusicFetchesExactlyTheURLItWasGiven(t *testing.T) {
 
 	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	url := srv.URL + "/sounds/music/cornered.mp3"
-	rig.manager.PrefetchExact(url, AssetTypeMusic, network.PriorityHigh) // AssetType: Music (Exact)
+	rig.manager.Media().Get(ExactKey(url, AssetTypeMusic), media.Now, 0) // AssetType: Music (Exact)
 
 	select {
 	case a := <-rig.manager.Audio():

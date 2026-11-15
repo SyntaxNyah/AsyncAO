@@ -15,7 +15,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -600,17 +600,17 @@ func (a *App) drawJudgeRow(x, y int32) int32 {
 func (a *App) prewarmServer() {
 	info := a.d.Prefs.Load().ServerWarmInfoFor(a.serverKey)
 	if info.Char != "" {
-		a.d.Manager.Prefetch(a.urls.CharIcon(info.Char), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon (pre-warm)
+		a.d.Manager.Media().Get(assets.ChainKey(a.urls.CharIcon(info.Char), assets.AssetTypeCharIcon), media.Later, 0) // AssetType: CharIcon (pre-warm)
 		idle := a.urls.Emote(info.Char, "normal", courtroom.EmoteIdle)
 		talk := a.urls.Emote(info.Char, "normal", courtroom.EmoteTalk)
-		a.d.Manager.PrefetchChain(idle, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
-		a.d.Manager.PrefetchChain(talk, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
+		a.d.Manager.Media().Get(assets.ChainKey(idle, assets.AssetTypeCharSprite), media.Later, 0, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteIdle)...) // AssetType: CharSprite (pre-warm)
+		a.d.Manager.Media().Get(assets.ChainKey(talk, assets.AssetTypeCharSprite), media.Later, 0, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteTalk)...) // AssetType: CharSprite (pre-warm)
 	}
 	if info.Background != "" {
 		// wit/def/pro/jud cover the courtroom core (standardPositions leads with those four).
 		for _, pos := range standardPositions[:4] {
 			s := a.urls.PositionScenery(info.Background, pos, nil)
-			a.d.Manager.PrefetchChain(s.Background, s.Alts, assets.AssetTypeBackground, network.PriorityLow) // AssetType: Background (pre-warm)
+			a.d.Manager.Media().Get(assets.ChainKey(s.Background, assets.AssetTypeBackground), media.Later, 0, s.Alts...) // AssetType: Background (pre-warm)
 		}
 	}
 }
@@ -620,13 +620,13 @@ func (a *App) prewarmServer() {
 func (a *App) speculateEmote(me string, e *courtroom.Emote) {
 	idle := a.urls.Emote(me, e.Anim, courtroom.EmoteIdle)
 	talk := a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
-	a.d.Manager.PrefetchChain(idle, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote idle)
-	a.d.Manager.PrefetchChain(talk, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote talk)
+	a.d.Manager.Media().Get(assets.ChainKey(idle, assets.AssetTypeCharSprite), media.Later, 0, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle)...) // AssetType: CharSprite (picked emote idle)
+	a.d.Manager.Media().Get(assets.ChainKey(talk, assets.AssetTypeCharSprite), media.Later, 0, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk)...) // AssetType: CharSprite (picked emote talk)
 	if e.Preanim != "" && e.Preanim != "-" {
-		a.d.Manager.Prefetch(a.urls.Emote(me, e.Preanim, courtroom.EmotePreanim), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked preanim)
+		a.d.Manager.Media().Get(assets.ChainKey(a.urls.Emote(me, e.Preanim, courtroom.EmotePreanim), assets.AssetTypeCharSprite), media.Later, 0) // AssetType: CharSprite (picked preanim)
 	}
 	if e.SFXName != "" && e.SFXName != "0" && e.SFXName != "1" {
-		a.d.Manager.Prefetch(a.urls.SFX(e.SFXName), assets.AssetTypeSFX, network.PriorityLow) // AssetType: SFX (picked emote)
+		a.d.Manager.Media().Get(assets.ChainKey(a.urls.SFX(e.SFXName), assets.AssetTypeSFX), media.Later, 0) // AssetType: SFX (picked emote)
 	}
 }
 
@@ -840,7 +840,7 @@ func (a *App) noteEvidencePresented(msg *protocol.ChatMessage) {
 	a.pushIC(name+" presented evidence: "+item.Name, 0, fr, fc, "") // system line — no speaker tint
 	a.evShowImg = img
 	a.evShowAt = time.Now()
-	a.d.Manager.PrefetchExact(a.evidURL(img), assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (evidence image, exact URL)
+	a.d.Manager.Media().Get(assets.ExactKey(a.evidURL(img), assets.AssetTypeMisc), media.Now, 0) // AssetType: Misc (evidence image, exact URL)
 }
 
 // evidURL resolves an evidence image name to its pixel source, honouring the panel's "stream from server" toggle:
@@ -861,7 +861,7 @@ func (a *App) demandEvidence(idx int, url string) {
 		return
 	}
 	a.evidAsk[idx] = time.Now()
-	a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (evidence thumbnail, exact URL)
+	a.d.Manager.Media().Get(assets.ExactKey(url, assets.AssetTypeMisc), media.Later, 0) // AssetType: Misc (evidence thumbnail, exact URL)
 }
 
 // toggleEvidence flips the Evidence floating window; its button and hotkey toggle rather than only open.

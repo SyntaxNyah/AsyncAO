@@ -14,6 +14,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
@@ -225,7 +226,7 @@ func TestManagerWebPOnlyServerOneProbePerAsset(t *testing.T) {
 		{cs.srv.URL + "/background/court/defenseempty", AssetTypeBackground},
 	}
 	for _, b := range bases {
-		rig.manager.Prefetch(b.base, b.typ, network.PriorityHigh) // AssetType: mixed (test)
+		rig.manager.Media().Get(ChainKey(b.base, b.typ), media.Now, 0) // AssetType: mixed (test)
 	}
 	for range bases {
 		d := waitDecoded(t, rig)
@@ -259,7 +260,7 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 	resident := map[string]bool{}
 	rig.manager.t1Contains = func(key string) bool { return resident[key] }
 
-	rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
+	rig.manager.Media().Get(ChainKey(base, AssetTypeCharIcon), media.Now, 0) // AssetType: CharIcon
 	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
@@ -280,7 +281,7 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("T1 short-circuit never hit for a resident base")
 		}
-		rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
+		rig.manager.Media().Get(ChainKey(base, AssetTypeCharIcon), media.Now, 0) // AssetType: CharIcon
 		time.Sleep(5 * time.Millisecond)
 	}
 	if got := cs.total(); got != firstLoad {
@@ -309,7 +310,7 @@ func TestManagerUnprefixedSpriteFallback(t *testing.T) {
 	resident := map[string]bool{}
 	rig.manager.t1Contains = func(key string) bool { return resident[key] }
 
-	rig.manager.PrefetchChain(primary, []string{bare}, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	rig.manager.Media().Get(ChainKey(primary, AssetTypeCharSprite), media.Now, 0, []string{bare}...) // AssetType: CharSprite
 	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
@@ -330,7 +331,7 @@ func TestManagerUnprefixedSpriteFallback(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("T1 short-circuit never hit for the resident primary base")
 		}
-		rig.manager.PrefetchChain(primary, []string{bare}, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+		rig.manager.Media().Get(ChainKey(primary, AssetTypeCharSprite), media.Now, 0, []string{bare}...) // AssetType: CharSprite
 		time.Sleep(5 * time.Millisecond)
 	}
 	if got := cs.total(); got != firstLoad {
@@ -356,7 +357,7 @@ func TestManagerPrefetchChain(t *testing.T) {
 		cs.srv.URL + "/misc/yttd/chatbox", // duplicate: skipped, no re-probe
 	}
 
-	rig.manager.PrefetchChain(identity, alts, AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (test chain)
+	rig.manager.Media().Get(ChainKey(identity, AssetTypeMisc), media.Now, 0, alts...) // AssetType: Misc (test chain)
 	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
@@ -376,7 +377,7 @@ func TestManagerAudioBypassesDecode(t *testing.T) {
 	})
 	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
-	rig.manager.Prefetch(cs.srv.URL+"/sounds/blips/male", AssetTypeBlip, network.PriorityHigh) // AssetType: Blip
+	rig.manager.Media().Get(ChainKey(cs.srv.URL+"/sounds/blips/male", AssetTypeBlip), media.Now, 0) // AssetType: Blip
 	select {
 	case a := <-rig.manager.Audio():
 		if string(a.Data) != string(opus) {
@@ -426,7 +427,7 @@ func TestManagerLocalMounts(t *testing.T) {
 	rig := newRig(t, local, true)
 	origin := local.BaseURL()
 
-	rig.manager.Prefetch(origin+"characters/phoenix/(a)normal", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	rig.manager.Media().Get(ChainKey(origin+"characters/phoenix/(a)normal", AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("local decode error: %v", d.Err)
@@ -436,7 +437,7 @@ func TestManagerLocalMounts(t *testing.T) {
 	}
 	d.Asset.Release()
 
-	rig.manager.Prefetch(origin+"characters/phoenix/(b)normal", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	rig.manager.Media().Get(ChainKey(origin+"characters/phoenix/(b)normal", AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	d = waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("local decode error: %v", d.Err)
@@ -447,7 +448,7 @@ func TestManagerLocalMounts(t *testing.T) {
 	d.Asset.Release()
 
 	// Missing asset → the same §4 warning machinery.
-	rig.manager.Prefetch(origin+"characters/phoenix/(a)void", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	rig.manager.Media().Get(ChainKey(origin+"characters/phoenix/(a)void", AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	w := waitWarning(t, rig.manager)
 	if !strings.HasSuffix(w.Base, "(a)void") {
 		t.Errorf("warning base = %q", w.Base)
@@ -473,7 +474,7 @@ func TestManagerInflightDedup(t *testing.T) {
 	base := cs.srv.URL + "/characters/godot/(a)normal"
 
 	for i := 0; i < 4; i++ {
-		rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+		rig.manager.Media().Get(ChainKey(base, AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	}
 	d := waitDecoded(t, rig)
 	if d.Err != nil {
@@ -503,7 +504,7 @@ func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
 	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	url := cs.srv.URL + "/characters/tung/char.ini"
 
-	rig.manager.PrefetchRaw(url, network.PriorityLow) // raw text: char.ini
+	rig.manager.Media().Get(RawKey(url), media.Later, media.Quiet) // raw text: char.ini
 	deadline := time.Now().Add(managerWait)
 	for {
 		if _, ok := rig.t2.Get(url); ok {
@@ -541,7 +542,7 @@ func TestPurgeCorruptEvictsTiers(t *testing.T) {
 	base := cs.srv.URL + "/characters/torn/(a)normal"
 	wantURL := base + ".webp" // the format probed first — the T2/T3 key
 
-	rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	rig.manager.Media().Get(ChainKey(base, AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	d := waitDecoded(t, rig)
 	if d.Err == nil {
 		t.Fatal("corrupt payload decoded without error")

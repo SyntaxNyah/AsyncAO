@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
@@ -103,7 +104,7 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	defer store.Purge()
 	pump := NewPump(store, mgr, nil)
 
-	mgr.Prefetch(base, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (warm-gate prefetch)
+	mgr.Media().Get(assets.ChainKey(base, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (warm-gate prefetch)
 
 	// Pump every "frame" until the async decode lands in T1 — the same loop the
 	// export's warm phase runs (Pump.Frame() takes the waiting deliveries each frame).
@@ -148,7 +149,7 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	// Sick origin: the fetch (with its bounded retry) fails at the network
 	// stage → counted as a failed fetch, NOT pinned.
 	sick := srvSick.URL + "/characters/witch/(a)sick"
-	mgr.Prefetch(sick, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (test)
+	mgr.Media().Get(assets.ChainKey(sick, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (test)
 	deadline := time.Now().Add(5 * time.Second)
 	for mgr.Stats().Failed == 0 && time.Now().Before(deadline) {
 		pump.Frame()
@@ -163,7 +164,7 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 
 	// Corrupt bytes: a genuine decode failure still pins (the cache's job).
 	corrupt := srvCorrupt.URL + "/characters/witch/(a)corrupt"
-	mgr.Prefetch(corrupt, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (test)
+	mgr.Media().Get(assets.ChainKey(corrupt, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (test)
 	deadline = time.Now().Add(5 * time.Second)
 	for !store.FailedRecently(corrupt) && time.Now().Before(deadline) {
 		pump.Frame()

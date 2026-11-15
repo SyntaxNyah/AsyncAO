@@ -12,6 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -1586,7 +1587,7 @@ func (a *App) warmBase(base string, t assets.AssetType) {
 	}
 	a.activeWarmDemands[base]++
 	a.activeWarmLastDemand = time.Now()
-	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+	a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Now, 0)
 }
 
 // sceneWarmRedemandEvery throttles re-requests across the scene so the per-frame warm can't spam the pool during
@@ -1646,11 +1647,11 @@ func (a *App) keepSceneAssetsWarm() {
 		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
 			switch t {
 			case assets.AssetTypeCharSprite:
-				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (folder + bare, so no spelling ever false-flags missing)
+				a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Now, 0, courtroom.SpriteHealAlts(base)...) // AssetType: CharSprite (folder + bare, so no spelling ever false-flags missing)
 			case assets.AssetTypeBackground:
-				a.d.Manager.PrefetchChain(base, sc.BackgroundAlts, t, network.PriorityHigh) // AssetType: Background (every name AO2 tries)
+				a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Now, 0, sc.BackgroundAlts...) // AssetType: Background (every name AO2 tries)
 			default:
-				a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+				a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Now, 0)
 			}
 			demanded = true
 			a.sceneWarmLastDemand = now

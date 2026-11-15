@@ -14,7 +14,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/media"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
@@ -374,13 +373,13 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, budget *int64) {
 	// Hover shows the large preview at high priority; click selects the /bg target.
 	if c.HoverPreview("bg:"+name, cell) {
 		a.previewBase = base
-		a.d.Manager.Prefetch(base, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (preview)
+		a.d.Manager.Media().Get(assets.ChainKey(base, assets.AssetTypeBackground), media.Now, 0) // AssetType: Background (preview)
 	}
 	if c.hovering(cell) && c.clicked {
 		a.bgPick.sel = name
 		a.bgPick.status = ""
 		a.previewBase = base
-		a.d.Manager.Prefetch(base, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (selected preview)
+		a.d.Manager.Media().Get(assets.ChainKey(base, assets.AssetTypeBackground), media.Now, 0) // AssetType: Background (selected preview)
 	}
 }
 

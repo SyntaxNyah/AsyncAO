@@ -10,8 +10,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/mix"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
 const (
@@ -555,7 +555,7 @@ func (a *Audio) request(base string, kind pendingKind) {
 	a.pending[base] = pendingPlay{kind: kind, deadline: time.Now().Add(pendingPlayTTL)}
 	// Nothing else prefetches SFX and shouts; without this the pending entry just expires and the sound never plays.
 	if (kind == pendingSFX || kind == pendingShout) && a.mgr != nil {
-		a.mgr.Prefetch(base, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX
+		a.mgr.Media().Get(assets.ChainKey(base, assets.AssetTypeSFX), media.Now, 0) // AssetType: SFX
 	}
 }
 
@@ -612,7 +612,7 @@ func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 	// At most one music entry may be pending, or a late fetch of a previous track would revert playback to it.
 	a.purgePendingMusic(url)
 	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL), loop: loop, effects: effects, seekSec: syncPosSec}
-	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
+	a.mgr.Media().Get(assets.ExactKey(url, assets.AssetTypeMusic), media.Now, 0) // AssetType: Music
 }
 
 // purgePendingMusic drops pending music except keep ("" = all), so a late delivery is ignored; render thread only.
@@ -687,7 +687,7 @@ func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64)
 	}
 	a.purgePendingMusic(url)
 	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL), loop: loop, effects: effects, seekSec: seekSec}
-	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
+	a.mgr.Media().Get(assets.ExactKey(url, assets.AssetTypeMusic), media.Now, 0) // AssetType: Music
 }
 
 // startMusic decodes and plays a fetched track, following AO2's effects (aomusicplayer.cpp:24-160).

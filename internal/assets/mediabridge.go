@@ -210,13 +210,6 @@ func (m *Manager) RescanDisk() {
 	}
 }
 
-func urgencyOf(p network.Priority) media.Urgency {
-	if p == network.PriorityHigh {
-		return media.Now
-	}
-	return media.Later
-}
-
 func classOf(t AssetType) media.Class {
 	switch t {
 	case AssetTypeCharIcon:
@@ -257,27 +250,9 @@ func ExactKey(url string, t AssetType) media.Key {
 	return k
 }
 
-func flagsOf(quiet, sticky bool) media.Flags {
-	var f media.Flags
-	if quiet {
-		f |= media.Quiet
-	}
-	if sticky {
-		f |= media.Sticky
-	}
-	return f
-}
-
-func (b *mediaBridge) askChain(base string, alts []string, t AssetType, p network.Priority, sticky bool) {
-	b.media.Get(ChainKey(base, t), urgencyOf(p), flagsOf(false, sticky), alts...)
-}
-
-func (b *mediaBridge) askExact(url string, t AssetType, p network.Priority) {
-	b.media.Get(ExactKey(url, t), urgencyOf(p), 0)
-}
-
-func (b *mediaBridge) askRaw(url string, p network.Priority) {
-	b.media.Get(media.Key{Place: media.PlaceServer, Path: url, Kind: media.KindRaw, Class: media.ClassExact}, urgencyOf(p), media.Quiet)
+// RawKey is the key for a complete URL kept as bytes, such as a char.ini, never decoded.
+func RawKey(url string) media.Key {
+	return media.Key{Place: media.PlaceServer, Path: url, Kind: media.KindRaw, Class: media.ClassExact}
 }
 
 // skip is Config.Skip: an uploaded texture is held already, and one that failed to decode lately is left alone.

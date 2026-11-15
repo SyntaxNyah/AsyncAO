@@ -503,3 +503,14 @@ func waitUntil(t *testing.T, cond func() bool) {
 		time.Sleep(testPollEvery)
 	}
 }
+
+func TestAKeyWithNoPathIsMissingAndAsksNothing(t *testing.T) {
+	r := newRemoteRig(t, nil)
+	if a := r.m.Get(sprite(""), Now, 0); a.State() != Missing {
+		t.Fatalf("state %v, want Missing", a.State())
+	}
+	r.m.Call(func() {})
+	if asked := r.fetch.askedFor(); len(asked) != 0 {
+		t.Fatalf("asked %v", asked)
+	}
+}
