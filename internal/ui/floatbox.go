@@ -179,9 +179,9 @@ func (a *App) extrasPalette() extrasPalette {
 func (a *App) blockingCourtPopup() bool {
 	// Floating panels (pair, mod, CM, evidence, ban box, timer, login, pair popup, pinned pieces) stay out: they fence
 	// by footprint, and adding one would make extrasSurfaceLive false and disable its own fence.
-	// Not courtroomModalUp's set: this adds classicEdit and omits showSfxBrowser, which would hide the panels too.
-	// Ask courtroomModalUp whether drawCourtroomModals will take the screen.
-	return a.ward.show || a.showJukebox || a.bgPick.show ||
+	// Not courtroomModalUp's set: this adds classicEdit. Ask courtroomModalUp whether drawCourtroomModals will take the
+	// screen.
+	return a.ward.show || a.showJukebox || a.bgPick.show || a.showSfxBrowser ||
 		a.classicEdit
 }
 
