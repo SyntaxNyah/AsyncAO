@@ -238,8 +238,7 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
 		Prefs:   a.d.Prefs,
 		T2:      t2,
@@ -339,8 +338,7 @@ func newWarmHarness(t *testing.T) (*App, *render.TextureStore) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
 		Prefs:   a.d.Prefs,
 		T2:      t2,
@@ -356,15 +354,13 @@ func newWarmHarness(t *testing.T) (*App, *render.TextureStore) {
 	// residency it seeds itself; these deliveries are irrelevant to it.
 	go func() {
 		for {
+			releaseDeliveries(a)
 			select {
-			case d := <-a.d.Manager.Decoded():
-				if d.Asset != nil {
-					d.Asset.Release()
-				}
 			case <-a.d.Manager.Audio():
 			case <-a.d.Manager.Warnings():
 			case <-stopDrain:
 				return
+			case <-time.After(time.Millisecond):
 			}
 		}
 	}()

@@ -86,8 +86,7 @@ func TestDecodeWebPAnimatedFirstFrameOnly(t *testing.T) {
 // frame-by-frame instead of being replaced by a full set. Statics deliver
 // exactly once.
 func TestProgressiveAnimatedDecode(t *testing.T) {
-	pool := NewDecoderPool(1)
-	defer pool.Close()
+	pool := NewDecoder()
 
 	type result struct {
 		frames  int
@@ -97,29 +96,18 @@ func TestProgressiveAnimatedDecode(t *testing.T) {
 		source  int
 	}
 	deliver := func(data []byte) []result {
-		out := make(chan result, 8)
-		done := make(chan struct{})
-		pool.Submit(DecodeRequest{
+		var rs []result
+		pool.Decode(DecodeRequest{
 			URL: "x", Data: data, Type: AssetTypeCharSprite, PlayAnimations: true,
 			OnDone: func(_ string, d *Decoded, err error) {
 				if err != nil {
 					t.Errorf("decode: %v", err)
-					close(done)
 					return
 				}
-				out <- result{frames: len(d.Frames), partial: d.Partial, stream: d.Stream, offset: d.FrameOffset, source: d.SourceFrames}
-				if !d.Partial {
-					close(done) // the finalize is always the last delivery
-				}
+				rs = append(rs, result{frames: len(d.Frames), partial: d.Partial, stream: d.Stream, offset: d.FrameOffset, source: d.SourceFrames})
 				d.Release()
 			},
 		})
-		<-done
-		close(out)
-		var rs []result
-		for r := range out {
-			rs = append(rs, r)
-		}
 		return rs
 	}
 
@@ -253,33 +241,20 @@ func TestAOneFrameAnimationDecodesToItsFrame(t *testing.T) {
 	if Sniff(data) != FormatWebPAnim {
 		t.Fatalf("built %v, want an animated webp", Sniff(data))
 	}
-	const wait = 5 * time.Second
-	pool := NewDecoderPool(1)
-	defer pool.Close()
-	got := make(chan *Decoded, 4)
-	pool.Submit(DecodeRequest{
+	var frames int
+	var final *Decoded
+	NewDecoder().Decode(DecodeRequest{
 		URL: "x", Data: data, Type: AssetTypeCharSprite, PlayAnimations: true,
 		OnDone: func(_ string, d *Decoded, err error) {
 			if err != nil {
-				t.Errorf("decode: %v", err)
-				d = &Decoded{}
+				t.Fatalf("decode: %v", err)
 			}
-			got <- d
-		},
-	})
-	var frames int
-	var final *Decoded
-	for final == nil {
-		select {
-		case d := <-got:
 			frames += len(d.Frames)
 			if !d.Partial {
 				final = d
 			}
-		case <-time.After(wait):
-			t.Fatalf("no final page after %d frames", frames)
-		}
-	}
+		},
+	})
 	if final == nil || frames != 1 || final.Width != w || final.Height != h {
 		t.Fatalf("delivered %d frames, final %+v; want one %dx%d frame and a final page", frames, final, w, h)
 	}

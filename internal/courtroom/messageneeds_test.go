@@ -133,8 +133,7 @@ func recordingRoom(t *testing.T) (*Courtroom, *recordingSource) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(1)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	src := &recordingSource{}
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Prefs: prefs, T2: t2, Disk: disk,

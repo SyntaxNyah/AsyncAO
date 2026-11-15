@@ -28,21 +28,15 @@ func TestSelectedEmoteButtonWithoutOnArtLoadsItsOffArt(t *testing.T) {
 	for time.Now().Before(deadline) {
 		a.iconAskBudget = charIconAskPerFrame
 		a.drawEmoteImageButton(btn, me, 0, true, "normal")
-		for {
+		if deliveredBase(a, off) {
+			return
+		}
+		for drained := false; !drained; {
 			select {
-			case d := <-a.d.Manager.Decoded():
-				if d.Asset != nil {
-					d.Asset.Release()
-				}
-				if d.Base == off && d.Err == nil {
-					return
-				}
-				continue
 			case <-a.d.Manager.Warnings():
-				continue
 			default:
+				drained = true
 			}
-			break
 		}
 		time.Sleep(missGatePollStep)
 	}

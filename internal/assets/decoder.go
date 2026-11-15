@@ -24,8 +24,6 @@ import (
 )
 
 const (
-	// decodeQueueCap bounds the decode job queue; Submit blocks briefly when full, since decode work is never shed.
-	decodeQueueCap = 64
 
 	// minDecodeWorkers is the floor of the worker count, max(2, NumCPU/2).
 	minDecodeWorkers = 2
@@ -378,17 +376,13 @@ type DecodeRequest struct {
 	Type AssetType
 	// PlayAnimations decodes all frames when true, only the first when false.
 	PlayAnimations bool
-	// OnDone runs on a decoder goroutine: it must be cheap and must not touch SDL (hard rule 1).
+	// OnDone runs on the decoding goroutine, once per page: it must be cheap and must not touch SDL (hard rule 1).
 	OnDone func(url string, d *Decoded, err error)
 }
 
-// DecoderPool decodes image payloads into plain RGBA with no SDL calls; upload happens on the render thread.
-type DecoderPool struct {
-	jobs      chan DecodeRequest
-	stop      chan struct{}
-	wg        sync.WaitGroup
-	closeOnce sync.Once
-
+// Decoder decodes image payloads into plain RGBA with no SDL calls, on the caller's goroutine; upload happens on the
+// render thread.
+type Decoder struct {
 	decoded atomic.Int64
 	failed  atomic.Int64
 
@@ -407,7 +401,6 @@ type DecoderPool struct {
 	// decodeNsEWMA tracks decode+fit wall time.
 	decodeNsEWMA atomic.Int64
 
-	workers int
 	// running lists the decodes in progress, for diagnostics.
 	running *network.ActiveWork
 }
@@ -466,27 +459,13 @@ func heapSysMiB() uint64 {
 	return ms.Sys >> 20
 }
 
-// NewDecoderPool starts workers decode goroutines (DecodeWorkers() when workers <= 0).
-func NewDecoderPool(workers int) *DecoderPool {
-	if workers <= 0 {
-		workers = DecodeWorkers()
-	}
-	p := &DecoderPool{
-		jobs:     make(chan DecodeRequest, decodeQueueCap),
-		stop:     make(chan struct{}),
-		animGate: newAnimGate(defaultAnimatedDecodeConcurrency),
-		workers:  workers,
-		running:  network.NewActiveWork(workers),
-	}
-	p.wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go p.worker()
-	}
-	return p
+// NewDecoder makes a decoder; the media system's Compute workers run its decodes.
+func NewDecoder() *Decoder {
+	return &Decoder{animGate: newAnimGate(defaultAnimatedDecodeConcurrency), running: network.NewActiveWork(DecodeWorkers())}
 }
 
 // SetSpriteCap sets the height ceiling for full-size assets; 0 disables it.
-func (p *DecoderPool) SetSpriteCap(px int) {
+func (p *Decoder) SetSpriteCap(px int) {
 	if px < 0 {
 		px = 0
 	}
@@ -494,7 +473,7 @@ func (p *DecoderPool) SetSpriteCap(px int) {
 }
 
 // SetAnimatedSpriteCap sets the animated-only height cap; 0 disables it.
-func (p *DecoderPool) SetAnimatedSpriteCap(px int) {
+func (p *Decoder) SetAnimatedSpriteCap(px int) {
 	if px < 0 {
 		px = 0
 	}
@@ -502,17 +481,17 @@ func (p *DecoderPool) SetAnimatedSpriteCap(px int) {
 }
 
 // SetAnimatedBudgetMiB sets the per-animated-asset frame budget; <= 0 resets to the default.
-func (p *DecoderPool) SetAnimatedBudgetMiB(mib int) {
+func (p *Decoder) SetAnimatedBudgetMiB(mib int) {
 	SetAnimatedDecodedAssetBytes(int64(mib) << 20)
 }
 
 // SetAnimatedDecodeConcurrency sets the concurrent animated decode bound.
-func (p *DecoderPool) SetAnimatedDecodeConcurrency(n int) {
+func (p *Decoder) SetAnimatedDecodeConcurrency(n int) {
 	p.animGate.SetLimit(n)
 }
 
 // SetTextureCompression sets the compression mode (CompressOff, CompressDXT5, CompressDXT1) for new decodes.
-func (p *DecoderPool) SetTextureCompression(mode int) {
+func (p *Decoder) SetTextureCompression(mode int) {
 	switch mode {
 	case CompressDXT5:
 		p.texCompress.Store(DXT5FourCC)
@@ -525,7 +504,7 @@ func (p *DecoderPool) SetTextureCompression(mode int) {
 
 // prepareForUpload marks fully opaque frames, then compresses in place when a DXT mode is active and the canvas is
 // 4-aligned; idempotent, as compressing releases the frames the opaque check reads.
-func (p *DecoderPool) prepareForUpload(d *Decoded) {
+func (p *Decoder) prepareForUpload(d *Decoded) {
 	if d == nil {
 		return
 	}
@@ -558,7 +537,7 @@ func framesOpaque(frames []*image.RGBA) bool {
 }
 
 // fit downscales to the ceiling: fixed-cell types to a square, others to the sprite cap or the animated cap when set.
-func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
+func (p *Decoder) fit(t AssetType, d *Decoded) *Decoded {
 	if d == nil {
 		return d
 	}
@@ -578,51 +557,16 @@ func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
 }
 
 // fullSizeMaxH is the decode-time height cap for a full-size asset, 0 for fixed-cell types, which downscale in fit.
-func (p *DecoderPool) fullSizeMaxH(t AssetType) int {
+func (p *Decoder) fullSizeMaxH(t AssetType) int {
 	if decodeTargetPx(t) > 0 {
 		return 0
 	}
 	return int(p.spriteCap.Load())
 }
 
-// Submit queues a decode; a closed pool returns false and calls OnDone inline, so callers always hear back.
-func (p *DecoderPool) Submit(req DecodeRequest) bool {
-	if req.OnDone == nil {
-		return false
-	}
-	select {
-	case <-p.stop:
-		req.OnDone(req.URL, nil, fmt.Errorf("assets: decoder pool closed"))
-		return false
-	default:
-	}
-	select {
-	case p.jobs <- req:
-		return true
-	case <-p.stop:
-		req.OnDone(req.URL, nil, fmt.Errorf("assets: decoder pool closed"))
-		return false
-	}
-}
-
-// Close stops the workers and fails queued jobs so nobody waits forever.
-func (p *DecoderPool) Close() {
-	p.closeOnce.Do(func() {
-		close(p.stop)
-		p.wg.Wait()
-		for {
-			select {
-			case req := <-p.jobs:
-				req.OnDone(req.URL, nil, fmt.Errorf("assets: decoder pool closed"))
-			default:
-				return
-			}
-		}
-	})
-}
-
-func (p *DecoderPool) worker() {
-	defer p.wg.Done()
+// Decode decodes one payload on the calling goroutine; an animated payload hands OnDone frame 0 first, then the full set
+// replaces it at upload.
+func (p *Decoder) Decode(req DecodeRequest) {
 	// The render thread's crash guard cannot see this goroutine: log any panic to disk, then re-panic.
 	defer func() {
 		if r := recover(); r != nil {
@@ -630,18 +574,6 @@ func (p *DecoderPool) worker() {
 			panic(r)
 		}
 	}()
-	for {
-		select {
-		case req := <-p.jobs:
-			p.runJob(req)
-		case <-p.stop:
-			return
-		}
-	}
-}
-
-// runJob decodes one payload; animated payloads deliver frame 0 first, then the full set replaces it at upload.
-func (p *DecoderPool) runJob(req DecodeRequest) {
 	defer p.running.End(p.running.Begin(req.Type.Name(), req.URL))
 	done := req.OnDone
 	req.OnDone = func(url string, d *Decoded, err error) {
@@ -771,7 +703,7 @@ func fitEstablishingPrefix(first *Decoded, data []byte, maxH int) *Decoded {
 }
 
 // streamAnimated appends each remaining WebP/AVIF frame; if decimation is needed it falls back to a full decode.
-func (p *DecoderPool) streamAnimated(req DecodeRequest) {
+func (p *Decoder) streamAnimated(req DecodeRequest) {
 	format := Sniff(req.Data)
 	maxH := p.fullSizeMaxH(req.Type)
 	start := time.Now()
@@ -841,7 +773,7 @@ type DecoderStats struct {
 }
 
 // Stats snapshots the pool's counters.
-func (p *DecoderPool) Stats() DecoderStats {
+func (p *Decoder) Stats() DecoderStats {
 	return DecoderStats{
 		Decoded:   p.decoded.Load(),
 		Failed:    p.failed.Load(),

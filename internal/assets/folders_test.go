@@ -275,7 +275,7 @@ func TestFolderSpriteIsFoundInAFormatTheServerDoesNotList(t *testing.T) {
 	}
 	base := pr.base("characters/witch/normal")
 	pr.rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	if d := nextDecoded(t, pr.rig.manager, base); d.Err != nil {
+	if d := nextDecoded(t, pr.rig, base); d.Err != nil {
 		t.Fatalf("the folder's .png was not used: %v", d.Err)
 	}
 	for _, ext := range []string{".webp", ".png"} {

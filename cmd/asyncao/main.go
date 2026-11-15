@@ -141,8 +141,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal)*time.Second, sockets)
 	client.SetAssetOrigin(prefs.Load().AssetOrigin) // power-user Origin/CORS override for asset streaming
 	client.SetAdaptiveLatencyMultiple(prefs.Load().AdaptiveLatMultipleVal)
-	decoder := assets.NewDecoderPool(assets.DecodeWorkers())
-	defer decoder.Close()
+	decoder := assets.NewDecoder()
 	decoder.SetAnimatedBudgetMiB(prefs.Load().AnimatedBudgetMiB())
 	decoder.SetAnimatedDecodeConcurrency(prefs.Load().AnimDecodeConcurrency())
 

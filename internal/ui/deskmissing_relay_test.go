@@ -87,14 +87,8 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 			t.Fatalf("desk miss never relayed: ShowDesk=%v IsMissing=%v", room.Scene.ShowDesk, a.d.Store.IsMissing(deskBase))
 		}
 		a.drainWarnings()
-		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
-		default:
-			time.Sleep(2 * time.Millisecond)
-		}
+		releaseDeliveries(a)
+		time.Sleep(2 * time.Millisecond)
 	}
 
 	// Positive control on the type gate: a BACKGROUND miss must not be relayed as a
@@ -107,14 +101,8 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	ctrl := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(ctrl) {
 		a.drainWarnings()
-		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
-		default:
-			time.Sleep(2 * time.Millisecond)
-		}
+		releaseDeliveries(a)
+		time.Sleep(2 * time.Millisecond)
 	}
 	if a.d.Store.IsMissing(bgBase) {
 		t.Error("a missing BACKGROUND must not be marked missing — the background arm of set_scene has a fallback, the desk arm does not")
@@ -162,14 +150,8 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 		}
 		a.drainWarnings()
 		room.Update(16 * time.Millisecond)
-		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
-		default:
-			time.Sleep(2 * time.Millisecond)
-		}
+		releaseDeliveries(a)
+		time.Sleep(2 * time.Millisecond)
 	}
 
 	// The split stays honest: the background was relayed to the courtroom gate but

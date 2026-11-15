@@ -32,6 +32,8 @@ type Config struct {
 	Found func(Key, File)
 	// Finished runs on the Manager's goroutine when a request ends, and must not block.
 	Finished func(*Asset)
+	// Delivered runs after a result is waiting for TakeResults, on any goroutine, to wake the main thread's loop.
+	Delivered func()
 	// ClaimLimit is the memory decodes may claim at once; Now work may pass it, so a message can't wait on memory.
 	ClaimLimit int64
 	MaxAssets  int
@@ -87,10 +89,12 @@ type request struct {
 	lastErr error
 	queued  bool
 	dead    bool
-	pool    *Pool
-	work    func() any
-	done    func(any)
-	next    *request
+	// page marks an early part of a result, which the main thread uses without finishing the Asset.
+	page bool
+	pool *Pool
+	work func() any
+	done func(any)
+	next *request
 }
 
 // pipe is a lock-free list many threads push to and one thread takes whole.
@@ -341,10 +345,19 @@ func (m *Manager) Run(pool *Pool, urgency Urgency, work func() any, done func(an
 	m.post(&request{event: eventWork, pool: pool, urgency: urgency, work: work, done: done, step: stepWork})
 }
 
-// TakeResults hands the main thread every result that needs it, once per frame, with one atomic swap.
-func (m *Manager) TakeResults(use func(*Asset, any)) {
+// TakeResults hands the main thread every result that needs it, in order, once per frame, with one atomic swap. final is
+// false for an early page; only the final result is Finished.
+func (m *Manager) TakeResults(use func(a *Asset, result any, final bool)) {
 	for r := m.results.take(); r != nil; r = r.next {
-		use(r.asset, r.result)
+		use(r.asset, r.result, !r.page)
+	}
+}
+
+// deliver queues a result for TakeResults and wakes the main thread; any goroutine.
+func (m *Manager) deliver(r *request) {
+	m.results.push(r)
+	if m.cfg.Delivered != nil {
+		m.cfg.Delivered()
 	}
 }
 
@@ -631,7 +644,7 @@ func (m *Manager) decodeDone(r *request) {
 	}
 	if m.cfg.Formats[r.asset.key.Kind].OnMainThread() {
 		delete(m.active, r.asset.key)
-		m.results.push(r)
+		m.deliver(r)
 		return
 	}
 	m.end(r, Ready, r.result, nil)
@@ -710,10 +723,11 @@ func (m *Manager) start(p *Pool, r *request) {
 		m.claimed += r.claim
 		r.asset.claim.Store(r.claim)
 		format := m.cfg.Formats[r.asset.key.Kind]
-		key, data := r.asset.key, r.bytes
+		key, data, asset := r.asset.key, r.bytes, r.asset
 		hit := Hit{File: r.file, Source: m.cfg.Chains[key.Place].entries[r.entry].Source}
+		page := func(v any) { m.deliver(&request{asset: asset, result: v, page: true}) }
 		p.jobs <- func() {
-			r.result, r.err = format.Decode(key, hit, data)
+			r.result, r.err = format.Decode(key, hit, data, page)
 			m.report(r)
 		}
 	}

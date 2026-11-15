@@ -44,8 +44,7 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
 		Prefs:   a.d.Prefs,
 		T2:      t2,

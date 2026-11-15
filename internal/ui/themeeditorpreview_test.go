@@ -327,8 +327,7 @@ func stageCountingFetcher(t *testing.T, a *App) *countingFetcher {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(frameHarnessPoolWorkers)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	// The production constructor with ONE substituted collaborator. Streaming mode
 	// (no folders), because that is the mode a real install runs in and the mode
 	// whose egress the offline gate stands in front of.
