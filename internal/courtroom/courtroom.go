@@ -30,7 +30,10 @@ const (
 	// missingSpritesCap bounds the 404'd base set (hard rule 4); past it SpriteWaitTimeout bounds any unrecorded miss.
 	// sequentialWaitLimit releases a strict-sequencing hold: a transient error or dropped warning never settles an asset.
 	sequentialWaitLimit = 10 * time.Second
-	missingSpritesCap   = 512
+	// waitReaskInterval is how often a hold asks again for what it still waits on: an answer lost on the way, such as a
+	// dropped missing warning, would otherwise keep the message until the limit.
+	waitReaskInterval = time.Second
+	missingSpritesCap = 512
 	// missingDesksCap bounds the 404'd desk set (hard rule 4); past it the render-side release covers the layer.
 	missingDesksCap = 512
 	// blipVolumeFull is the unattenuated blip scale, used with no BlipVolumeFor callback.
@@ -324,9 +327,11 @@ type Courtroom struct {
 	// CatchUpLinger holds each fast-forwarded message before the next; default zero drains one per frame.
 	CatchUpLinger time.Duration
 
-	// waitLeft counts down an armed hold; waitFor is its message by pointer, so a new head re-arms.
-	waitLeft time.Duration
-	waitFor  *protocol.ChatMessage
+	// waitLeft counts down an armed hold, and waitAskLeft to its next ask; waitFor is its message by pointer, so a new
+	// head re-arms.
+	waitLeft    time.Duration
+	waitAskLeft time.Duration
+	waitFor     *protocol.ChatMessage
 	// waitBlocker is the need holding the message, needs messageNeeds' reused list.
 	waitBlocker messageNeed
 	needs       []messageNeed
@@ -591,7 +596,10 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	// This runs every frame of a hold: the need that stopped the last check is one lookup, the full list 174 allocations.
 	// A release is always decided on a fresh list.
 	armed := c.waitFor == msg
-	if !armed || c.needSettled(c.waitBlocker) {
+	if armed {
+		c.waitAskLeft -= dt
+	}
+	if !armed || c.needSettled(c.waitBlocker) || c.waitAskLeft <= 0 {
 		needs := c.messageNeeds(msg)
 		blocker, blocked := c.firstUnsettled(needs)
 		if !blocked {
@@ -609,6 +617,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		// Every fresh list, not only the first: a need that joins once char.ini lands (chat skin, blip) has no other
 		// requester until begin, which runs only after the gate releases.
 		c.requestNeeds(needs)
+		c.waitAskLeft = waitReaskInterval
 	}
 	c.waitLeft -= dt
 	if c.waitLeft <= 0 {
