@@ -99,7 +99,7 @@ func TestAppendStreamKeepsLatchedScaleMode(t *testing.T) {
 		t.Fatal("establish: page must be resident")
 	}
 	// A draw latches the filter exactly the way viewport.go does.
-	page.applyScaleMode(ren, sdl.ScaleModeNearest)
+	page.ApplyScaleMode(ren, sdl.ScaleModeNearest)
 
 	if err := store.AppendStream(base, streamChunk(1, true, 3)); err != nil {
 		t.Fatalf("append: %v", err)

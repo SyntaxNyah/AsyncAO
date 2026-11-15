@@ -12,9 +12,9 @@ func setTextureScaleMode(tex *sdl.Texture, mode sdl.ScaleMode) bool {
 	return tex != nil && tex.SetScaleMode(mode) == nil
 }
 
-// spriteScaleMode applies AO2's rule (animationlayer.cpp:229-273): smooth, but point-sampled when enlarged.
-func (v *Viewport) spriteScaleMode(layer *courtroom.SpriteLayer, nativeH, targetH int32) sdl.ScaleMode {
-	switch courtroom.ResolveScalingMode(v.fx.UserScaling, layer.Scaling) {
+// SpriteScaleMode applies AO2's rule (animationlayer.cpp:229-273): smooth, but point-sampled when enlarged.
+func SpriteScaleMode(user, char courtroom.ScalingMode, nativeH, targetH int32) sdl.ScaleMode {
+	switch courtroom.ResolveScalingMode(user, char) {
 	case courtroom.ScalingPixel:
 		return sdl.ScaleModeNearest
 	case courtroom.ScalingSmooth:
@@ -26,8 +26,8 @@ func (v *Viewport) spriteScaleMode(layer *courtroom.SpriteLayer, nativeH, target
 	return sdl.ScaleModeLinear
 }
 
-// applyScaleMode sets every frame's filter, memoised so the steady state does no cgo; render thread only.
-func (p *TexturePage) applyScaleMode(ren *sdl.Renderer, mode sdl.ScaleMode) {
+// ApplyScaleMode sets every frame's filter, memoised so the steady state does no cgo; render thread only.
+func (p *TexturePage) ApplyScaleMode(ren *sdl.Renderer, mode sdl.ScaleMode) {
 	if p == nil || ren == nil {
 		return
 	}

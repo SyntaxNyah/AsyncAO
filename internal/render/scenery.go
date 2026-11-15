@@ -46,7 +46,7 @@ func (v *Viewport) drawScenery(ren *sdl.Renderer, scene *courtroom.Scene, base s
 		return
 	}
 	v.fillRect = sceneryRect(vp, page.W, page.H, scene.SceneryStretch, v.panorama, v.origin)
-	page.applyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, v.fillRect.H))
+	page.ApplyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, v.fillRect.H))
 	tex := page.Frames[frame]
 	d := uint8(channelMax)
 	if dimPct < percentMax {

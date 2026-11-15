@@ -29,11 +29,13 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 	if e.Preanim != "" && e.Preanim != "-" { // "-" / "" = no preanim (AO convention)
 		a.previewBase = a.urls.Emote(char, e.Preanim, courtroom.EmotePreanim)
 		a.previewName, a.previewNameFor = name, a.previewBase
+		a.notePreviewChar(char)
 		a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preanim preview)
 		return
 	}
 	a.previewBase = a.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
 	a.previewName, a.previewNameFor = name, a.previewBase
+	a.notePreviewChar(char)
 	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 }
 
