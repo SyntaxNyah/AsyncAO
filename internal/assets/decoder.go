@@ -327,44 +327,56 @@ func DecodeWorkers() int {
 // defaultAnimatedDecodeConcurrency bounds full animated decodes, since their per-frame RGBA is the memory spike.
 const defaultAnimatedDecodeConcurrency = 2
 
-// animGate is a resizable semaphore: a buffered channel cannot resize, so waiters re-check an atomic limit.
+// animGate bounds concurrent animated decodes and lets waiters in by arrival order, so a small loop that came first is
+// not left behind a long animation that came later; the limit can change live, and 0 means no bound. At most one
+// waiter per Compute worker, so the queue is bounded by the pool.
 type animGate struct {
-	mu     sync.Mutex
-	cond   *sync.Cond
-	limit  atomic.Int64
-	active atomic.Int64
+	mu      sync.Mutex
+	limit   int
+	active  int
+	waiting []chan struct{}
 }
 
-func newAnimGate(limit int) *animGate {
-	g := &animGate{}
-	g.cond = sync.NewCond(&g.mu)
-	g.limit.Store(int64(limit))
-	return g
-}
+func newAnimGate(limit int) *animGate { return &animGate{limit: limit} }
 
-// SetLimit changes the bound live; a raised limit wakes waiters.
+// SetLimit changes the bound live; a raised limit lets the longest waiters in.
 func (g *animGate) SetLimit(n int) {
 	g.mu.Lock()
-	g.limit.Store(int64(n))
-	g.cond.Broadcast()
+	g.limit = n
+	g.admitLocked()
 	g.mu.Unlock()
 }
 
-// acquire blocks until an animated decode may start.
+// acquire blocks until an animated decode may start, behind everyone already waiting.
 func (g *animGate) acquire() {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	for g.limit.Load() > 0 && g.active.Load() >= g.limit.Load() {
-		g.cond.Wait()
+	if len(g.waiting) == 0 && g.roomLocked() {
+		g.active++
+		g.mu.Unlock()
+		return
 	}
-	g.active.Add(1)
+	turn := make(chan struct{})
+	g.waiting = append(g.waiting, turn)
+	g.mu.Unlock()
+	<-turn
 }
 
 func (g *animGate) release() {
 	g.mu.Lock()
-	g.active.Add(-1)
-	g.cond.Broadcast()
+	g.active--
+	g.admitLocked()
 	g.mu.Unlock()
+}
+
+func (g *animGate) roomLocked() bool { return g.limit <= 0 || g.active < g.limit }
+
+// admitLocked lets the longest waiters in while there is room; the caller holds g.mu.
+func (g *animGate) admitLocked() {
+	for len(g.waiting) > 0 && g.roomLocked() {
+		g.active++
+		close(g.waiting[0])
+		g.waiting = g.waiting[1:]
+	}
 }
 
 // DecodeRequest is one decode job.
