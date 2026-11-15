@@ -84,8 +84,9 @@ type Client struct {
 	backoff  sync.Map // host string → *hostBackoff
 	hostLat  sync.Map // host string → *hostLatency (TTFB EWMA)
 	timeout  time.Duration
-	// bodyBudget is a field rather than the const so tests can shrink it.
+	// bodyBudget and stallLimit are fields rather than the consts so tests can shrink them.
 	bodyBudget time.Duration
+	stallLimit time.Duration
 	bufPool    sync.Pool // *bytes.Buffer for unknown-length reads
 
 	requests   atomic.Int64
@@ -162,6 +163,7 @@ func newClient(timeout, notFoundTTL time.Duration, sockets *netproxy.Factory) *C
 		dns:        dns,
 		timeout:    timeout,
 		bodyBudget: bodyTransferBudget,
+		stallLimit: streamStallLimit,
 		bufPool: sync.Pool{
 			New: func() any {
 				buf := &bytes.Buffer{}
@@ -206,16 +208,9 @@ func (c *Client) PreResolve(ctx context.Context, host string) {
 // Fetch shares one upstream request between callers; ctx cancels only this caller's wait, and the returned
 // slice must be treated as immutable.
 func (c *Client) Fetch(ctx context.Context, url string) ([]byte, error) {
-	if _, found := c.notFound.Get(url); found {
-		c.cached404s.Add(1)
-		return nil, fmt.Errorf("%w: %s (cached)", ErrAssetNotFound, url)
+	if err := c.refuse(url); err != nil {
+		return nil, err
 	}
-	if host := hostOf(url); host != "" {
-		if until, backing := c.backingOff(host); backing {
-			return nil, fmt.Errorf("%w: %s until %s", ErrHostBackingOff, host, until.Format(time.RFC3339))
-		}
-	}
-
 	ch := c.group.DoChan(url, func() (any, error) {
 		return c.fetchOnce(url)
 	})
@@ -229,6 +224,20 @@ func (c *Client) Fetch(ctx context.Context, url string) ([]byte, error) {
 		// The shared fetch keeps running for other waiters.
 		return nil, ctx.Err()
 	}
+}
+
+// refuse answers without a request: a 404 cached inside its TTL, or a host inside its backoff window.
+func (c *Client) refuse(url string) error {
+	if _, found := c.notFound.Get(url); found {
+		c.cached404s.Add(1)
+		return fmt.Errorf("%w: %s (cached)", ErrAssetNotFound, url)
+	}
+	if host := hostOf(url); host != "" {
+		if until, backing := c.backingOff(host); backing {
+			return fmt.Errorf("%w: %s until %s", ErrHostBackingOff, host, until.Format(time.RFC3339))
+		}
+	}
+	return nil
 }
 
 // hostLatency uses plain load and store, as a lost update only delays the average by one sample.
@@ -308,15 +317,56 @@ func (c *Client) fetchOnce(url string) ([]byte, error) {
 
 // fetchAttempt is one request: 200 gives bytes, 404 the negative-cached miss, anything else a transient error.
 func (c *Client) fetchAttempt(url string) ([]byte, error) {
-	c.requests.Add(1)
-	host := hostOf(url)
 	// One timer drives two deadlines: adaptive TTFB for headers, then the body budget, so a small-asset EWMA
 	// can't cut a large body mid-stream.
-	ctx, cancel := context.WithCancel(context.Background())
-	deadline := time.AfterFunc(c.adaptiveTimeout(host), cancel)
+	resp, host, deadline, cancel, err := c.start(context.Background(), url, "")
+	if err != nil {
+		return nil, err
+	}
 	defer cancel()
 	defer deadline.Stop()
+	// Headers arrived: swap to the body budget. If the timer already fired, ctx is canceled and the read fails fast.
+	deadline.Reset(c.bodyBudget)
+	defer func() {
+		// Drain so the keep-alive connection is reusable.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
+	if err := c.checkStatus(url, host, resp, http.StatusOK); err != nil {
+		return nil, err
+	}
+	data, err := c.readBody(resp)
+	if err != nil {
+		c.failures.Add(1)
+		return nil, fmt.Errorf("network: reading %s: %w", url, err)
+	}
+	c.recordSuccess(host)
+	c.hits.Add(1)
+	c.bytesRead.Add(int64(len(data)))
+	return data, nil
+}
+
+// checkStatus passes the status a request wanted; a 404 is cached as missing, and anything else counts against the host.
+func (c *Client) checkStatus(url, host string, resp *http.Response, want int) error {
+	switch resp.StatusCode {
+	case want:
+		return nil
+	case http.StatusNotFound:
+		c.notFound.Add(url, struct{}{})
+		c.notFounds.Add(1)
+		c.recordSuccess(host) // the host is healthy; the asset just isn't there
+		return fmt.Errorf("%w: %s", ErrAssetNotFound, url)
+	default:
+		// 5xx means the host is misbehaving, so it counts toward backoff; fetchOnce's retry absorbs one-off hiccups.
+		c.recordFailure(host)
+		c.failures.Add(1)
+		return fmt.Errorf("%w: fetching %s: %s", ErrUnexpectedStatus, url, resp.Status)
+	}
+}
+
+// newRequest is a GET for url with the headers every asset request carries.
+func (c *Client) newRequest(ctx context.Context, url string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("network: building request for %s: %w", url, err)
@@ -326,47 +376,7 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 		req.Header.Set("Origin", *o)
 		req.Header.Set("Referer", *o+"/") // some bases gate by Referer (hotlink protection) rather than Origin
 	}
-
-	start := time.Now()
-	resp, err := c.assetHTTP().Do(req)
-	if err != nil {
-		c.recordFailure(host)
-		c.failures.Add(1)
-		return nil, fmt.Errorf("network: fetching %s: %w", url, err)
-	}
-	// Headers arrived: swap to the body budget. If the timer already fired, ctx is canceled and the read fails fast.
-	deadline.Reset(c.bodyBudget)
-	c.observeLatency(host, time.Since(start))
-	defer func() {
-		// Drain so the keep-alive connection is reusable.
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
-
-	switch {
-	case resp.StatusCode == http.StatusOK:
-		data, err := c.readBody(resp)
-		if err != nil {
-			c.failures.Add(1)
-			return nil, fmt.Errorf("network: reading %s: %w", url, err)
-		}
-		c.recordSuccess(host)
-		c.hits.Add(1)
-		c.bytesRead.Add(int64(len(data)))
-		return data, nil
-
-	case resp.StatusCode == http.StatusNotFound:
-		c.notFound.Add(url, struct{}{})
-		c.notFounds.Add(1)
-		c.recordSuccess(host) // the host is healthy; the asset just isn't there
-		return nil, fmt.Errorf("%w: %s", ErrAssetNotFound, url)
-
-	default:
-		// 5xx means the host is misbehaving, so it counts toward backoff; fetchOnce's retry absorbs one-off hiccups.
-		c.recordFailure(host)
-		c.failures.Add(1)
-		return nil, fmt.Errorf("%w: fetching %s: %s", ErrUnexpectedStatus, url, resp.Status)
-	}
+	return req, nil
 }
 
 // readBody allocates once for a known length; that path can't pool because T2 and T3 retain the payload
