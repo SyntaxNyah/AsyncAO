@@ -66,7 +66,7 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "gs4"
 	urls := courtroom.NewURLBuilder(local.BaseURL())
-	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, nil)
+	room := courtroom.NewCourtroom(urls, a.d.Manager.Media(), a.d.Manager, sess, nil)
 	a.room = room
 	// The def background loaded as its legacy file, so the desk follows to defensedesk.
 	room.Assets = loadedAs{spriteProbe(func(string) bool { return false }), urls.Background("gs4", "defenseempty") + config.ExtPNG}
@@ -127,7 +127,7 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "gs4"
-	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, nil)
+	room := courtroom.NewCourtroom(urls, a.d.Manager.Media(), a.d.Manager, sess, nil)
 	a.room = room
 	room.SequentialWait = true
 	// Everything but the position background resolves as "settled", so the gate

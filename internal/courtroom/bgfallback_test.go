@@ -53,7 +53,7 @@ func newBGRig(t *testing.T) *bgRig {
 	mgr.SetFolders(local.Mounts(), nil)
 	sess := NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "court"
-	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr, sess, nil)
+	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr.Media(), mgr, sess, nil)
 	return &bgRig{room: room, sess: sess, mgr: mgr, mount: mount}
 }
 

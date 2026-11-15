@@ -38,7 +38,7 @@ func newRoomForTest(t testing.TB) *courtroom.Courtroom {
 	})
 	t.Cleanup(mgr.CloseMedia)
 	mgr.SetFolders(local.Mounts(), nil)
-	return courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), mgr, nil, courtroom.NopAudio{})
+	return courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), mgr.Media(), mgr, nil, courtroom.NopAudio{})
 }
 
 func msgFor(charID int, name, text string) *protocol.ChatMessage {

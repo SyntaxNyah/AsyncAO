@@ -841,7 +841,7 @@ func TestRenderFullClientTextureRestores(t *testing.T) {
 	// A pinned client whose swapped-in session is nil → the inner drawCourtroom
 	// early-returns (and sets a.screen=lobby, which the snapshot must undo).
 	a.splitVP = render.NewViewport(nil, false)
-	a.splitRoom = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
+	a.splitRoom = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, nil, courtroom.NopAudio{})
 	a.splitTab = &courtTab{state: sessionState{serverName: "PinnedServer"}} // sess stays nil
 
 	a.renderFullClientTexture(640, 480)
@@ -1579,7 +1579,7 @@ func TestRederiveMessageDuckClearsStale(t *testing.T) {
 	})
 
 	// ducking enabled, so the phase is what decides
-	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, nil, courtroom.NopAudio{})
 	// A message finished (phase is Idle) but the duck flag is stale-true.
 	a.musicDucked = true
 	a.rederiveMessageDuck()

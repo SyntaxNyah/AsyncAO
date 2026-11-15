@@ -2,7 +2,6 @@ package courtroom
 
 import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -177,7 +176,7 @@ func (c *Courtroom) firstUnsettled(needs []messageNeed) (messageNeed, bool) {
 func (c *Courtroom) requestNeeds(needs []messageNeed) {
 	for _, n := range needs {
 		if n.gate != gateOverlay && !c.needSettled(n) {
-			c.mgr.PrefetchChain(n.base, n.alts, n.typ, network.PriorityHigh) // AssetType: from the need
+			c.ask(n.base, n.alts, n.typ) // AssetType: from the need
 		}
 	}
 }

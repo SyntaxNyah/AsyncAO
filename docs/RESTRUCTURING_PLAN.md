@@ -141,7 +141,10 @@ in **Status**. Update Status in the same commit that completes a step.
       - [x] `Pump` on `TakeResults`: images decode on the Compute worker holding the request, and an animation's opening
             frames reach the pump as early pages of the same request (`Format.Decode`'s `page`). The decoder's own
             goroutines and the 64-slot hand-off channel are gone
-      - [ ] courtroom, then screens, theme and audio
+      - [x] courtroom: asks `media.Get(assets.ChainKey(base, t), …)`. What the bridge did per request (skip a texture
+            already uploaded, start character mapping, warn on a repeat ask while missing, count refusals) is media's
+            `Skip`/`Asked`/`MissingAgain` hooks and `Refused()`
+      - [ ] screens, theme and audio
       - [ ] music streaming
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate

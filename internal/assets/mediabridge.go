@@ -73,7 +73,8 @@ func newMediaBridge(m *Manager) *mediaBridge {
 	b.folders = newBridgeFolders(m)
 	b.learned = saver.New(m.learnedPath, learnedSaveDelay, b.encodeLearned)
 	cfg := media.Config{Candidates: b.builder.Build, AllFormats: media.EveryFormat, Found: b.found,
-		Finished: b.finished, Delivered: m.NotifyDelivery, Compute: b.compute}
+		Finished: b.finished, Delivered: m.NotifyDelivery, Skip: b.skip, Asked: b.asked, MissingAgain: b.missingAgain,
+		Compute: b.compute}
 	b.remote = media.NewRemoteSource(ctx, bridgeFetcher{m}, media.DefaultMissingTTL, time.Now)
 	cfg.Chains = map[media.Place]*media.Chain{media.PlaceServer: media.NewChain(
 		media.Entry{Source: bridgeMemory{m.t2, b.pin, m}},
@@ -100,13 +101,13 @@ func (b *mediaBridge) found(k media.Key, f media.File) {
 
 // learn is found for a raw walk on a worker: url turned up for base.
 func (b *mediaBridge) learn(base string, t AssetType, url string) {
-	b.media.Do(func() { b.found(chainKey(base, t), media.File(url)) })
+	b.media.Do(func() { b.found(ChainKey(base, t), media.File(url)) })
 }
 
 // candidates lists the URLs base may be, in the order the live chain asks; for workers, as it waits on the Manager.
 func (b *mediaBridge) candidates(base string, t AssetType) []string {
 	var files []media.File
-	b.media.Call(func() { files = b.builder.Build(chainKey(base, t), base) })
+	b.media.Call(func() { files = b.builder.Build(ChainKey(base, t), base) })
 	urls := make([]string, len(files))
 	for i, f := range files {
 		urls[i] = string(f)
@@ -244,8 +245,16 @@ func kindOf(t AssetType) media.Kind {
 	return media.KindImage
 }
 
-func chainKey(base string, t AssetType) media.Key {
+// ChainKey is the key a base is asked under; its formats and spellings are the media system's to find.
+func ChainKey(base string, t AssetType) media.Key {
 	return media.Key{Place: media.PlaceServer, Path: base, Kind: kindOf(t), Class: classOf(t), Tag: uint8(t)}
+}
+
+// ExactKey is the key for a complete URL, such as a music track: one file, no formats to try.
+func ExactKey(url string, t AssetType) media.Key {
+	k := ChainKey(url, t)
+	k.Class = media.ClassExact
+	return k
 }
 
 func flagsOf(quiet, sticky bool) media.Flags {
@@ -260,52 +269,51 @@ func flagsOf(quiet, sticky bool) media.Flags {
 }
 
 func (b *mediaBridge) askChain(base string, alts []string, t AssetType, p network.Priority, sticky bool) {
-	if b.m.t1Contains != nil && b.m.t1Contains(base) {
-		b.m.t1Hits.Add(1)
-		return
-	}
-	b.mapCharacterOf(base, t)
-	b.ask(chainKey(base, t), flagsOf(false, sticky), p, alts...)
-}
-
-// mapCharacterOf maps the folder of a character whose sprites are asked for, so everyone who appears is mapped and a
-// roster of icons is not.
-func (b *mediaBridge) mapCharacterOf(base string, t AssetType) {
-	if t != AssetTypeCharSprite && t != AssetTypeEmoteButton || !strings.HasPrefix(base, "http") {
-		return
-	}
-	if root := media.CharacterRoot(base); root != "" {
-		b.media.Do(func() { media.MapCharacter(b.media, b.network, b.remote, b.builder, root) })
-	}
+	b.media.Get(ChainKey(base, t), urgencyOf(p), flagsOf(false, sticky), alts...)
 }
 
 func (b *mediaBridge) askExact(url string, t AssetType, p network.Priority) {
-	if b.m.t1Contains != nil && b.m.t1Contains(url) {
-		b.m.t1Hits.Add(1)
-		return
-	}
-	k := chainKey(url, t)
-	k.Class = media.ClassExact
-	b.ask(k, 0, p)
+	b.media.Get(ExactKey(url, t), urgencyOf(p), 0)
 }
 
 func (b *mediaBridge) askRaw(url string, p network.Priority) {
 	b.media.Get(media.Key{Place: media.PlaceServer, Path: url, Kind: media.KindRaw, Class: media.ClassExact}, urgencyOf(p), media.Quiet)
 }
 
-func (b *mediaBridge) ask(k media.Key, f media.Flags, p network.Priority, alts ...string) {
-	a := b.media.Get(k, urgencyOf(p), f, alts...)
-	switch a.State() {
-	case media.Missing:
-		// Asked again inside the file's missing time: no request, and the warning still fires.
-		b.m.skipExhausted(k.Path, AssetType(k.Tag), f&media.Quiet != 0)
-	case media.Refused:
-		b.m.refused.Add(1)
+// skip is Config.Skip: an uploaded texture is held already, and one that failed to decode lately is left alone.
+func (b *mediaBridge) skip(k media.Key) bool {
+	if k.Kind == media.KindRaw {
+		return false
+	}
+	if b.m.t1Contains != nil && b.m.t1Contains(k.Path) {
+		b.m.t1Hits.Add(1)
+		return true
+	}
+	return b.m.t1Failed != nil && b.m.t1Failed(k.Path)
+}
+
+// asked is Config.Asked: a character's first sprite or emote button maps its folder, so everyone who appears is mapped
+// and a roster of icons is not.
+func (b *mediaBridge) asked(k media.Key) {
+	t := AssetType(k.Tag)
+	if k.Kind == media.KindRaw || t != AssetTypeCharSprite && t != AssetTypeEmoteButton || !strings.HasPrefix(k.Path, "http") {
+		return
+	}
+	if root := media.CharacterRoot(k.Path); root != "" {
+		media.MapCharacter(b.media, b.network, b.remote, b.builder, root)
+	}
+}
+
+// missingAgain is Config.MissingAgain: asked again inside its missing time costs no request, and the warning still
+// fires.
+func (b *mediaBridge) missingAgain(a *media.Asset) {
+	if k := a.Key(); k.Kind != media.KindRaw {
+		b.m.skipExhausted(k.Path, AssetType(k.Tag), a.Quiet())
 	}
 }
 
 func (b *mediaBridge) isMissing(base string, t AssetType) bool {
-	a := b.media.Peek(chainKey(base, t))
+	a := b.media.Peek(ChainKey(base, t))
 	return a != nil && a.State() == media.Missing
 }
 
