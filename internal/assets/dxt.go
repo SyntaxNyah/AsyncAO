@@ -266,7 +266,7 @@ func nearestColor(r, g, b uint8, pal [4][3]uint8, colors int) uint8 {
 	return best
 }
 
-// Texture-compression modes for DecoderPool.SetTextureCompression.
+// Texture-compression modes for Decoder.SetTextureCompression.
 const (
 	CompressOff  = 0 // raw RGBA (the default)
 	CompressDXT5 = 1 // DXT5/BC3, 8 bpp, smooth alpha

@@ -67,9 +67,6 @@ const (
 	// frameHarnessDt is the per-frame delta handed to App.Frame — one 60 Hz tick.
 	// FIXED rather than wall-clock so a slow machine cannot change what a gate sees.
 	frameHarnessDt = 16 * time.Millisecond
-	// frameHarnessPoolWorkers is the harness Manager's decode workers; no gate here fetches anything (a t.TempDir
-	// folder, autodetect off).
-	frameHarnessPoolWorkers = 2
 	// frameHarnessApplyFrames bounds how many frames driveUntilThemeApplied spends
 	// waiting for an apply goroutine. At 16 ms of simulated time each this is a
 	// generous real-time budget with a hard stop, so a stuck apply fails the gate
@@ -99,8 +96,7 @@ func stageFrameDrivenApp(t testing.TB) (*App, func()) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(frameHarnessPoolWorkers)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
 		Prefs:   a.d.Prefs,
 		T2:      t2,

@@ -45,13 +45,12 @@ func TestManagerDeliveryNotify(t *testing.T) {
 	case <-deadline:
 		t.Fatal("no delivery wake after the decode landed")
 	}
-	select {
-	case d := <-rig.manager.Decoded():
-		if d.Err != nil || d.Asset == nil {
-			t.Fatalf("decode delivery broken: %+v", d)
-		}
-		d.Asset.Release()
-	case <-time.After(managerWait):
+	d, ok := rig.takeDecoded(managerWait)
+	if !ok {
 		t.Fatal("the decode itself never delivered")
 	}
+	if d.Err != nil || d.Asset == nil {
+		t.Fatalf("decode delivery broken: %+v", d)
+	}
+	d.Asset.Release()
 }

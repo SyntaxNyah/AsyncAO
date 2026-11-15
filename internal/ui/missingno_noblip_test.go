@@ -41,8 +41,7 @@ func wireLocalManager(t *testing.T, a *App, dir string) (*assets.LocalFetcher, f
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 
 	local := assets.NewLocalFetcher([]string{dir})
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
@@ -128,14 +127,10 @@ func TestSceneWarmNoMissingnoForFolderOnlySprite(t *testing.T) {
 	settleDeadline := time.Now().Add(5 * time.Second)
 	gotDecode := false
 	for !gotDecode && time.Now().Before(settleDeadline) {
+		if deliveredBase(a, glued) {
+			gotDecode = true
+		}
 		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Err == nil && d.Base == glued {
-				gotDecode = true
-			}
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
 		case w := <-a.d.Manager.Warnings():
 			t.Fatalf("a folder-only sprite must NOT report missing (no-blip guarantee); got Warning for %q", w.Base)
 		default:
@@ -172,14 +167,10 @@ func TestHealSpriteLayerFolderOnlySprite(t *testing.T) {
 	settleDeadline := time.Now().Add(5 * time.Second)
 	gotDecode := false
 	for !gotDecode && time.Now().Before(settleDeadline) {
+		if deliveredBase(a, glued) {
+			gotDecode = true
+		}
 		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Err == nil && d.Base == glued {
-				gotDecode = true
-			}
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
 		case w := <-a.d.Manager.Warnings():
 			t.Fatalf("a folder-only sprite must NOT report missing via healSpriteLayer; got Warning for %q", w.Base)
 		default:
@@ -233,14 +224,10 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	settleDeadline := time.Now().Add(5 * time.Second)
 	gotDecode := false
 	for !gotDecode && time.Now().Before(settleDeadline) {
+		if deliveredBase(a, prefixed) {
+			gotDecode = true
+		}
 		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Err == nil && d.Base == prefixed {
-				gotDecode = true
-			}
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
 		case w := <-a.d.Manager.Warnings():
 			t.Fatalf("a bare-only sprite must NOT report missing (no-blip guarantee); got Warning for %q", w.Base)
 		default:
@@ -291,13 +278,7 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 			break
 		}
 		// Drain any transient decode results so the pipeline keeps moving.
-		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
-		default:
-			time.Sleep(2 * time.Millisecond)
-		}
+		releaseDeliveries(a)
+		time.Sleep(2 * time.Millisecond)
 	}
 }

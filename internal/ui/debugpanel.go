@@ -242,7 +242,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 		if ps.UploadErrs > 0 {
 			col = ColTierYellow
 		}
-		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Pump: %d upload errors · %d transient (network) errors", ps.UploadErrs, ps.TransientErrs), col)
+		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Pump: %d upload errors · %d failed fetches", ps.UploadErrs, a.d.Manager.Stats().Failed), col)
 		y += debugLineH
 	}
 
@@ -361,8 +361,8 @@ func (a *App) drawDebugWorkers(r sdl.Rect) {
 		y += debugLineH
 	}
 	s := a.d.Manager.WorkStats()
-	line(fmt.Sprintf("Decode: %d/%d busy · queue %d/%d", len(s.Decoding), s.DecodeWorkers, s.DecodeQueued, s.DecodeCap), ColText)
-	line(fmt.Sprintf("Waiting for the frame loop: images %d/%d · audio %d/%d", s.DecodedQueued, s.DecodedCap, s.AudioQueued, s.AudioCap), ColText)
+	line(fmt.Sprintf("Decode: %d/%d busy", len(s.Decoding), s.DecodeWorkers), ColText)
+	line(fmt.Sprintf("Waiting for the frame loop: audio %d/%d", s.AudioQueued, s.AudioCap), ColText)
 	col := ColText
 	if s.Refused > 0 {
 		col = ColDanger

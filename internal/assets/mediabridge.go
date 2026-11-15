@@ -73,7 +73,7 @@ func newMediaBridge(m *Manager) *mediaBridge {
 	b.folders = newBridgeFolders(m)
 	b.learned = saver.New(m.learnedPath, learnedSaveDelay, b.encodeLearned)
 	cfg := media.Config{Candidates: b.builder.Build, AllFormats: media.EveryFormat, Found: b.found,
-		Finished: b.finished, Compute: b.compute}
+		Finished: b.finished, Delivered: m.NotifyDelivery, Compute: b.compute}
 	b.remote = media.NewRemoteSource(ctx, bridgeFetcher{m}, media.DefaultMissingTTL, time.Now)
 	cfg.Chains = map[media.Place]*media.Chain{media.PlaceServer: media.NewChain(
 		media.Entry{Source: bridgeMemory{m.t2, b.pin, m}},
@@ -355,12 +355,8 @@ func (b *mediaBridge) finished(a *media.Asset) {
 		if t == AssetTypeMusic {
 			b.m.reportMusicFailure(k.Path, err)
 		}
-		// Tagged transient so it never enters the decode negative cache.
-		b.media.Run(b.compute, media.Later, func() any {
-			b.m.decodedCh <- DecodedAsset{URL: k.Path, Base: k.Path, Type: t, Err: err, Transient: true}
-			b.m.NotifyDelivery()
-			return nil
-		}, func(any) {})
+		// Counted, never shown as a broken asset: the bytes were never seen, so the next ask tries again.
+		b.m.failed.Add(1)
 	default:
 		// Delivered: from here T1 answers, and an evicted texture has to be able to ask again.
 		b.media.ForgetAsset(a)
@@ -570,32 +566,32 @@ func (b *mediaBridge) hitOf(hit media.Hit) (string, bool) {
 	return string(hit.File), hit.Source == media.Source(b.folders)
 }
 
-// bridgeImage decodes through DecoderPool, holding a Compute worker until the last frame, so Now work keeps its place.
+// bridgeImage decodes on the Compute worker that holds the request; an animation's opening frames go to the render
+// thread as early pages, and the last page is the result.
 type bridgeImage struct{ b *mediaBridge }
 
-func (f bridgeImage) OnMainThread() bool { return false }
+func (f bridgeImage) OnMainThread() bool { return true }
 
-func (f bridgeImage) Decode(k media.Key, hit media.Hit, data []byte) (any, error) {
+func (f bridgeImage) Decode(k media.Key, hit media.Hit, data []byte, page func(any)) (any, error) {
 	url, fromPack := f.b.hitOf(hit)
 	t := AssetType(k.Tag)
 	m := f.b.m
-	finished := make(chan struct{})
-	accepted := m.decoder.Submit(DecodeRequest{
+	var last DecodedAsset
+	m.decoder.Decode(DecodeRequest{
 		URL:            url,
 		Data:           data,
 		Type:           t,
 		PlayAnimations: m.prefs.Load().PreferAnimated,
 		OnDone: func(doneURL string, d *Decoded, err error) {
-			m.onDecoded(doneURL, k.Path, t, fromPack, d, err)
-			if d == nil || !d.Partial {
-				close(finished)
+			decoded := DecodedAsset{URL: doneURL, Base: k.Path, Type: t, Asset: d, Err: err, FromPack: fromPack}
+			if d != nil && d.Partial {
+				page(decoded)
+				return
 			}
+			last = decoded
 		},
 	})
-	if accepted {
-		<-finished
-	}
-	return nil, nil
+	return last, nil
 }
 
 // bridgeSound hands the bytes to the audio side, which decodes them itself.
@@ -603,7 +599,7 @@ type bridgeSound struct{ b *mediaBridge }
 
 func (f bridgeSound) OnMainThread() bool { return false }
 
-func (f bridgeSound) Decode(k media.Key, hit media.Hit, data []byte) (any, error) {
+func (f bridgeSound) Decode(k media.Key, hit media.Hit, data []byte, _ func(any)) (any, error) {
 	url, fromPack := f.b.hitOf(hit)
 	f.b.m.audioCh <- AudioAsset{URL: url, Base: k.Path, Type: AssetType(k.Tag), Data: data, FromPack: fromPack}
 	f.b.m.NotifyDelivery()

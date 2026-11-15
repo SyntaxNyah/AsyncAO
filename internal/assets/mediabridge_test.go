@@ -73,31 +73,29 @@ func newBridgeRig(t *testing.T, host *bridgeFakeHost) *testRig {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := NewDecoderPool(bridgeTestWorkers)
-	t.Cleanup(decoder.Close)
+	decoder := NewDecoder()
 	m := NewManager(ManagerDeps{Prefs: prefs, T2: t2, Disk: disk, Source: host, Decoder: decoder})
 	t.Cleanup(m.CloseMedia)
 	return &testRig{prefs: prefs, manager: m, decoder: decoder, disk: disk, t2: t2}
 }
 
 // nextDecoded waits for the final page of base, releasing partial ones as the upload pump does.
-func nextDecoded(t *testing.T, m *Manager, base string) DecodedAsset {
+func nextDecoded(t *testing.T, rig *testRig, base string) DecodedAsset {
 	t.Helper()
-	deadline := time.After(bridgeTestTimeout)
+	deadline := time.Now().Add(bridgeTestTimeout)
 	for {
-		select {
-		case d := <-m.Decoded():
-			if d.Base != base {
-				continue
-			}
-			if d.Asset != nil && d.Asset.Partial {
-				d.Asset.Release()
-				continue
-			}
-			return d
-		case <-deadline:
+		d, ok := rig.takeDecoded(time.Until(deadline))
+		if !ok {
 			t.Fatalf("%s was never delivered", base)
 		}
+		if d.Base != base {
+			continue
+		}
+		if d.Asset != nil && d.Asset.Partial {
+			d.Asset.Release()
+			continue
+		}
+		return d
 	}
 }
 
@@ -107,7 +105,7 @@ func TestBridgeDeliversAndLearns(t *testing.T) {
 	r := newBridgeRig(t, host)
 	base := bridgeTestOrigin + "c/(a)e"
 	r.manager.PrefetchChain(base, []string{bridgeTestOrigin + "c/e"}, AssetTypeCharSprite, network.PriorityHigh)
-	d := nextDecoded(t, r.manager, base)
+	d := nextDecoded(t, r, base)
 	if d.Err != nil || d.Asset == nil || d.URL != base+".webp" {
 		t.Fatalf("url %q err %v", d.URL, d.Err)
 	}
@@ -119,12 +117,12 @@ func TestBridgeAsksAgainAfterDelivery(t *testing.T) {
 	r := newBridgeRig(t, host)
 	base := bridgeTestOrigin + "e"
 	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
-	nextDecoded(t, r.manager, base)
+	nextDecoded(t, r, base)
 	deadline := time.Now().Add(bridgeTestTimeout)
 	// An evicted texture asks again and comes back from memory, with no second request.
 	var d DecodedAsset
 	got := make(chan DecodedAsset, 1)
-	go func() { got <- nextDecoded(t, r.manager, base) }()
+	go func() { got <- nextDecoded(t, r, base) }()
 	for time.Now().Before(deadline) {
 		r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
 		select {
@@ -174,14 +172,24 @@ func TestBridgeMissingWarnsAndDoesNotAskAgain(t *testing.T) {
 	}
 }
 
+// A host that can't be reached is counted as a failed fetch, never shown as a broken or missing asset.
 func TestBridgeTransportFailureIsTransient(t *testing.T) {
 	host := &bridgeFakeHost{files: map[string][]byte{}, broken: errors.New("refused")}
 	r := newBridgeRig(t, host)
 	base := bridgeTestOrigin + "e"
 	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
-	d := nextDecoded(t, r.manager, base)
-	if d.Err == nil || !d.Transient {
-		t.Fatalf("err %v transient %v", d.Err, d.Transient)
+	deadline := time.Now().Add(bridgeTestTimeout)
+	for r.manager.Stats().Failed == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the failed fetch was never counted")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if r.manager.IsMissing(base, AssetTypeCharSprite) {
+		t.Error("a failed fetch was remembered as missing")
+	}
+	if d, ok := r.takeDecoded(0); ok {
+		t.Errorf("a failed fetch reached the render thread: %+v", d)
 	}
 }
 
@@ -196,7 +204,7 @@ func TestBridgeHungHostDoesNotBlockOtherWork(t *testing.T) {
 	}
 	base := bridgeTestOrigin + "e"
 	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
-	if d := nextDecoded(t, r.manager, base); d.Err != nil {
+	if d := nextDecoded(t, r, base); d.Err != nil {
 		t.Fatal(d.Err)
 	}
 }
@@ -237,7 +245,7 @@ func TestBridgeManifestSetsOrderAndIsFetchedFresh(t *testing.T) {
 	}
 	base := bridgeTestOrigin + "e"
 	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
-	nextDecoded(t, r.manager, base)
+	nextDecoded(t, r, base)
 	want := []string{bridgeTestOrigin + media.ManifestFile, bridgeTestOrigin + media.ManifestFile, base + ".png", base + ".webp"}
 	if asked := host.askedFor(); !slices.Equal(asked, want) {
 		t.Fatalf("asked %v, want %v", asked, want)
@@ -262,7 +270,7 @@ func TestBridgeOfflineRecordsNothing(t *testing.T) {
 	time.Sleep(bridgeSettle)
 	r.manager.SetOffline(false)
 	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
-	if d := nextDecoded(t, r.manager, base); d.Err != nil {
+	if d := nextDecoded(t, r, base); d.Err != nil {
 		t.Fatalf("a file offline said nothing about was not fetched: %v", d.Err)
 	}
 }
@@ -282,7 +290,7 @@ func TestBridgeExtraHostServesWhatTheServerLacks(t *testing.T) {
 	r.manager.SetAssetHosts(bridgeTestOrigin, []string{mirror})
 	waitUntil(t, "the miss to be forgotten", func() bool { return !r.manager.IsMissing(base, AssetTypeCharSprite) })
 	r.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh)
-	d := nextDecoded(t, r.manager, base)
+	d := nextDecoded(t, r, base)
 	if d.Err != nil || d.Asset == nil || d.URL != mirror+"c/e.webp" {
 		t.Fatalf("url %q err %v", d.URL, d.Err)
 	}

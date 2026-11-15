@@ -133,8 +133,16 @@ in **Status**. Update Status in the same commit that completes a step.
           layer, conclusive-miss set, Local-only mode in the Manager) and `-old-media` are deleted, and with them the wait
           gate's refusal re-ask: high-priority requests are never refused
     - [ ] known problem from the benchmark: peak heap with files asked for every frame is 384-617 MiB, unexplained (the
-          request count on hosts with no `extensions.json` is answered by character mapping above)
-    - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming
+          request count on hosts with no `extensions.json` is answered by character mapping above). Lead: images declare
+          no memory claim and the bridge sets no `ClaimLimit`, so decoded pages are bounded by nothing
+    - [ ] move callers (decided 2026-11-15): callers call `media.Manager` directly with keys from small assets helpers,
+          and the bridge goes at the end. Order: `Pump` on `TakeResults`, then courtroom, screens, theme and audio;
+          music streaming after them
+      - [x] `Pump` on `TakeResults`: images decode on the Compute worker holding the request, and an animation's opening
+            frames reach the pump as early pages of the same request (`Format.Decode`'s `page`). The decoder's own
+            goroutines and the 64-slot hand-off channel are gone
+      - [ ] courtroom, then screens, theme and audio
+      - [ ] music streaming
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still

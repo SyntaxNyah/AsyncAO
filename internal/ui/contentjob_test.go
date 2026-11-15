@@ -1105,8 +1105,7 @@ func headlessProbeApp(t *testing.T, source assets.Fetcher, localMode bool) *App 
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
 		Prefs:   a.d.Prefs,
 		T2:      t2,
@@ -1136,8 +1135,7 @@ func localMgr(t *testing.T, mount string) (*assets.Manager, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(1)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	local := assets.NewLocalFetcher([]string{mount})
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Prefs:   a.d.Prefs,

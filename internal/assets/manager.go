@@ -14,8 +14,6 @@ import (
 )
 
 const (
-	// decodedChanCap bounds the render-thread handoff; when full, workers block, so results never drop.
-	decodedChanCap = 64
 	// audioChanCap bounds the raw-audio handoff to the audio system.
 	audioChanCap = 64
 	// warningChanCap bounds missing-asset warnings; these may be dropped, results may not.
@@ -31,8 +29,6 @@ type DecodedAsset struct {
 	Type  AssetType
 	Asset *Decoded
 	Err   error
-	// Transient marks a network failure: bytes were never seen, so keep it out of the negative cache.
-	Transient bool
 	// FromPack marks bytes from the player's folders; Base is still the server's URL, so never MarkFailed(Base) on
 	// them, or a corrupt local file takes the server's good copy offline.
 	FromPack bool
@@ -74,7 +70,7 @@ type Manager struct {
 	t2      *cache.ByteBudgetLRU[string, []byte]
 	disk    *cache.DiskCache
 	client  Fetcher
-	decoder *DecoderPool
+	decoder *Decoder
 	// learnedPath is where the media system's learned formats and winners are kept between sessions.
 	learnedPath string
 
@@ -83,7 +79,6 @@ type Manager struct {
 	// t1Failed reports a recent decode failure of base, so one bad asset cannot storm the network.
 	t1Failed func(base string) bool
 
-	decodedCh   chan DecodedAsset
 	audioCh     chan AudioAsset
 	warningCh   chan Warning
 	musicFailCh chan MusicFailure
@@ -107,6 +102,8 @@ type Manager struct {
 	missing         atomic.Int64
 	mountFetches    atomic.Int64
 	packQuarantined atomic.Int64
+	// failed counts requests that ended in a fetch failure rather than a missing file.
+	failed atomic.Int64
 }
 
 // SetOffline opens or closes the network block.
@@ -196,7 +193,7 @@ type ManagerDeps struct {
 	Disk  *cache.DiskCache
 	// Source is the network client, or a fake in tests.
 	Source     Fetcher
-	Decoder    *DecoderPool
+	Decoder    *Decoder
 	T1Contains func(url string) bool
 	T1Failed   func(base string) bool
 	// LearnedPath is the learned.json the media system's learned formats and winners are kept in; "" keeps none.
@@ -214,7 +211,6 @@ func NewManager(deps ManagerDeps) *Manager {
 		t1Contains:  deps.T1Contains,
 		t1Failed:    deps.T1Failed,
 		learnedPath: deps.LearnedPath,
-		decodedCh:   make(chan DecodedAsset, decodedChanCap),
 		audioCh:     make(chan AudioAsset, audioChanCap),
 		warningCh:   make(chan Warning, warningChanCap),
 		musicFailCh: make(chan MusicFailure, musicFailChanCap),
@@ -225,23 +221,17 @@ func NewManager(deps ManagerDeps) *Manager {
 
 // WorkStats shows what the decoders and handoffs hold, for diagnostics.
 type WorkStats struct {
-	Refused                   int64
-	DecodeQueued, DecodeCap   int
-	DecodeWorkers             int
-	DecodedQueued, DecodedCap int
-	AudioQueued, AudioCap     int
-	Decoding                  []network.WorkItem
+	Refused               int64
+	DecodeWorkers         int
+	AudioQueued, AudioCap int
+	Decoding              []network.WorkItem
 }
 
 // WorkStats snapshots the decoders and handoffs; it allocates, so call it only while the debug panel shows it.
 func (m *Manager) WorkStats() WorkStats {
 	return WorkStats{
 		Refused:       m.refused.Load(),
-		DecodeQueued:  len(m.decoder.jobs),
-		DecodeCap:     cap(m.decoder.jobs),
-		DecodeWorkers: m.decoder.workers,
-		DecodedQueued: len(m.decodedCh),
-		DecodedCap:    cap(m.decodedCh),
+		DecodeWorkers: DecodeWorkers(),
 		AudioQueued:   len(m.audioCh),
 		AudioCap:      cap(m.audioCh),
 		Decoding:      m.decoder.running.Snapshot(),
@@ -264,8 +254,35 @@ func (m *Manager) NotifyDelivery() {
 	}
 }
 
-// Decoded returns the channel the render thread drains for texture uploads.
-func (m *Manager) Decoded() <-chan DecodedAsset { return m.decodedCh }
+// Delivery is one decoded page for the render thread, and the request it belongs to.
+type Delivery struct {
+	DecodedAsset
+	asset *media.Asset
+	final bool
+}
+
+// TakeDeliveries hands the render thread every decoded page waiting, in order; it calls Done on each once through.
+func (m *Manager) TakeDeliveries(use func(Delivery)) {
+	m.bridge.media.TakeResults(func(a *media.Asset, v any, final bool) {
+		d, ok := v.(DecodedAsset)
+		if !ok {
+			// Only images need the render thread; anything else is finished here so its claim is freed.
+			m.Done(Delivery{asset: a, final: final})
+			return
+		}
+		use(Delivery{DecodedAsset: d, asset: a, final: final})
+	})
+}
+
+// Done tells the media system the render thread is through with d: the final page finishes its request and forgets it,
+// so an evicted texture can ask again.
+func (m *Manager) Done(d Delivery) {
+	if !d.final {
+		return
+	}
+	m.bridge.media.Finish(d.asset, nil)
+	m.bridge.media.ForgetAsset(d.asset)
+}
 
 // Audio returns the channel the audio system drains for SDL_mixer loads.
 func (m *Manager) Audio() <-chan AudioAsset { return m.audioCh }
@@ -472,12 +489,6 @@ func (m *Manager) resolveIn(base string, t AssetType, urls []string) (url string
 	return "", nil, false, false
 }
 
-// onDecoded hands one decoded page to the render thread.
-func (m *Manager) onDecoded(url, base string, t AssetType, fromPack bool, d *Decoded, err error) {
-	m.decodedCh <- DecodedAsset{URL: url, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
-	m.NotifyDelivery()
-}
-
 // PurgeCorrupt evicts url from memory and the disk cache so the next demand refetches; url is the full fetch URL.
 func (m *Manager) PurgeCorrupt(url string) {
 	if url == "" {
@@ -564,6 +575,8 @@ type ManagerStats struct {
 	MountFetches int64
 	// PackQuarantined counts folder files withdrawn after a decode failure.
 	PackQuarantined int64
+	// Failed counts requests that ended in a fetch failure rather than a missing file.
+	Failed int64
 }
 
 // Stats snapshots the manager's counters.
@@ -576,5 +589,6 @@ func (m *Manager) Stats() ManagerStats {
 		Missing:         m.missing.Load(),
 		MountFetches:    m.mountFetches.Load(),
 		PackQuarantined: m.packQuarantined.Load(),
+		Failed:          m.failed.Load(),
 	}
 }

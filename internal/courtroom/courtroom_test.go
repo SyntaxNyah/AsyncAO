@@ -76,8 +76,7 @@ func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioR
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	local := assets.NewLocalFetcher([]string{t.TempDir()})
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Prefs: prefs, T2: t2, Disk: disk,

@@ -41,8 +41,7 @@ func newBGRig(t *testing.T) *bgRig {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 
 	mount := t.TempDir()
 	local := assets.NewLocalFetcher([]string{mount})
@@ -85,11 +84,18 @@ func awaitDelivery(t *testing.T, mgr *assets.Manager, want string) string {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case d := <-mgr.Decoded():
-			if d.Base == want {
-				return d.URL
+		answered := ""
+		mgr.TakeDeliveries(func(d assets.Delivery) {
+			if d.Base == want && answered == "" {
+				answered = d.URL
 			}
+			mgr.Done(d)
+		})
+		if answered != "" {
+			return answered
+		}
+		select {
+		case <-time.After(time.Millisecond):
 		case w := <-mgr.Warnings():
 			if w.Base == want {
 				t.Fatalf("the background chain reported %q missing instead of falling back (tried %v)", w.Base, w.Tried)
@@ -256,11 +262,14 @@ func TestTheDeskKeepsItsNoFallbackContract(t *testing.T) {
 	}
 	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case d := <-r.mgr.Decoded():
+		r.mgr.TakeDeliveries(func(d assets.Delivery) {
 			if d.Base == deskBase {
-				t.Fatalf("the desk must NOT fall back; it was served %q", d.URL)
+				t.Errorf("the desk must NOT fall back; it was served %q", d.URL)
 			}
+			r.mgr.Done(d)
+		})
+		select {
+		case <-time.After(time.Millisecond):
 		case w := <-r.mgr.Warnings():
 			if w.Base == deskBase {
 				return // conclusively missing → DeskDrawn hides the layer. Correct.

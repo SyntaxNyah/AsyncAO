@@ -24,7 +24,7 @@ func TestMappedCharacterSkipsMissingSpellings(t *testing.T) {
 		t.Helper()
 		base := cs.srv.URL + "/characters/c/"
 		rig.manager.PrefetchChain(base+"(a)"+name, []string{base + name}, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-		waitDecoded(t, rig.manager).Asset.Release()
+		waitDecoded(t, rig).Asset.Release()
 	}
 	ask("first")
 	root := media.File(cs.srv.URL + "/characters/c/")

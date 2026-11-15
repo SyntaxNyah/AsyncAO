@@ -124,7 +124,9 @@ type Hit struct {
 
 // Format turns bytes into a result on a Compute worker, and holds no shared state.
 type Format interface {
-	Decode(key Key, hit Hit, data []byte) (any, error)
+	// Decode returns the result; page hands the main thread an earlier part of it first, such as the opening frames of
+	// a long animation, for a format whose results need the main thread.
+	Decode(key Key, hit Hit, data []byte, page func(any)) (any, error)
 	// OnMainThread reports whether a result needs the main thread, such as a texture upload, before it is ready.
 	OnMainThread() bool
 }

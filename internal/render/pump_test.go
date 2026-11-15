@@ -40,8 +40,7 @@ func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) *asse
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Prefs: prefs, T2: t2, Disk: disk,
 		Source: source, Decoder: decoder,
@@ -107,7 +106,7 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	mgr.Prefetch(base, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (warm-gate prefetch)
 
 	// Pump every "frame" until the async decode lands in T1 — the same loop the
-	// export's warm phase runs (Pump.Frame() drains Manager.Decoded() each frame).
+	// export's warm phase runs (Pump.Frame() takes the waiting deliveries each frame).
 	deadline := time.Now().Add(3 * time.Second)
 	for !store.Contains(base) && time.Now().Before(deadline) {
 		pump.Frame()
@@ -147,16 +146,16 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	pump := NewPump(store, mgr, nil)
 
 	// Sick origin: the fetch (with its bounded retry) fails at the network
-	// stage → transient → counted, NOT pinned.
+	// stage → counted as a failed fetch, NOT pinned.
 	sick := srvSick.URL + "/characters/witch/(a)sick"
 	mgr.Prefetch(sick, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (test)
 	deadline := time.Now().Add(5 * time.Second)
-	for pump.Stats().TransientErrs == 0 && time.Now().Before(deadline) {
+	for mgr.Stats().Failed == 0 && time.Now().Before(deadline) {
 		pump.Frame()
 		time.Sleep(5 * time.Millisecond)
 	}
-	if pump.Stats().TransientErrs == 0 {
-		t.Fatal("the network failure never reached the pump as transient")
+	if mgr.Stats().Failed == 0 {
+		t.Fatal("the network failure was never counted")
 	}
 	if store.FailedRecently(sick) {
 		t.Error("a transient network failure entered the decode negative cache — the asset would stay blank for decodeFailTTL after the origin recovers")

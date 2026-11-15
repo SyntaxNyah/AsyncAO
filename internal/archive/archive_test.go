@@ -30,8 +30,7 @@ func buildManager(t *testing.T, source assets.Fetcher, localMode bool) *assets.M
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Prefs: prefs, T2: t2, Disk: disk,
 		Source: source, Decoder: decoder,

@@ -24,9 +24,11 @@ const managerWait = 5 * time.Second
 type testRig struct {
 	prefs   *config.AssetPreferences
 	manager *Manager
-	decoder *DecoderPool
+	decoder *Decoder
 	disk    *cache.DiskCache
 	t2      *cache.ByteBudgetLRU[string, []byte]
+	// pending holds pages taken from the media system but not yet read, as TakeDeliveries hands over all at once.
+	pending []DecodedAsset
 }
 
 // newRig builds a Manager on source; localMode mounts a LocalFetcher source's folders, as "only use my folders" does.
@@ -58,8 +60,7 @@ func newRigAt(tb testing.TB, source Fetcher, localMode bool, learnedPath string)
 		tb.Fatal(err)
 	}
 	tb.Cleanup(disk.Close)
-	decoder := NewDecoderPool(2)
-	tb.Cleanup(decoder.Close)
+	decoder := NewDecoder()
 
 	m := NewManager(ManagerDeps{
 		Prefs:       prefs,
@@ -160,15 +161,35 @@ func (cs *countingServer) total() int {
 	return n
 }
 
-func waitDecoded(t *testing.T, m *Manager) DecodedAsset {
-	t.Helper()
-	select {
-	case d := <-m.Decoded():
-		return d
-	case <-time.After(managerWait):
-		t.Fatal("no decoded asset delivered")
-		return DecodedAsset{}
+// takeDecoded returns the next page delivered within wait, finishing it as the upload pump does.
+func (r *testRig) takeDecoded(wait time.Duration) (DecodedAsset, bool) {
+	deadline := time.Now().Add(wait)
+	for {
+		if len(r.pending) > 0 {
+			d := r.pending[0]
+			r.pending = r.pending[1:]
+			return d, true
+		}
+		r.manager.TakeDeliveries(func(d Delivery) {
+			r.pending = append(r.pending, d.DecodedAsset)
+			r.manager.Done(d)
+		})
+		if len(r.pending) == 0 {
+			if !time.Now().Before(deadline) {
+				return DecodedAsset{}, false
+			}
+			time.Sleep(time.Millisecond)
+		}
 	}
+}
+
+func waitDecoded(t *testing.T, r *testRig) DecodedAsset {
+	t.Helper()
+	d, ok := r.takeDecoded(managerWait)
+	if !ok {
+		t.Fatal("no decoded asset delivered")
+	}
+	return d
 }
 
 func waitWarning(t *testing.T, m *Manager) Warning {
@@ -207,7 +228,7 @@ func TestManagerWebPOnlyServerOneProbePerAsset(t *testing.T) {
 		rig.manager.Prefetch(b.base, b.typ, network.PriorityHigh) // AssetType: mixed (test)
 	}
 	for range bases {
-		d := waitDecoded(t, rig.manager)
+		d := waitDecoded(t, rig)
 		if d.Err != nil {
 			t.Fatalf("decode error: %v", d.Err)
 		}
@@ -239,7 +260,7 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 	rig.manager.t1Contains = func(key string) bool { return resident[key] }
 
 	rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
-	d := waitDecoded(t, rig.manager)
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
 	}
@@ -265,10 +286,8 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 	if got := cs.total(); got != firstLoad {
 		t.Errorf("requests after the T1 hit = %d, want still %d (no re-fetch)", got, firstLoad)
 	}
-	select {
-	case d := <-rig.manager.Decoded():
+	if d, ok := rig.takeDecoded(0); ok {
 		t.Errorf("unexpected re-decode of resident asset: %+v", d)
-	default:
 	}
 }
 
@@ -291,7 +310,7 @@ func TestManagerUnprefixedSpriteFallback(t *testing.T) {
 	rig.manager.t1Contains = func(key string) bool { return resident[key] }
 
 	rig.manager.PrefetchChain(primary, []string{bare}, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d := waitDecoded(t, rig.manager)
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
 	}
@@ -338,7 +357,7 @@ func TestManagerPrefetchChain(t *testing.T) {
 	}
 
 	rig.manager.PrefetchChain(identity, alts, AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (test chain)
-	d := waitDecoded(t, rig.manager)
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
 	}
@@ -408,7 +427,7 @@ func TestManagerLocalMounts(t *testing.T) {
 	origin := local.BaseURL()
 
 	rig.manager.Prefetch(origin+"characters/phoenix/(a)normal", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d := waitDecoded(t, rig.manager)
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("local decode error: %v", d.Err)
 	}
@@ -418,7 +437,7 @@ func TestManagerLocalMounts(t *testing.T) {
 	d.Asset.Release()
 
 	rig.manager.Prefetch(origin+"characters/phoenix/(b)normal", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d = waitDecoded(t, rig.manager)
+	d = waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("local decode error: %v", d.Err)
 	}
@@ -456,21 +475,17 @@ func TestManagerInflightDedup(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
 	}
-	d := waitDecoded(t, rig.manager)
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatal(d.Err)
 	}
 	d.Asset.Release()
 
 	// No further deliveries expected; give stragglers a moment to misbehave.
-	select {
-	case extra := <-rig.manager.Decoded():
-		// A second delivery is acceptable only if it was a T2 hit decode
-		// (same bytes); more than one upstream probe is not.
-		if extra.Err == nil && extra.Asset != nil {
-			extra.Asset.Release()
-		}
-	case <-time.After(200 * time.Millisecond):
+	// A second delivery is acceptable only if it was a T2 hit decode (same bytes); more than one upstream probe is not.
+	const stragglerWait = 200 * time.Millisecond
+	if extra, ok := rig.takeDecoded(stragglerWait); ok && extra.Err == nil && extra.Asset != nil {
+		extra.Asset.Release()
 	}
 	if got := cs.total(); got != 1 {
 		t.Errorf("upstream probes = %d, want 1 (inflight dedup + singleflight)", got)
@@ -527,12 +542,9 @@ func TestPurgeCorruptEvictsTiers(t *testing.T) {
 	wantURL := base + ".webp" // the format probed first — the T2/T3 key
 
 	rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d := waitDecoded(t, rig.manager)
+	d := waitDecoded(t, rig)
 	if d.Err == nil {
 		t.Fatal("corrupt payload decoded without error")
-	}
-	if d.Transient {
-		t.Fatal("corrupt-decode failure tagged transient — it would never be purged")
 	}
 	if d.URL != wantURL {
 		t.Fatalf("delivered URL = %q, want the fetched %q (the T2/T3 key)", d.URL, wantURL)

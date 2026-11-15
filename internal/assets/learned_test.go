@@ -41,7 +41,7 @@ func TestLearnedFormatOutlivesTheSession(t *testing.T) {
 	first := newRigAt(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false, learned)
 	waitRecalled(t, first.manager)
 	first.manager.Prefetch(cs.srv.URL+"/characters/a/(a)x", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	waitDecoded(t, first.manager).Asset.Release()
+	waitDecoded(t, first).Asset.Release()
 	first.manager.CloseMedia()
 	if _, err := os.Stat(learned); err != nil {
 		t.Fatalf("learned.json not written: %v", err)
@@ -51,7 +51,7 @@ func TestLearnedFormatOutlivesTheSession(t *testing.T) {
 	waitRecalled(t, next.manager)
 	before := cs.total()
 	next.manager.Prefetch(cs.srv.URL+"/characters/a/(a)y", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	waitDecoded(t, next.manager).Asset.Release()
+	waitDecoded(t, next).Asset.Release()
 	if n := cs.total() - before; n != 1 {
 		t.Errorf("the next session needed %d requests, want 1", n)
 	}
