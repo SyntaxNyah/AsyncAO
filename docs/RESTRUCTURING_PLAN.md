@@ -154,7 +154,13 @@ in **Status**. Update Status in the same commit that completes a step.
             `ExactKey` or `RawKey`; the theme had no requests of its own. `Manager.Prefetch*` and `network.Priority` are
             gone, and `media.Get` answers a key with no path as Missing. The synchronous `ResolveRaw*` export lookups
             (archive, content job) stay until the bridge is deleted, as their own step
-      - [ ] music streaming
+      - [x] music streaming (2026-11-15): music is a `media.KindStream` key whose sources open a `media.Stream`
+            instead of reading bytes. The web downloads into a partial file on disk with the file's last 64 KiB
+            fetched by range (decoders read a file's end when they open it), and the disk cache adopts it when
+            complete; a complete file (disk cache, folders) plays through SDL3_mixer by path. A track still
+            downloading or held in memory (.zip packs) is decoded on its own goroutine into an SDL audio stream on the
+            music track, ahead of playback, reopening at each loop so loops stay gapless; a download that falls behind
+            pauses only the music. No track is held whole in memory
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still

@@ -26,6 +26,8 @@ const (
 	KindListing
 	KindRaw
 	KindFont
+	// KindStream is a file read as it arrives, such as a music track: the result is a Stream, never the bytes.
+	KindStream
 )
 
 // Class says which formats a file may have; ClassExact means its path already names one file.

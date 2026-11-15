@@ -1,8 +1,10 @@
 package assets
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -232,6 +234,9 @@ func classOf(t AssetType) media.Class {
 }
 
 func kindOf(t AssetType) media.Kind {
+	if t == AssetTypeMusic {
+		return media.KindStream
+	}
 	if t.IsAudio() {
 		return media.KindSound
 	}
@@ -343,6 +348,19 @@ func (b *mediaBridge) finished(a *media.Asset) {
 	default:
 		// Delivered: from here T1 answers, and an evicted texture has to be able to ask again.
 		b.media.ForgetAsset(a)
+		if st, ok := a.Result().(media.Stream); ok {
+			b.sendStream(k, t, st)
+		}
+	}
+}
+
+// sendStream hands a music track to the audio side; with the hand-off full, the track is closed and dropped.
+func (b *mediaBridge) sendStream(k media.Key, t AssetType, st media.Stream) {
+	select {
+	case b.m.audioCh <- AudioAsset{URL: k.Path, Base: k.Path, Type: t, Stream: st}:
+		b.m.NotifyDelivery()
+	default:
+		st.Close()
 	}
 }
 
@@ -454,6 +472,54 @@ func (m *Manager) CloseMedia() {
 
 type bridgeFetcher struct{ m *Manager }
 
+var _ media.Downloader = bridgeFetcher{}
+
+// streamer is an HTTP client that hands a body over as it arrives, as *network.Client does.
+type streamer interface {
+	Open(ctx context.Context, url string) (*network.Body, error)
+	ReadRange(ctx context.Context, url string, from, n int64) ([]byte, error)
+}
+
+// Open is netFetch for a body read as it arrives; a replay archive or a client that can't stream answers whole.
+func (f bridgeFetcher) Open(ctx context.Context, url string) (io.ReadCloser, int64, error) {
+	s, ok := f.m.client.(streamer)
+	if !ok || f.m.archiveServes(url) || f.m.offline.Load() || strings.HasPrefix(url, LocalScheme) {
+		data, err := f.Fetch(ctx, url)
+		if err != nil {
+			return nil, 0, err
+		}
+		return io.NopCloser(bytes.NewReader(data)), int64(len(data)), nil
+	}
+	body, err := s.Open(ctx, url)
+	if err != nil {
+		return nil, 0, err
+	}
+	f.m.netFetches.Add(1)
+	return body, body.Size, nil
+}
+
+// ReadRange fetches one span when the client can; without it, reads of a track's end wait for its download.
+func (f bridgeFetcher) ReadRange(ctx context.Context, url string, from, n int64) ([]byte, error) {
+	if s, ok := f.m.client.(streamer); ok && !f.m.offline.Load() {
+		return s.ReadRange(ctx, url, from, n)
+	}
+	return nil, network.ErrNoRanges
+}
+
+// PartialFile is where a download arrives.
+func (f bridgeFetcher) PartialFile() (*os.File, error) { return f.m.disk.PartialFile() }
+
+// Adopt gives a finished download to the disk cache.
+func (f bridgeFetcher) Adopt(url, path string) {
+	if skipDisk(url) {
+		_ = os.Remove(path)
+		return
+	}
+	f.m.disk.Adopt(url, path)
+	b := f.m.bridge
+	b.media.Call(func() { b.disk.Index(media.File(url)) })
+}
+
 func (f bridgeFetcher) Fetch(ctx context.Context, url string) ([]byte, error) {
 	data, err := f.m.netFetch(ctx, url)
 	if err == nil {
@@ -511,6 +577,8 @@ func (s bridgeDisk) Observe(f media.File, data []byte, err error) {
 	s.DiskSource.Observe(f, data, err)
 	if err == nil {
 		s.m.diskHits.Add(1)
+	}
+	if err == nil && len(data) > 0 { // a track opened as a stream brings no bytes
 		s.t2.Add(string(f), data, int64(len(data)))
 		s.pin.keep(string(f), data)
 	}
@@ -535,7 +603,7 @@ func (s bridgeRemote) Observe(f media.File, data []byte, err error) {
 		return
 	}
 	s.RemoteSource.Observe(f, data, err)
-	if err == nil {
+	if err == nil && len(data) > 0 { // a download keeps itself, through Adopt
 		s.b.m.t2.Add(string(f), data, int64(len(data)))
 		s.b.pin.keep(string(f), data)
 		if !skipDisk(string(f)) {

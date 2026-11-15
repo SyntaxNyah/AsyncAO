@@ -26,7 +26,7 @@ func TestPlayMusicAtIdempotent(t *testing.T) {
 	}
 
 	live := newTestAudio(t)
-	live.startMusic(url, testSong(songSec), false, 0, 0)
+	live.startMusic(url, testSong(t, songSec), false, 0, 0)
 	if !live.MusicPlaying() {
 		t.Fatal("MusicPlaying must be true with a song loaded")
 	}
@@ -50,7 +50,7 @@ func TestCurrentMusicURLReflectsLiveStream(t *testing.T) {
 	if a.CurrentMusicURL() != "" || a.MusicPlaying() {
 		t.Errorf("a fresh device must report no current music, got %q", a.CurrentMusicURL())
 	}
-	a.startMusic(foreign, testSong(songSec), false, 0, 0)
+	a.startMusic(foreign, testSong(t, songSec), false, 0, 0)
 	if a.CurrentMusicURL() != foreign || !a.MusicPlaying() {
 		t.Errorf("CurrentMusicURL = %q playing=%v, want the live song", a.CurrentMusicURL(), a.MusicPlaying())
 	}

@@ -37,6 +37,18 @@ func (f *bridgeFolders) Data(file media.File) ([]byte, error) {
 	return b, err
 }
 
+// Open is Data for a music track, opened where it lies.
+func (f *bridgeFolders) Open(file media.File) (media.Stream, error) {
+	if f.bad.has(string(file)) {
+		return nil, media.ErrAbsent
+	}
+	st, err := f.Folders.Open(file)
+	if err == nil {
+		f.m.mountFetches.Add(1)
+	}
+	return st, err
+}
+
 // read is Data for the synchronous fetch paths; workers only.
 func (f *bridgeFolders) read(url string) ([]byte, bool) {
 	b, err := f.Data(media.File(url))

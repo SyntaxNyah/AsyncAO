@@ -40,6 +40,8 @@ type AudioAsset struct {
 	Base string
 	Type AssetType
 	Data []byte
+	// Stream is a music track, opened where it lies or still downloading, in place of Data; the receiver closes it.
+	Stream media.Stream
 	// FromPack is as on DecodedAsset; audio skips the upload pump, so the audio loader quarantines itself.
 	FromPack bool
 }

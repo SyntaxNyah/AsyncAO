@@ -7,6 +7,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/mix"
 )
 
@@ -22,6 +23,8 @@ const (
 
 	// loopFetchCap bounds concurrent sidecar fetches; past it a song plays without loop points.
 	loopFetchCap = 4
+	// loopHeaderBytes is read from a song's start to find its sample rate; it covers an MP3's ID3 tag in front.
+	loopHeaderBytes = 256 << 10
 
 	unknownDurationSec = -1.0
 )
@@ -43,7 +46,7 @@ type loopMetaResult struct {
 }
 
 // requestLoopMeta fetches a looping song's sidecars in the background; stepLoopMeta applies them on arrival.
-func (a *Audio) requestLoopMeta(url string, data []byte) {
+func (a *Audio) requestLoopMeta(url string, src media.Stream) {
 	if !courtroom.HasLoopSidecars(url) {
 		return
 	}
@@ -55,7 +58,10 @@ func (a *Audio) requestLoopMeta(url string, data []byte) {
 	}
 	a.loopFetches[url] = struct{}{}
 	go func() {
-		a.loopResults <- loopMetaResult{url: url, meta: fetchLoopMeta(a.loopFetchCtx, a.fetchSidecar, url, data)}
+		// The sample rate is in the header; a read of a stream closed meanwhile gives nothing, and 48 kHz is assumed.
+		head := make([]byte, loopHeaderBytes)
+		n, _ := src.ReadAt(head, 0)
+		a.loopResults <- loopMetaResult{url: url, meta: fetchLoopMeta(a.loopFetchCtx, a.fetchSidecar, url, head[:n])}
 		a.wake()
 	}()
 }
@@ -84,8 +90,17 @@ func (a *Audio) rearmLoopPoints() {
 	if url == "" {
 		return
 	}
-	if url != a.musicURL || !a.musicLoop || a.music.audio == nil {
+	if url != a.musicURL || !a.musicLoop || !a.music.loaded() {
 		a.loopRearmURL = ""
+		return
+	}
+	// A streamed song's decoder reads the loop points at each chunk, so they apply without a restart.
+	if ms := a.music.stream; ms != nil {
+		a.loopRearmURL = ""
+		_, durSec, haveDur := ms.clock()
+		if points, ok := a.loopPointsFor(url, durSec, haveDur, 0); ok {
+			ms.setLoop(points.StartSec, points.EndSec)
+		}
 		return
 	}
 	// Replaying during a fade-in would restart the ramp from silence.

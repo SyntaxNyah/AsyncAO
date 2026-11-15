@@ -613,6 +613,9 @@ func (m *Manager) handle(r *request) {
 		m.observe(r)
 	}
 	if r.dead {
+		if s, ok := r.result.(Stream); ok {
+			s.Close()
+		}
 		m.end(r, Withdrawn, nil, ErrWithdrawn)
 		return
 	}
@@ -653,6 +656,10 @@ func (m *Manager) afterData(r *request) {
 			clear(m.winners)
 		}
 		m.winners[r.asset.key] = r.file
+	}
+	if r.asset.key.Kind == KindStream {
+		m.end(r, Ready, r.result, nil)
+		return
 	}
 	format := m.cfg.Formats[r.asset.key.Kind]
 	if format == nil {
@@ -743,6 +750,13 @@ func (m *Manager) start(p *Pool, r *request) {
 		}
 		source := m.cfg.Chains[r.asset.key.Place].entries[r.entry].Source
 		file := r.file
+		if r.asset.key.Kind == KindStream {
+			p.jobs <- func() {
+				r.result, r.err = openStream(source, file)
+				m.report(r)
+			}
+			break
+		}
 		p.jobs <- func() {
 			r.bytes, r.err = source.Data(file)
 			m.report(r)

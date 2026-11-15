@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -191,16 +192,17 @@ func moveBlobs(from, to string) error {
 
 // copyFile copies src to dst through a temp file, so a half-copied blob never looks finished.
 func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
+	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
+	defer in.Close()
 	tmp, err := os.CreateTemp(filepath.Dir(dst), diskTmpPattern)
 	if err != nil {
 		return err
 	}
 	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
+	if _, err := io.Copy(tmp, in); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
 		return err

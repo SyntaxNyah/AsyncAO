@@ -2,9 +2,12 @@ package render
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/mix"
 )
 
@@ -31,14 +34,32 @@ func newTestAudio(t *testing.T) *Audio {
 	if !a.enabled() {
 		t.Fatal("a headless mixer must give an enabled Audio")
 	}
+	// TempDir first: cleanups run last-in first-out, so Close lets go of a song's file before its folder is removed,
+	// which Windows refuses while the file is open.
+	t.TempDir()
 	t.Cleanup(a.Close)
 	return a
 }
 
 // testSong is sec seconds of silent mono WAV.
-func testSong(sec float64) []byte {
+// testSongWAV is a silent mono WAV of sec seconds.
+func testSongWAV(sec float64) []byte {
 	const bytesPerSample = 2
 	return wavMono16(make([]byte, int(sec*testSongRate)*bytesPerSample), testSongRate)
+}
+
+// testSong is a complete song on disk, which plays through SDL_mixer by path.
+func testSong(t *testing.T, sec float64) media.Stream {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "song.wav")
+	if err := os.WriteFile(path, testSongWAV(sec), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := media.FileStream(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
 
 // mixFor advances the headless mixer by sec seconds.
@@ -63,8 +84,8 @@ func noLoopSidecar(a *Audio, url string) {
 func TestStopMusicClearsCrossfade(t *testing.T) {
 	const songSec = 2.0
 	a := newTestAudio(t)
-	a.startMusic("http://cdn/a.opus", testSong(songSec), false, 0, 0)
-	a.startMusic("http://cdn/b.opus", testSong(songSec), false, testFadeOutFlag, 0)
+	a.startMusic("http://cdn/a.opus", testSong(t, songSec), false, 0, 0)
+	a.startMusic("http://cdn/b.opus", testSong(t, songSec), false, testFadeOutFlag, 0)
 	if a.musicOld.audio == nil {
 		t.Fatal("FADE_OUT with an audible song must keep the old song fading")
 	}
@@ -80,8 +101,8 @@ func TestFadeOutGatedOnVolume(t *testing.T) {
 	const songSec = 2.0
 	a := newTestAudio(t)
 	a.SetVolumes(0, fullVolumePercent, fullVolumePercent)
-	a.startMusic("http://cdn/a.opus", testSong(songSec), false, 0, 0)
-	a.startMusic("http://cdn/b.opus", testSong(songSec), false, testFadeOutFlag, 0)
+	a.startMusic("http://cdn/a.opus", testSong(t, songSec), false, 0, 0)
+	a.startMusic("http://cdn/b.opus", testSong(t, songSec), false, testFadeOutFlag, 0)
 	if a.musicOld.audio != nil {
 		t.Error("a silent music volume must not crossfade")
 	}
@@ -97,8 +118,8 @@ func TestCrossfadeOldSongReapedAfterFade(t *testing.T) {
 		pastFadeSec = float64(musicFadeOutMs)/msPerSecond + testMixStepSec*2
 	)
 	a := newTestAudio(t)
-	a.startMusic("http://cdn/a.opus", testSong(songSec), false, 0, 0)
-	a.startMusic("http://cdn/b.opus", testSong(songSec), false, testFadeOutFlag, 0)
+	a.startMusic("http://cdn/a.opus", testSong(t, songSec), false, 0, 0)
+	a.startMusic("http://cdn/b.opus", testSong(t, songSec), false, testFadeOutFlag, 0)
 	a.stepFadeOutOld()
 	if a.musicOld.audio == nil {
 		t.Fatal("the old song was unloaded before its fade ran")
@@ -122,9 +143,9 @@ func TestTakeoverRecordsSwapSnapshot(t *testing.T) {
 		tolerance = 0.1
 	)
 	a := newTestAudio(t)
-	a.startMusic("http://cdn/a.opus", testSong(songSec), false, 0, 0)
+	a.startMusic("http://cdn/a.opus", testSong(t, songSec), false, 0, 0)
 	mixFor(t, a, playedSec)
-	a.startMusic("http://cdn/b.opus", testSong(songSec), false, 0, 0)
+	a.startMusic("http://cdn/b.opus", testSong(t, songSec), false, 0, 0)
 	pos, dur, _, ok := a.SwappedOutSnap("http://cdn/a.opus")
 	if !ok {
 		t.Fatal("no snapshot recorded for the swapped-out song")
@@ -142,7 +163,7 @@ func TestReapFinishedMusic(t *testing.T) {
 		mixedSec = 1.0
 	)
 	a := newTestAudio(t)
-	a.startMusic("http://cdn/once.opus", testSong(songSec), false, 0, 0)
+	a.startMusic("http://cdn/once.opus", testSong(t, songSec), false, 0, 0)
 	a.reapFinishedMusic()
 	if !a.MusicPlaying() {
 		t.Fatal("a song still playing was reaped")
@@ -155,7 +176,7 @@ func TestReapFinishedMusic(t *testing.T) {
 
 	const loopURL = "http://cdn/area.opus"
 	noLoopSidecar(a, loopURL)
-	a.startMusic(loopURL, testSong(songSec), true, 0, 0)
+	a.startMusic(loopURL, testSong(t, songSec), true, 0, 0)
 	mixFor(t, a, mixedSec)
 	a.reapFinishedMusic()
 	if !a.MusicPlaying() {
@@ -183,7 +204,7 @@ func TestMusicClock(t *testing.T) {
 		t.Error("a nil Audio must report MusicClock ok=false")
 	}
 	a := newTestAudio(t)
-	a.startMusic("http://cdn/a.opus", testSong(songSec), false, 0, 0)
+	a.startMusic("http://cdn/a.opus", testSong(t, songSec), false, 0, 0)
 	mixFor(t, a, playedSec)
 	pos, dur, ok := a.MusicClock()
 	if !ok || pos < playedSec-tolerance || pos > playedSec+tolerance || dur < songSec-tolerance || dur > songSec+tolerance {
@@ -200,7 +221,7 @@ func TestStartMusicWrapsSeek(t *testing.T) {
 		tolerance = 0.1
 	)
 	a := newTestAudio(t)
-	a.startMusic("http://cdn/a.opus", testSong(songSec), false, 0, seekSec)
+	a.startMusic("http://cdn/a.opus", testSong(t, songSec), false, 0, seekSec)
 	pos, _, ok := a.MusicClock()
 	if !ok || pos < wantSec-tolerance || pos > wantSec+tolerance {
 		t.Errorf("start position = %.2f (ok=%v), want ≈%.1f", pos, ok, wantSec)
@@ -215,10 +236,10 @@ func TestChunkEvictionWhilePlaying(t *testing.T) {
 		mixedSec = 0.2
 	)
 	a := newTestAudio(t)
-	first := a.loadChunk("sounds/general/first", testSong(soundSec))
+	first := a.loadChunk("sounds/general/first", testSongWAV(soundSec))
 	a.playChunk(first, pendingSFX)
 	for i := range chunkCacheMax {
-		a.loadChunk(fmt.Sprintf("sounds/general/%d", i), testSong(soundSec))
+		a.loadChunk(fmt.Sprintf("sounds/general/%d", i), testSongWAV(soundSec))
 	}
 	if a.HasChunk("sounds/general/first") {
 		t.Fatal("the oldest sound must have been evicted")

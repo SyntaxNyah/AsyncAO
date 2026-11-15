@@ -19,7 +19,7 @@ import (
 // into another format.
 //
 // This is not a property of the URL builder alone: it is a property of the
-// pipeline pass PrefetchExact runs (resolveExact, which has no candidate ladder
+// pipeline pass an exact key runs (ClassExact, which has no candidate ladder
 // at all). The test proves it at the wire, by counting what the origin actually
 // sees: one request, for the .mp3, and no .opus/.ogg speculation beside it —
 // which is also the zero-fallback pillar (spec §4, one probe per asset).
@@ -50,8 +50,13 @@ func TestMP3MusicFetchesExactlyTheURLItWasGiven(t *testing.T) {
 		if a.Type != AssetTypeMusic {
 			t.Errorf("delivered type = %v, want Music", a.Type)
 		}
-		if !strings.HasPrefix(string(a.Data), "ID3") {
-			t.Errorf("delivered %d bytes that are not the mp3 payload", len(a.Data))
+		if a.Stream == nil {
+			t.Fatal("music delivered without a stream")
+		}
+		defer a.Stream.Close()
+		head := make([]byte, len("ID3"))
+		if _, err := a.Stream.ReadAt(head, 0); err != nil || string(head) != "ID3" {
+			t.Errorf("stream starts %q (%v), not the mp3 payload", head, err)
 		}
 	case <-time.After(managerWait):
 		t.Fatal("exact mp3 music fetch never delivered")

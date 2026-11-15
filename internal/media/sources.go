@@ -61,6 +61,9 @@ func (s *DiskSource) Keep(f File, data []byte) {
 	s.add(cache.Key(string(f)))
 }
 
+// Index adds a file the cache got without Keep, such as an adopted download, on the Manager's goroutine.
+func (s *DiskSource) Index(f File) { s.add(cache.Key(string(f))) }
+
 // add indexes one entry; past diskIndexCap the index starts over, which only costs repeat requests.
 func (s *DiskSource) add(key string) {
 	if len(s.index) >= diskIndexCap {
@@ -87,6 +90,18 @@ func (s *DiskSource) Data(f File) ([]byte, error) {
 		return d, nil
 	}
 	return nil, ErrAbsent
+}
+
+// Open opens the cached file in place on a Disk worker.
+func (s *DiskSource) Open(f File) (Stream, error) {
+	st, err := FileStream(s.disk.Path(string(f)))
+	if err != nil || st.Size() == 0 {
+		if st != nil {
+			st.Close()
+		}
+		return nil, ErrAbsent
+	}
+	return st, nil
 }
 
 // Observe drops an entry whose read failed, so a stale index heals itself.
@@ -129,13 +144,16 @@ type RemoteSource struct {
 	listed  map[string]*listedFolder
 	walks   map[string]*walk
 	refused map[string]bool
+	// slots bounds the downloads running at once, MaxDownloads.
+	slots chan struct{}
 }
 
 // NewRemoteSource asks through fetch.
 func NewRemoteSource(ctx context.Context, fetch Fetcher, missingTTL time.Duration, clock func() time.Time) *RemoteSource {
 	return &RemoteSource{fetch: fetch, ctx: ctx, clock: clock, missingTTL: missingTTL,
 		exists: map[File]struct{}{}, missing: map[File]time.Time{}, answered: map[string]bool{},
-		listed: map[string]*listedFolder{}, walks: map[string]*walk{}, refused: map[string]bool{}}
+		listed: map[string]*listedFolder{}, walks: map[string]*walk{}, refused: map[string]bool{},
+		slots: make(chan struct{}, MaxDownloads)}
 }
 
 // Has answers from the tables and the character maps; a file neither proves is Unknown, and only that costs a request.
@@ -162,6 +180,14 @@ func (s *RemoteSource) Data(f File) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %w", ErrAbsent, err)
 	}
 	return data, err
+}
+
+// Open downloads the file as it arrives when the fetcher can, and reads it whole otherwise.
+func (s *RemoteSource) Open(f File) (Stream, error) {
+	if d, ok := s.fetch.(Downloader); ok {
+		return s.openDownload(d, f)
+	}
+	return wholeStream(s.Data(f))
 }
 
 // Observe records the answer in the tables and what it says about the host.

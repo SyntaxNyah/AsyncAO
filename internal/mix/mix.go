@@ -1,5 +1,6 @@
 // Package mix binds SDL3_mixer; positions convert at the Audio's sample rate, so loop points land on exact frames.
-// Everything here runs on the main thread (hard rule 1).
+// Mixers, sounds and tracks are driven from the main thread; a Decoder and a Stream may be fed from another, as SDL
+// documents those calls thread-safe (hard rule 1).
 package mix
 
 /*
@@ -137,6 +138,17 @@ func (m *Mixer) Load(data []byte, predecode bool) (*Audio, error) {
 	return (*Audio)(a), nil
 }
 
+// OpenFile opens a sound file that SDL_mixer reads from disk as it plays, for music too long to hold decoded.
+func (m *Mixer) OpenFile(path string) (*Audio, error) {
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+	a := C.MIX_LoadAudio(m.c(), cpath, false)
+	if a == nil {
+		return nil, failed()
+	}
+	return (*Audio)(a), nil
+}
+
 // LoadFile decodes a sound file completely.
 func (m *Mixer) LoadFile(path string) (*Audio, error) {
 	cpath := C.CString(path)
@@ -219,6 +231,14 @@ func (t *Track) Play(o PlayOptions) error {
 		loopStart, maxFrame = a.frames(o.LoopStartSec), a.frames(o.LoopEndSec)
 	}
 	if !C.asyncaoPlay(t.c(), C.Sint64(o.Loops), a.frames(o.StartSec), loopStart, maxFrame, C.Sint64(o.FadeInMs)) {
+		return failed()
+	}
+	return nil
+}
+
+// PlayStream starts a track whose input is a Stream, fading in over fadeInMs when > 0.
+func (t *Track) PlayStream(fadeInMs int) error {
+	if !C.asyncaoPlay(t.c(), 0, 0, 0, 0, C.Sint64(fadeInMs)) {
 		return failed()
 	}
 	return nil

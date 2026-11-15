@@ -3,8 +3,10 @@ package render
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"log"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
@@ -81,9 +83,13 @@ type Audio struct {
 	// modBan/modKick/modMute are the built-in mod-action sounds, used when the user set no custom file.
 	modBan, modKick, modMute *mix.Audio
 
-	// music is the live song, musicOld the one fading out; audio streams from its bytes, so they stay pinned.
+	// music is the live song, musicOld the one fading out.
 	music    musicSlot
 	musicOld musicSlot
+	// fadeOldOnStart holds a crossfade's fade-out until a streamed song starts, so a slow download leaves no gap.
+	fadeOldOnStart bool
+	// retired are streams taken off their tracks whose decoders may still be finishing; Close waits for them.
+	retired  []*musicStream
 	musicURL string // the URL of the track currently playing ("" = none); makes PlayMusic
 	//          idempotent so a room rebuild re-seeding the same track doesn't restart it.
 	musicLoop bool // whether the current stream loops forever; a non-looping (2.9
@@ -115,11 +121,28 @@ type Audio struct {
 	blipScale int
 }
 
+// musicSlot is one music track and the song on it: audio for a complete file SDL_mixer reads itself, or stream for one
+// decoded as it downloads. src is the file either reads, open until the slot clears.
 type musicSlot struct {
-	track *mix.Track
-	audio *mix.Audio // nil = no song loaded
-	bytes []byte     // the encoded song the audio streams from
+	track  *mix.Track
+	audio  *mix.Audio
+	stream *musicStream
+	src    media.Stream
+	// attached, started and fadeInMs are a streamed song's: on its track, playing once, and its fade-in.
+	attached bool
+	started  bool
+	fadeInMs int
 }
+
+// loaded reports a song on the slot, playing or still buffering.
+func (s *musicSlot) loaded() bool { return s.audio != nil || s.stream != nil }
+
+const (
+	// retiredCap bounds the streams waiting to finish; each ends within moments of its file closing.
+	retiredCap = 8
+	// retiredWait bounds Close's wait for each of them.
+	retiredWait = time.Second
+)
 
 const fullVolumePercent = 100
 
@@ -402,6 +425,15 @@ func (a *Audio) Close() {
 		return
 	}
 	a.stopMusic()
+	// A decoder still inside SDL_mixer must finish before the mixer shuts down; each ends once its file is closed.
+	for _, ms := range a.retired {
+		select {
+		case <-ms.done:
+		case <-time.After(retiredWait):
+			log.Printf("render: a music decoder didn't stop within %v", retiredWait)
+		}
+	}
+	a.retired = nil
 	for _, c := range a.chunks {
 		c.Destroy()
 	}
@@ -425,6 +457,7 @@ func (a *Audio) Frame() {
 			a.onAudioBytes(asset)
 		default:
 			a.stepLoopMeta()
+			a.stepMusicStream()
 			a.expirePending()
 			a.stepFadeOutOld()    // reap the crossfade's old track once its native fade halts it
 			a.reapFinishedMusic() // clear a naturally-ended one-shot so it's not seen as "still playing"
@@ -437,26 +470,36 @@ func (a *Audio) Frame() {
 // A stopped callback would fire on the audio thread (hard rule 1).
 // Music never pauses and Play starts synchronously, so a stopped track with a song loaded has finished.
 func (a *Audio) reapFinishedMusic() {
-	if !a.enabled() || a.music.audio == nil || a.musicLoop || a.music.track.Playing() {
+	if !a.enabled() || !a.music.loaded() || a.musicLoop || a.music.track.Playing() {
 		return // disabled, nothing loaded, a looper, or still rolling
+	}
+	if ms := a.music.stream; ms != nil && (!ms.finished() || ms.queuedSec() > 0) {
+		return // still buffering, or waiting out a download that fell behind
 	}
 	a.stopMusic() // natural end: free the finished song and clear musicURL so it can be re-triggered/re-fetched
 }
 
 func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
+	p, wanted := a.pending[asset.Base]
 	if !a.enabled() {
 		delete(a.pending, asset.Base)
-		return
+		wanted = false
 	}
-	p, wanted := a.pending[asset.Base]
-	if wanted && p.kind == pendingMusic {
+	if wanted && p.kind == pendingMusic && asset.Stream != nil {
 		delete(a.pending, asset.Base)
-		a.startMusic(asset.Base, asset.Data, p.loop, p.effects, p.seekSec) // 2.9 loop/effects (#15) + cross-tab resume seek
+		a.startMusic(asset.Base, asset.Stream, p.loop, p.effects, p.seekSec) // 2.9 loop/effects (#15) + cross-tab resume seek
 		return
 	}
-	// Music with no pending entry outlived pendingPlayTTL or was purged; these bytes are discarded, so log it.
-	if asset.Type == assets.AssetTypeMusic {
-		log.Printf("render: late music dropped for %q (no pending entry)", asset.Base)
+	// Music with no pending entry outlived pendingPlayTTL or was purged, so its file is closed unplayed.
+	if asset.Stream != nil {
+		asset.Stream.Close()
+		if a.enabled() {
+			log.Printf("render: late music dropped for %q (no pending entry)", asset.Base)
+		}
+		return
+	}
+	if !a.enabled() {
+		return
 	}
 	chunk := a.loadChunk(asset.Base, asset.Data)
 	if chunk == nil || !wanted {
@@ -589,7 +632,7 @@ func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 	if !a.enabled() {
 		return
 	}
-	if url == a.musicURL && a.music.audio != nil {
+	if url == a.musicURL && a.music.loaded() {
 		return // already playing this exact track — don't restart
 	}
 	// FADE_OUT: the old track plays on during the download, then startMusic fades it.
@@ -601,7 +644,7 @@ func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 			effects&musicEffectSyncPos != 0)
 	}
 	var syncPosSec float64
-	if a.music.audio != nil && a.musicURL != "" {
+	if a.music.loaded() && a.musicURL != "" {
 		// SYNC_POS: read the old position before the new track overwrites it (aomusicplayer.cpp:132-136).
 		if effects&musicEffectSyncPos != 0 {
 			if pos, _, ok := a.MusicClock(); ok {
@@ -637,7 +680,7 @@ func (a *Audio) StopMusic() {
 func (a *Audio) CurrentMusicURL() string { return a.musicURL }
 
 // MusicPlaying reports whether a track is loaded and rolling; render thread only.
-func (a *Audio) MusicPlaying() bool { return a.enabled() && a.music.audio != nil }
+func (a *Audio) MusicPlaying() bool { return a.enabled() && a.music.loaded() }
 
 // musicSwapSnap is an outgoing track's position, duration and read time; the resume adds elapsed and wraps.
 type musicSwapSnap struct {
@@ -682,7 +725,7 @@ func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64)
 	if !a.enabled() {
 		return
 	}
-	if url == a.musicURL && a.music.audio != nil {
+	if url == a.musicURL && a.music.loaded() {
 		return // already this exact stream — never restart or re-seek a live track
 	}
 	a.purgePendingMusic(url)
@@ -690,16 +733,17 @@ func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64)
 	a.mgr.Media().Get(assets.ExactKey(url, assets.AssetTypeMusic), media.Now, 0) // AssetType: Music
 }
 
-// startMusic decodes and plays a fetched track, following AO2's effects (aomusicplayer.cpp:24-160).
-func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seekSec float64) {
+// startMusic plays a fetched track, following AO2's effects (aomusicplayer.cpp:24-160): a complete file through
+// SDL_mixer by path, one still downloading or held in memory through a musicStream.
+func (a *Audio) startMusic(url string, src media.Stream, loop bool, effects int, seekSec float64) {
 	// Read the outgoing track's position before stopMusic frees it; an unreadable clock records nothing.
-	if a.music.audio != nil && a.musicURL != "" && a.musicURL != url {
+	if a.music.loaded() && a.musicURL != "" && a.musicURL != url {
 		if pos, dur, ok := a.MusicClock(); ok {
 			a.recordSwapSnap(a.musicURL, pos, dur, time.Now())
 		}
 	}
 	// FADE_OUT with an audible old track: keep it on the other music track and fade it in parallel with the new song.
-	crossfade := effects&musicEffectFadeOut != 0 && a.music.audio != nil && a.musicVol > 0
+	crossfade := effects&musicEffectFadeOut != 0 && a.music.loaded() && a.musicVol > 0
 	if effects != 0 {
 		log.Printf("render: startMusic %q effects=0x%x crossfade=%v musicVol=%d seek=%.2fs",
 			url, effects, crossfade, a.musicVol, seekSec)
@@ -710,20 +754,51 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 	} else {
 		a.stopMusic() // clears musicURL; set below only on a successful start
 	}
+	fadeInMs := 0
+	if effects&musicEffectFadeIn != 0 {
+		fadeInMs = musicFadeInMs // linear 1000ms ramp (AO2 FADE_IN)
+	}
+	if path := src.Path(); path != "" {
+		if !a.playMusicFile(url, path, loop, fadeInMs, seekSec) {
+			src.Close()
+			a.restoreOldMusic()
+			return
+		}
+		if crossfade {
+			// stepFadeOutOld unloads the old song once the fade has stopped its track.
+			a.musicOld.track.Stop(musicFadeOutMs)
+		}
+	} else {
+		var loopStart, loopEnd float64
+		if loop {
+			if p, ok := a.loopPointsFor(url, 0, false, seekSec); ok {
+				loopStart, loopEnd = p.StartSec, p.EndSec
+			}
+		}
+		a.music.stream = newMusicStream(a.mixer, src, seekSec, loop, loopStart, loopEnd)
+		a.music.fadeInMs = fadeInMs
+		a.fadeOldOnStart = crossfade // stepMusicStream fades the old song once this one starts
+	}
+	a.music.src = src
+	if loop {
+		a.requestLoopMeta(url, src)
+	}
+	a.musicLoop = loop // remember loop-ness so reapFinishedMusic only reaps a finished one-shot
+	a.musicURL = url   // now this exact track is playing — PlayMusic(url) becomes a no-op
+}
+
+// playMusicFile plays a complete file through SDL_mixer, which reads it from disk as it plays.
+func (a *Audio) playMusicFile(url, path string, loop bool, fadeInMs int, seekSec float64) bool {
 	start := time.Now()
-	song, err := a.mixer.Load(data, false) // streamed: data stays pinned in the slot
+	song, err := a.mixer.OpenFile(path)
 	a.noteLoad(time.Since(start))
 	if err != nil {
 		log.Printf("render: music decode failed: %v", err)
-		a.restoreOldMusic()
-		return
+		return false
 	}
-	opts := mix.PlayOptions{}
+	opts := mix.PlayOptions{FadeInMs: fadeInMs}
 	if loop {
 		opts.Loops = mix.LoopForever
-	}
-	if effects&musicEffectFadeIn != 0 {
-		opts.FadeInMs = musicFadeInMs // linear 1000ms ramp (AO2 FADE_IN)
 	}
 	durSec, haveDur := song.Duration()
 	// Wrap by the real length: the ui's wall-clock fallback isn't wrapped and short loops land past the end.
@@ -740,50 +815,112 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 	if err := a.music.track.SetAudio(song); err != nil {
 		log.Printf("render: music play failed: %v", err)
 		song.Destroy()
-		a.restoreOldMusic()
-		return
+		return false
 	}
 	// Set the gain first so a fade-in climbs to the right ceiling.
 	a.music.track.SetGain(gain(a.musicVol))
 	if err := a.music.track.Play(opts); err != nil {
 		log.Printf("render: music play failed: %v", err)
 		song.Destroy()
-		a.restoreOldMusic()
-		return
+		return false
 	}
-	a.music.audio, a.music.bytes = song, data
-	a.musicFadeInEnd = time.Now().Add(time.Duration(opts.FadeInMs) * time.Millisecond)
-	if loop {
-		a.requestLoopMeta(url, data)
-	}
-	a.musicLoop = loop // remember loop-ness so reapFinishedMusic only reaps a finished one-shot
-	if crossfade {
-		// stepFadeOutOld unloads the old song once the fade has stopped its track.
-		a.musicOld.track.Stop(musicFadeOutMs)
-	}
-	a.musicURL = url // now this exact track is playing — PlayMusic(url) becomes a no-op
+	a.music.audio = song
+	a.musicFadeInEnd = time.Now().Add(time.Duration(fadeInMs) * time.Millisecond)
+	return true
 }
 
+// stepMusicStream attaches a streamed song once its header is read and starts it once enough is decoded; it restarts it
+// the same way after the download fell behind, as SDL3_mixer ends a stream track that runs dry. Called every Frame.
+func (a *Audio) stepMusicStream() {
+	s := &a.music
+	ms := s.stream
+	if ms == nil {
+		return
+	}
+	if err := ms.failure(); err != nil && !errors.Is(err, errMusicStopped) {
+		log.Printf("render: music stream for %q failed: %v", a.musicURL, err)
+		a.stopMusic()
+		return
+	}
+	out := ms.output()
+	if out == nil || s.track.Playing() {
+		return
+	}
+	if !s.attached {
+		if err := s.track.SetStream(out); err != nil {
+			log.Printf("render: music play failed: %v", err)
+			a.stopMusic()
+			return
+		}
+		s.track.SetGain(gain(a.musicVol))
+		s.attached = true
+	}
+	queued := ms.queuedSec()
+	if queued < musicResumeSec && (!ms.finished() || queued == 0) {
+		return
+	}
+	fade := 0
+	if !s.started {
+		fade, s.started = s.fadeInMs, true
+		a.musicFadeInEnd = time.Now().Add(time.Duration(fade) * time.Millisecond)
+		if a.fadeOldOnStart {
+			a.musicOld.track.Stop(musicFadeOutMs)
+			a.fadeOldOnStart = false
+		}
+	}
+	if err := s.track.PlayStream(fade); err != nil {
+		log.Printf("render: music play failed: %v", err)
+	}
+}
+
+// clearSlot stops and frees a slot's song and closes its file; a stream's decoder finishes on its own goroutine.
 func (a *Audio) clearSlot(s *musicSlot) {
-	if s.audio == nil {
+	if !s.loaded() {
 		return
 	}
 	s.track.Stop(0)
-	s.audio.Destroy()
-	s.audio, s.bytes = nil, nil
+	if s.stream != nil {
+		_ = s.track.SetStream(nil)
+		s.stream.close()
+		a.retire(s.stream)
+	}
+	if s.audio != nil {
+		s.audio.Destroy()
+	}
+	if s.src != nil {
+		s.src.Close() // after close: it ends a read still waiting on the download
+	}
+	*s = musicSlot{track: s.track}
+}
+
+// retire keeps a closed stream until its decoder has finished, for Close to wait on.
+func (a *Audio) retire(ms *musicStream) {
+	a.retired = slices.DeleteFunc(a.retired, func(r *musicStream) bool {
+		select {
+		case <-r.done:
+			return true
+		default:
+			return false
+		}
+	})
+	if len(a.retired) == retiredCap {
+		a.retired = a.retired[1:]
+	}
+	a.retired = append(a.retired, ms)
 }
 
 func (a *Audio) stopMusic() {
 	a.clearSlot(&a.music)
 	a.clearSlot(&a.musicOld) // tear down an in-flight crossfade too (StopMusic mid-fade)
-	a.musicURL = ""          // nothing playing now; a later PlayMusic of the same URL plays again
+	a.fadeOldOnStart = false
+	a.musicURL = "" // nothing playing now; a later PlayMusic of the same URL plays again
 	// No song loaded; reset so a stale true can't skip a future reap.
 	a.musicLoop = false
 }
 
 // restoreOldMusic makes a crossfade's old song live again after a failed load, so it doesn't drop out.
 func (a *Audio) restoreOldMusic() {
-	if a.musicOld.audio == nil {
+	if !a.musicOld.loaded() {
 		return
 	}
 	a.music, a.musicOld = a.musicOld, a.music
@@ -791,8 +928,8 @@ func (a *Audio) restoreOldMusic() {
 
 // stepFadeOutOld unloads a crossfade's old song once its track stops; called every Frame.
 func (a *Audio) stepFadeOutOld() {
-	if a.musicOld.audio == nil || a.musicOld.track.Playing() {
-		return // nothing fading, or the fade is still running
+	if !a.musicOld.loaded() || a.musicOld.track.Playing() || a.fadeOldOnStart {
+		return // nothing fading, the fade is still running, or it hasn't started yet
 	}
 	log.Printf("render: fade-out of old track complete")
 	a.clearSlot(&a.musicOld)
