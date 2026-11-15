@@ -132,9 +132,12 @@ in **Status**. Update Status in the same commit that completes a step.
           Settings → Check folders now end every folder check's trust. The old pipeline (network pool, mount index and
           layer, conclusive-miss set, Local-only mode in the Manager) and `-old-media` are deleted, and with them the wait
           gate's refusal re-ask: high-priority requests are never refused
-    - [ ] known problem from the benchmark: peak heap with files asked for every frame is 384-617 MiB, unexplained (the
-          request count on hosts with no `extensions.json` is answered by character mapping above). Lead: images declare
-          no memory claim and the bridge sets no `ClaimLimit`, so decoded pages are bounded by nothing
+    - [ ] known problem from the benchmark: peak heap with files asked for every frame is 384-617 MiB (the request count
+          on hosts with no `extensions.json` is answered by character mapping above)
+      - [x] background decodes claim their decoded size from the file header and wait under a 64 MiB limit until the
+            pump uploads (2026-11-15). Burst of 112 vanilla APNGs: peak live heap ~950 → ~220 MiB, heap after it
+            ~700 → 31-56 MiB; the burst takes 2.2 s instead of 1.6 s. Requests for the current message are not limited
+      - [ ] still open: what is left of the 220 MiB peak, and a profile from the real client
     - [ ] move callers (decided 2026-11-15): callers call `media.Manager` directly with keys from small assets helpers,
           and the bridge goes at the end. Order: `Pump` on `TakeResults`, then courtroom, screens, theme and audio;
           music streaming after them

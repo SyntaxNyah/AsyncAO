@@ -74,7 +74,7 @@ func newMediaBridge(m *Manager) *mediaBridge {
 	b.learned = saver.New(m.learnedPath, learnedSaveDelay, b.encodeLearned)
 	cfg := media.Config{Candidates: b.builder.Build, AllFormats: media.EveryFormat, Found: b.found,
 		Finished: b.finished, Delivered: m.NotifyDelivery, Skip: b.skip, Asked: b.asked, MissingAgain: b.missingAgain,
-		Compute: b.compute}
+		Compute: b.compute, ClaimLimit: imageClaimLimit}
 	b.remote = media.NewRemoteSource(ctx, bridgeFetcher{m}, media.DefaultMissingTTL, time.Now)
 	cfg.Chains = map[media.Place]*media.Chain{media.PlaceServer: media.NewChain(
 		media.Entry{Source: bridgeMemory{m.t2, b.pin, m}},
@@ -578,7 +578,14 @@ func (b *mediaBridge) hitOf(hit media.Hit) (string, bool) {
 // thread as early pages, and the last page is the result.
 type bridgeImage struct{ b *mediaBridge }
 
+var _ media.Measurer = bridgeImage{}
+
 func (f bridgeImage) OnMainThread() bool { return true }
+
+// Measure claims the decoded size, so background decodes wait while the render thread is behind on uploads.
+func (f bridgeImage) Measure(data []byte) int64 {
+	return decodeClaim(data, f.b.m.prefs.Load().PreferAnimated)
+}
 
 func (f bridgeImage) Decode(k media.Key, hit media.Hit, data []byte, page func(any)) (any, error) {
 	url, fromPack := f.b.hitOf(hit)
