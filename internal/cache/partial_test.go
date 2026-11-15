@@ -53,7 +53,7 @@ func TestOpeningClearsDownloadsALastSessionLeft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again.Close() // Close waits for the writer, which clears before anything else
+	again.Close()
 	if _, err := os.Stat(filepath.Join(root, partialDir)); !os.IsNotExist(err) {
 		t.Fatalf("leftover downloads survived opening: %v", err)
 	}

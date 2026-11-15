@@ -32,7 +32,7 @@ const (
 
 	diskDirPerm    = 0o755
 	diskTmpPattern = "w-*.tmp"
-	// partialDir holds downloads still arriving, as .tmp files that prune and Relocate skip; the writer empties it at open.
+	// partialDir holds downloads still arriving, as .tmp files that prune and Relocate skip; opening the cache empties it.
 	partialDir     = "partial"
 	partialPattern = "*.tmp"
 	hashHexLen     = 16 // xxhash64 → 8 bytes → 16 hex chars
@@ -217,6 +217,8 @@ func NewDiskCache(root string, initialBudget int64) (*DiskCache, error) {
 	if err := os.MkdirAll(root, diskDirPerm); err != nil {
 		return nil, fmt.Errorf("cache: creating disk cache root %s: %w", root, err)
 	}
+	// Here, not on the writer: once this returns a download may already be arriving in the folder.
+	_ = os.RemoveAll(filepath.Join(root, partialDir)) // downloads a previous session never finished
 	d := &DiskCache{
 		queue:    make(chan diskWrite, writeQueueCap),
 		pruneReq: make(chan struct{}, pruneReqCap),
@@ -346,8 +348,7 @@ func (d *DiskCache) Close() {
 // writerLoop is the only blob writer and owns the prune: at open, every diskPruneEvery stores, on each SetBudget.
 func (d *DiskCache) writerLoop() {
 	defer close(d.done)
-	_ = os.RemoveAll(filepath.Join(d.Root(), partialDir)) // downloads a previous session never finished
-	d.prune()                                             // enforce the initial budget on whatever a previous session left
+	d.prune() // enforce the initial budget on whatever a previous session left
 	sincePrune := 0
 	for {
 		select {
