@@ -1230,6 +1230,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.WardrobeNameAbove != o.WardrobeNameAbove {
 		return false
 	}
+	if s.WardrobeSingleClick != o.WardrobeSingleClick {
+		return false
+	}
 	if s.WardrobeAccentVal != o.WardrobeAccentVal {
 		return false
 	}
