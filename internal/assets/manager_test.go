@@ -593,7 +593,13 @@ func TestPurgeCorruptEvictsTiers(t *testing.T) {
 // waitUntil polls done until it holds, failing the test after managerWait.
 func waitUntil(t *testing.T, what string, done func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(managerWait)
+	waitWithin(t, what, managerWait, done)
+}
+
+// waitWithin polls done until it holds, failing the test after wait.
+func waitWithin(t *testing.T, what string, wait time.Duration, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(wait)
 	for !done() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)

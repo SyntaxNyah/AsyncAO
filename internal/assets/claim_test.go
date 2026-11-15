@@ -23,6 +23,8 @@ const (
 	claimBigShare  = imageClaimLimit / (claimBigSide * claimBigSide * rgbaBytesPerPixel)
 	claimBigAsks   = 2 * claimBigShare
 	claimTestQuiet = 200 * time.Millisecond
+	// claimTestWait covers several 16 MiB decodes on one background worker under the race detector on a small runner.
+	claimTestWait = time.Minute
 )
 
 // encodeGIFGlobal is a GIF whose frames share one global colour table.
@@ -103,7 +105,7 @@ func TestBackgroundDecodesWaitForUploads(t *testing.T) {
 
 	var held []Delivery
 	take := func() { rig.manager.TakeDeliveries(func(d Delivery) { held = append(held, d) }) }
-	waitUntil(t, "the first background decodes", func() bool { take(); return len(held) >= claimBigShare })
+	waitWithin(t, "the first background decodes", claimTestWait, func() bool { take(); return len(held) >= claimBigShare })
 	time.Sleep(claimTestQuiet)
 	take()
 	if len(held) != claimBigShare {
@@ -111,7 +113,7 @@ func TestBackgroundDecodesWaitForUploads(t *testing.T) {
 	}
 
 	rig.manager.Media().Get(ChainKey(bases[claimBigAsks], AssetTypeBackground), media.Now, 0) // AssetType: Background
-	waitUntil(t, "the current message's decode", func() bool { take(); return len(held) > claimBigShare })
+	waitWithin(t, "the current message's decode", claimTestWait, func() bool { take(); return len(held) > claimBigShare })
 
 	for _, d := range held {
 		d.Asset.Release()
@@ -119,7 +121,7 @@ func TestBackgroundDecodesWaitForUploads(t *testing.T) {
 	}
 	done := len(held)
 	held = nil
-	waitUntil(t, "the rest after uploads", func() bool {
+	waitWithin(t, "the rest after uploads", claimTestWait, func() bool {
 		rig.manager.TakeDeliveries(func(d Delivery) {
 			d.Asset.Release()
 			rig.manager.Done(d)
