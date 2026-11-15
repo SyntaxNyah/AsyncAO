@@ -165,7 +165,7 @@ func TestPumpConnectionFreezesAnInCourtDrop(t *testing.T) {
 		return conn.Send(p)
 	}, "test-hdid")
 	// The difference from the test above: a courtroom the user is looking at.
-	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, a.sess, courtroom.NopAudio{})
 	a.screen = ScreenCourtroom
 
 	if err := conn.Send(protocol.NewPacket("HI", "x")); err != nil {

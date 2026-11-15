@@ -34,6 +34,14 @@ type Config struct {
 	Finished func(*Asset)
 	// Delivered runs after a result is waiting for TakeResults, on any goroutine, to wake the main thread's loop.
 	Delivered func()
+	// Skip runs in Get on the caller's thread: true means nothing is asked, as the caller already holds key, such as an
+	// uploaded texture. It must be cheap; Get then returns Skipped.
+	Skip func(Key) bool
+	// Asked runs on the Manager's goroutine when a new request starts, such as to map the folder it lives in.
+	Asked func(Key)
+	// MissingAgain runs in Get on the caller's thread when key is asked again while known missing, which costs no
+	// request, so the caller can still warn.
+	MissingAgain func(*Asset)
 	// ClaimLimit is the memory decodes may claim at once; Now work may pass it, so a message can't wait on memory.
 	ClaimLimit int64
 	MaxAssets  int
@@ -198,6 +206,10 @@ type Manager struct {
 	claimed  int64
 	// winners maps a key to the file it was last found as, tried first next time, as AO2's asset_lookup_cache is.
 	winners map[Key]File
+	// refused counts Gets turned away at MaxAssets.
+	refused atomic.Int64
+	// skipped is what Get returns when Config.Skip says the caller holds the key already.
+	skipped *Asset
 }
 
 // NewManager starts a Manager's goroutine.
@@ -213,6 +225,8 @@ func NewManager(cfg Config) *Manager {
 	}
 	m := &Manager{cfg: cfg, wake: make(chan struct{}, 1), stop: make(chan struct{}), stopped: make(chan struct{}),
 		active: map[Key]*request{}, queues: map[*Pool]*poolQueue{}, hostBusy: map[string]int{}, winners: map[Key]File{}}
+	m.skipped = newAsset(Key{}, Later, 0, nil)
+	m.skipped.finish(Ready, nil, nil, cfg.Clock())
 	go m.run()
 	return m
 }
@@ -223,15 +237,22 @@ func (m *Manager) Close() {
 	<-m.stopped
 }
 
-// Get returns the Asset for key from any thread and never blocks: a repeat ask takes no lock and posts nothing.
+// Get returns the Asset for key from any thread and never blocks: a repeat ask takes no lock and posts nothing. A key the
+// Skip hook says the caller holds already returns a shared finished Asset with no key.
 // alts are the other names it may be found under, best first, each asked only once every earlier one is known absent.
 func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *Asset {
+	if m.cfg.Skip != nil && m.cfg.Skip(key) {
+		return m.skipped
+	}
 	if v, ok := m.assets.Load(key); ok {
 		a := v.(*Asset)
 		if !m.expired(a) && !a.lacks(alts) {
 			a.add(flags)
 			if urgency == Now && !a.urgent.Load() && a.urgent.CompareAndSwap(false, true) {
 				m.post(&request{event: eventRaise, key: key})
+			}
+			if m.cfg.MissingAgain != nil && a.State() == Missing {
+				m.cfg.MissingAgain(a)
 			}
 			return a
 		}
@@ -246,6 +267,7 @@ func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *As
 	if urgency == Later && m.count.Load() >= int64(m.cfg.MaxAssets) {
 		a := newAsset(key, urgency, flags, alts)
 		a.finish(Refused, nil, ErrRefused, m.cfg.Clock())
+		m.refused.Add(1)
 		return a
 	}
 	a := newAsset(key, urgency, flags, alts)
@@ -345,6 +367,9 @@ func (m *Manager) Run(pool *Pool, urgency Urgency, work func() any, done func(an
 	m.post(&request{event: eventWork, pool: pool, urgency: urgency, work: work, done: done, step: stepWork})
 }
 
+// Refused counts the Gets turned away because the request table was full; any thread.
+func (m *Manager) Refused() int64 { return m.refused.Load() }
+
 // TakeResults hands the main thread every result that needs it, in order, once per frame, with one atomic swap. final is
 // false for an early page; only the final result is Finished.
 func (m *Manager) TakeResults(use func(a *Asset, result any, final bool)) {
@@ -427,6 +452,9 @@ func (m *Manager) event(r *request) {
 	switch r.event {
 	case eventNew:
 		m.active[r.asset.key] = r
+		if m.cfg.Asked != nil {
+			m.cfg.Asked(r.asset.key)
+		}
 		m.search(r)
 	case eventRaise:
 		if a := m.active[r.key]; a != nil && a.urgency == Later {

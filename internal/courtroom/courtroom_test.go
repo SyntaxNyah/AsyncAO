@@ -88,7 +88,7 @@ func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioR
 	rec := &sentRecorder{}
 	sess := NewSession(rec.send, "test-hdid")
 	audio := &audioRecorder{}
-	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr, sess, audio)
+	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr.Media(), mgr, sess, audio)
 	return room, sess, rec, audio
 }
 

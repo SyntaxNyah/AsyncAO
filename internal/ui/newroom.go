@@ -10,7 +10,7 @@ import (
 // newRoom builds a courtroom and wires it: char.ini callbacks, the screen-effect overlay engine and the visual prefs.
 // sess and audio may be nil; NewCourtroom substitutes a no-op sink.
 func (a *App) newRoom(urls courtroom.URLBuilder, sess *courtroom.Session, audio courtroom.AudioSink) *courtroom.Courtroom {
-	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, audio)
+	room := courtroom.NewCourtroom(urls, a.d.Manager.Media(), a.d.Manager, sess, audio)
 	// One call so a speaker blips, skins and flashes identically in every mode.
 	a.wireRoomCharMeta(room)
 	a.applyVisualPrefsToRoom(room)

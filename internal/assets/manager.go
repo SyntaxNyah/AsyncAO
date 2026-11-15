@@ -86,9 +86,6 @@ type Manager struct {
 	// deliveryNotify wakes the event-driven render loop; on workers, so cheap, non-blocking and SDL-free.
 	deliveryNotify atomic.Pointer[func()]
 
-	// refused counts requests the media system turned away at its cap.
-	refused atomic.Int64
-
 	// offline blocks every network fetch; caches and folders still read, and misses learn no 404s.
 	offline atomic.Bool
 
@@ -230,7 +227,7 @@ type WorkStats struct {
 // WorkStats snapshots the decoders and handoffs; it allocates, so call it only while the debug panel shows it.
 func (m *Manager) WorkStats() WorkStats {
 	return WorkStats{
-		Refused:       m.refused.Load(),
+		Refused:       m.bridge.media.Refused(),
 		DecodeWorkers: DecodeWorkers(),
 		AudioQueued:   len(m.audioCh),
 		AudioCap:      cap(m.audioCh),
@@ -252,6 +249,14 @@ func (m *Manager) NotifyDelivery() {
 	if f := m.deliveryNotify.Load(); f != nil {
 		(*f)()
 	}
+}
+
+// Media is the media system callers ask directly, with keys from ChainKey and ExactKey.
+func (m *Manager) Media() *media.Manager {
+	if m == nil {
+		return nil
+	}
+	return m.bridge.media
 }
 
 // Delivery is one decoded page for the render thread, and the request it belongs to.
@@ -313,9 +318,6 @@ func (m *Manager) PrefetchChain(base string, alts []string, t AssetType, prio ne
 	if base == "" || !t.Valid() {
 		return
 	}
-	if m.t1Failed != nil && m.t1Failed(base) {
-		return // recently failed to decode — back off (the negative cache absorbs retries)
-	}
 	m.bridge.askChain(base, alts, t, prio, false)
 }
 
@@ -331,9 +333,6 @@ func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority
 func (m *Manager) PrefetchExact(url string, t AssetType, prio network.Priority) {
 	if url == "" || !t.Valid() {
 		return
-	}
-	if m.t1Failed != nil && m.t1Failed(url) {
-		return // recently failed to decode — back off
 	}
 	m.bridge.askExact(url, t, prio)
 }

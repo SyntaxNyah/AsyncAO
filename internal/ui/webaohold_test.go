@@ -15,7 +15,7 @@ func TestWebAOModeBriefHold(t *testing.T) {
 	local, cleanup := wireLocalManager(t, a, dir)
 	defer cleanup()
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
-	a.room = courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), a.d.Manager, sess, nil)
+	a.room = courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), a.d.Manager.Media(), a.d.Manager, sess, nil)
 	a.room.Assets = spriteProbe(func(string) bool { return false })
 	a.d.Prefs.SetSpriteLoadMode(config.SpriteLoadHoldPrev)
 	a.applyTimingToRoom()
