@@ -77,6 +77,9 @@ const (
 	Quiet Flags = 1 << iota
 	// Sticky marks work the caller keeps when it withdraws the rest; one caller asking is enough.
 	Sticky
+	// Unlisted also asks the web for the formats the host's list leaves out, after the ones it names, for a caller that
+	// must find a file however the host lists it, such as an export. It holds for the request it starts.
+	Unlisted
 )
 
 // File is one exact location a source can answer for, such as a candidate URL.

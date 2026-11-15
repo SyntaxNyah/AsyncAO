@@ -1173,7 +1173,7 @@ func (a *App) probeCasing(host, name, origin string) {
 		base := courtroom.NewURLBuilder(origin).WithCharCase(cc).CharIcon(name)
 		found := false
 		for _, ext := range []string{config.ExtPNG, config.ExtWebP} {
-			if _, err := a.d.Manager.FetchRaw(ctx, base+ext); err == nil {
+			if _, err := assets.Raw(ctx, a.d.Manager.Media(), base+ext); err == nil {
 				found = true
 				break
 			}

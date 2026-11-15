@@ -272,7 +272,7 @@ func TestFormatReportShape(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestContentProbeWindowBounded pins that the probe never runs more than
-// contentProbeWorkers ResolveRaw/FetchRaw calls concurrently, however many
+// contentProbeWorkers lookups concurrently, however many
 // assets a scene references — the wave-1 in-flight-window discipline. It wires a
 // REAL Manager over a slow origin that COUNTS concurrent in-flight fetches; the
 // observed peak must never exceed the worker window.
@@ -1091,7 +1091,7 @@ func existingAorecs(t *testing.T) map[string]bool {
 // ---------------------------------------------------------------------------
 
 // headlessProbeApp wires a headless App with a REAL streaming Manager (no SDL /
-// no TextureStore — the content probe path is pure Manager: ResolveRaw/FetchRaw
+// no TextureStore — the content probe path is pure media lookups
 // never touch T1 or the pool's async delivery, so no channel drainer is needed).
 func headlessProbeApp(t *testing.T, source assets.Fetcher, localMode bool) *App {
 	t.Helper()
@@ -1121,7 +1121,7 @@ func headlessProbeApp(t *testing.T, source assets.Fetcher, localMode bool) *App 
 }
 
 // localMgr builds a bare Manager over a LocalFetcher mount and returns it plus
-// the mount's origin (BaseURL). FetchRaw over that origin reads files written by
+// the mount's origin (BaseURL). assets.Raw over that origin reads files written by
 // seedMount — standing in for the cache tiers the probe would have filled.
 func localMgr(t *testing.T, mount string) (*assets.Manager, string) {
 	t.Helper()
@@ -1151,7 +1151,7 @@ func localMgr(t *testing.T, mount string) (*assets.Manager, string) {
 }
 
 // seedMount writes an asset file into a LocalFetcher mount at its forward-slash
-// relative path, so FetchRaw(origin+rel) reads it back.
+// relative path, so assets.Raw(origin+rel) reads it back.
 func seedMount(t *testing.T, mount, rel string, data []byte) {
 	t.Helper()
 	full := filepath.Join(mount, filepath.FromSlash(rel))

@@ -77,7 +77,7 @@ func (a *App) openBgPicker() {
 	a.ensureBgList()
 }
 
-// ensureBgList rebuilds the list from local seeds at once and fetches background/ once via Manager.FetchRaw (cached).
+// ensureBgList rebuilds the list from local seeds at once and fetches background/ once via assets.Raw (cached).
 func (a *App) ensureBgList() {
 	if a.bgPick.forKey != a.serverKey {
 		// New server: seed from last session's cached discovery, then refresh. Cloned so prefs stay unmutated.
@@ -110,7 +110,7 @@ func (a *App) ensureBgList() {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), bgFetchTimeout)
 		defer cancel()
-		data, err := mgr.FetchRaw(ctx, listURL)
+		data, err := assets.Raw(ctx, mgr.Media(), listURL)
 		if err != nil {
 			ch <- bgFetch{key: key, err: err}
 			return

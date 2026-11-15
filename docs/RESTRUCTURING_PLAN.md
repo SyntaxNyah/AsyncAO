@@ -161,6 +161,14 @@ in **Status**. Update Status in the same commit that completes a step.
             downloading or held in memory (.zip packs) is decoded on its own goroutine into an SDL audio stream on the
             music track, ahead of playback, reopening at each loop so loops stay gapless; a download that falls behind
             pauses only the music. No track is held whole in memory
+    - [ ] delete the bridge (decided 2026-11-15): `assets.Manager` goes; `assets` exports the parts (formats, the T2 and
+          disk sources, the web fetcher with offline and archive handling, the folders source, the hooks, learned.json)
+          and `cmd/asyncao/main.go` wires `media.Manager` from them. One commit per group:
+      - [x] raw lookups: `assets.Raw` (a raw key) and `assets.Resolve` (a chain on a raw key; `media.Unlisted` also asks
+            the formats the host's list leaves out) replace `FetchRaw` and `ResolveRaw*`; `media.Manager.Load` is `Get`
+            plus `Asset.Wait`, which also returns when the media system stops, and `Asset.Hit` says which file answered
+      - [ ] settings pass-throughs, folders, learned formats and hosts, stats
+      - [ ] the wiring moves to `main.go` and the bridge goes
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still

@@ -49,12 +49,6 @@ func (f *bridgeFolders) Open(file media.File) (media.Stream, error) {
 	return st, err
 }
 
-// read is Data for the synchronous fetch paths; workers only.
-func (f *bridgeFolders) read(url string) ([]byte, bool) {
-	b, err := f.Data(media.File(url))
-	return b, err == nil
-}
-
 // SetFolders mounts the player's folders and .zip packs, in order, for their local:// origin and for each server
 // asset origin given, when they layer over streaming. It reads nothing, so it is safe on the render thread.
 func (m *Manager) SetFolders(mounts, serverOrigins []string) {

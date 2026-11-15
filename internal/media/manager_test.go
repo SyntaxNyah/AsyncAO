@@ -465,9 +465,9 @@ func TestLoadWaitsOffMainAndRefusesOnMain(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
-	got, err := m.Load(ctx, image("a"), Now)
-	if err != nil || got != "x" {
-		t.Fatalf("got %v err %v", got, err)
+	a, err := m.Load(ctx, image("a"), Now, 0)
+	if err != nil || a.Result() != "x" {
+		t.Fatalf("got %v err %v", a.Result(), err)
 	}
 	onMain.Store(true)
 	defer func() {
@@ -475,7 +475,7 @@ func TestLoadWaitsOffMainAndRefusesOnMain(t *testing.T) {
 			t.Fatal("Load on the main thread did not panic")
 		}
 	}()
-	_, _ = m.Load(ctx, image("a"), Now)
+	_, _ = m.Load(ctx, image("a"), Now, 0)
 }
 
 // Every request ends in one final state, whatever mix of paths it takes; a hang here would freeze the wait gate.

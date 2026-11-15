@@ -2,7 +2,6 @@ package assets
 
 import (
 	"context"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -347,110 +346,6 @@ func (m *Manager) skipExhausted(base string, t AssetType, quiet bool) {
 	case m.warningCh <- Warning{Base: base, Type: t}:
 	default:
 	}
-}
-
-// FetchRaw fetches a complete URL through memory, the disk cache, the player's folders and the web without decoding;
-// call it off the render thread.
-func (m *Manager) FetchRaw(ctx context.Context, url string) ([]byte, error) {
-	data, _, err := m.fetchRaw(ctx, url)
-	return data, err
-}
-
-// fetchRaw is FetchRaw that also says whether the bytes came from the player's folders.
-func (m *Manager) fetchRaw(ctx context.Context, url string) (data []byte, fromPack bool, err error) {
-	if data, ok := m.cachedRaw(url); ok {
-		return data, false, nil
-	}
-	if data, ok := m.bridge.folders.read(url); ok {
-		return data, true, nil // counted by the folder source
-	}
-	data, err = m.remoteRaw(ctx, url)
-	return data, false, err
-}
-
-// cachedRaw reads a URL from memory or the disk cache.
-func (m *Manager) cachedRaw(url string) ([]byte, bool) {
-	if data, ok := m.t2.Get(url); ok {
-		m.t2Hits.Add(1)
-		return data, true
-	}
-	if skipDisk(url) {
-		return nil, false
-	}
-	data, ok := m.disk.Get(url)
-	if ok {
-		m.diskHits.Add(1)
-		m.t2.Add(url, data, int64(len(data)))
-	}
-	return data, ok
-}
-
-// remoteRaw fetches a URL from the web and keeps it in memory and the disk cache.
-func (m *Manager) remoteRaw(ctx context.Context, url string) ([]byte, error) {
-	data, err := m.netFetch(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-	m.netFetches.Add(1)
-	m.t2.Add(url, data, int64(len(data)))
-	if !skipDisk(url) {
-		m.disk.Put(url, data)
-	}
-	return data, nil
-}
-
-// ResolveRaw returns the first candidate whose bytes fetch and learns its format; export and replay share this order.
-func (m *Manager) ResolveRaw(base string, t AssetType) (string, []byte, bool) {
-	url, data, _, ok := m.ResolveRawLayered(base, t)
-	return url, data, ok
-}
-
-// ResolveRawLayered is ResolveRaw that also says whether the bytes came from the player's folders, for the content
-// report and scene exporter.
-func (m *Manager) ResolveRawLayered(base string, t AssetType) (url string, data []byte, fromPack, ok bool) {
-	if base == "" || !t.Valid() {
-		return "", nil, false, false
-	}
-	return m.resolveIn(base, t, m.bridge.candidates(base, t))
-}
-
-// ResolveRawFull is ResolveRawLayered for report and export passes, which also ask the formats the host's list leaves
-// out.
-func (m *Manager) ResolveRawFull(base string, t AssetType) (string, []byte, bool) {
-	if base == "" || !t.Valid() {
-		return "", nil, false
-	}
-	urls := m.bridge.candidates(base, t)
-	for _, f := range media.EveryFormat(media.Key{Class: classOf(t)}, base) {
-		if !slices.Contains(urls, string(f)) {
-			urls = append(urls, string(f))
-		}
-	}
-	url, data, _, ok := m.resolveIn(base, t, urls)
-	return url, data, ok
-}
-
-// resolveIn finds one name in the live chain's order: memory and the disk cache, then the player's folders in every
-// format, then the web. Server hits teach the host's format; a folder hit teaches nothing, as the files are the player's.
-func (m *Manager) resolveIn(base string, t AssetType, urls []string) (url string, data []byte, fromPack, ok bool) {
-	for _, u := range urls {
-		if data, ok := m.cachedRaw(u); ok {
-			m.bridge.learn(base, t, u)
-			return u, data, false, true
-		}
-	}
-	for _, f := range media.EveryFormat(media.Key{Class: classOf(t)}, base) {
-		if data, ok := m.bridge.folders.read(string(f)); ok {
-			return string(f), data, true, true
-		}
-	}
-	for _, u := range urls {
-		if data, err := m.remoteRaw(context.Background(), u); err == nil && len(data) > 0 {
-			m.bridge.learn(base, t, u)
-			return u, data, false, true
-		}
-	}
-	return "", nil, false, false
 }
 
 // PurgeCorrupt evicts url from memory and the disk cache so the next demand refetches; url is the full fetch URL.

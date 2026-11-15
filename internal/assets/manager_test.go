@@ -78,13 +78,13 @@ func newRigAt(tb testing.TB, source Fetcher, localMode bool, learnedPath string)
 	return &testRig{prefs: prefs, manager: m, decoder: decoder, disk: disk, t2: t2}
 }
 
-// TestResolveRawFromLocalArchive is the load-bearing round-trip proof for the
+// TestResolveFromLocalArchive is the load-bearing round-trip proof for the
 // self-contained scene archive: an asset written into a local folder at the
 // webAO relative path is resolved back by the SAME candidate chain replay uses,
 // and the resolved URL minus the origin is exactly that relative path. If this
 // holds, export (write at relpath) and replay (resolve to relpath) are
 // symmetric — a bundled .aorec replays with the CDN gone.
-func TestResolveRawFromLocalArchive(t *testing.T) {
+func TestResolveFromLocalArchive(t *testing.T) {
 	dir := t.TempDir()
 	write := func(rel string, data []byte) {
 		full := filepath.Join(dir, filepath.FromSlash(rel))
@@ -104,7 +104,8 @@ func TestResolveRawFromLocalArchive(t *testing.T) {
 	// to (export/replay symmetry).
 	write("characters/Phoenix/(a)normal.webp", []byte("WEBP"))
 	base := local.BaseURL() + "characters/Phoenix/(a)normal"
-	url, data, ok := rig.manager.ResolveRaw(base, AssetTypeCharSprite)
+	found, ok := Resolve(context.Background(), rig.manager.Media(), base, AssetTypeCharSprite, false)
+	url, data := found.URL, found.Data
 	if !ok || url != base+config.ExtWebP || string(data) != "WEBP" {
 		t.Fatalf("webp archive asset not resolved: ok=%v url=%q", ok, url)
 	}
@@ -116,8 +117,8 @@ func TestResolveRawFromLocalArchive(t *testing.T) {
 	// host nothing.
 	write("characters/Edgeworth/(a)normal.png", []byte("PNG"))
 	pbase := local.BaseURL() + "characters/Edgeworth/(a)normal"
-	if url, data, ok := rig.manager.ResolveRaw(pbase, AssetTypeCharSprite); !ok || string(data) != "PNG" {
-		t.Fatalf("folder .png not resolved: ok=%v url=%q", ok, url)
+	if f, ok := Resolve(context.Background(), rig.manager.Media(), pbase, AssetTypeCharSprite, false); !ok || string(f.Data) != "PNG" {
+		t.Fatalf("folder .png not resolved: ok=%v url=%q", ok, f.URL)
 	}
 	if n := rig.manager.LearnedHosts(); n != 0 {
 		t.Errorf("folder hits taught %d hosts a format", n)
@@ -495,7 +496,7 @@ func TestManagerInflightDedup(t *testing.T) {
 
 // TestManagerPrefetchRawWarmsTiers pins the decode-free raw lane: one
 // network probe lands the payload in T2 + disk, and a later synchronous
-// FetchRaw is a pure memory hit (hover-warm → instant character pick).
+// Raw is a pure memory hit (hover-warm → instant character pick).
 func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
 	ini := []byte("[Options]\nside = def\n")
 	cs := newCountingServer(t, map[string][]byte{
@@ -519,12 +520,12 @@ func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
 		t.Fatalf("probes = %d, want 1", got)
 	}
 
-	data, err := rig.manager.FetchRaw(context.Background(), url)
+	data, err := Raw(context.Background(), rig.manager.Media(), url)
 	if err != nil || string(data) != string(ini) {
-		t.Fatalf("FetchRaw after warm: %v / %q", err, data)
+		t.Fatalf("Raw after warm: %v / %q", err, data)
 	}
 	if got := cs.total(); got != 1 {
-		t.Fatalf("probes after warmed FetchRaw = %d, want still 1 (memory hit)", got)
+		t.Fatalf("probes after a warmed Raw = %d, want still 1 (memory hit)", got)
 	}
 }
 

@@ -17,6 +17,8 @@ package ui
 //      through the mounts in the probe path (AO2-parity).
 
 import (
+	"context"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/media"
 
 	"net/http"
@@ -100,7 +102,7 @@ func TestContentSeedGifManifestResolves(t *testing.T) {
 // TestContentFullChainProbeFindsPNG pins part 2: an origin with NO manifest whose
 // sprite exists only as .png is FOUND via the full-chain walk (the seed comes
 // back absent, so the unlearned host is probed across the full configured chain,
-// which includes .png). RecordSuccess must learn .png, so a second ResolveRaw is
+// which includes .png). RecordSuccess must learn .png, so a second lookup is
 // a single probe. A genuinely absent asset stays missing after the whole walk.
 func TestContentFullChainProbeFindsPNG(t *testing.T) {
 	sprite := pngBytes()
@@ -168,12 +170,12 @@ func TestContentFullChainProbeFindsPNG(t *testing.T) {
 	// diagnostic walk. What must NOT happen is a probe of a candidate AFTER .png or
 	// a re-walk. Assert instead on the learned-first repeat below.
 
-	// A second ResolveRaw (learned-first now) is exactly one probe of .png — served
+	// A second lookup (learned-first now) is exactly one probe of .png — served
 	// from T2 (already fetched) so the wire count does NOT grow.
 	base := rec.Origin + "characters/phoenix/(a)normal"
 	before := probeCount("/characters/phoenix/(a)normal.png")
-	if _, _, ok := a.d.Manager.ResolveRaw(base, assets.AssetTypeCharSprite); !ok {
-		t.Fatal("learned-first ResolveRaw should still find the .png sprite")
+	if _, ok := assets.Resolve(context.Background(), a.d.Manager.Media(), base, assets.AssetTypeCharSprite, false); !ok {
+		t.Fatal("learned-first lookup should still find the .png sprite")
 	}
 	if got := probeCount("/characters/phoenix/(a)normal.png"); got != before {
 		t.Errorf(".png probed %d times on the learned-first repeat, want %d (a learned hit re-drains from T2, no new probe)", got, before)
@@ -317,7 +319,7 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 	mu.Lock()
 	asked = nil
 	mu.Unlock()
-	a.d.Manager.ResolveRaw(origin+"characters/x/(a)y", assets.AssetTypeCharSprite)
+	assets.Resolve(context.Background(), a.d.Manager.Media(), origin+"characters/x/(a)y", assets.AssetTypeCharSprite, false)
 	mu.Lock()
 	defer mu.Unlock()
 	if len(asked) == 0 || asked[0] != "/characters/x/(a)y"+config.ExtGIF {

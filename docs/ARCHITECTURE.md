@@ -598,7 +598,7 @@ The Wardrobe saves characters for the player, across servers:
   server's list. The window rebuilds its list only when the store's revision, the query or the server changes, so
   painting allocates nothing per frame.
 - **The server's list:** `<asset origin>/iniswaps.ini`, AO2's name for it (courtroom.cpp:5349), fetched once per
-  server through `FetchRaw` (T2 + disk cached, singleflight), at most 4096 names.
+  server through `assets.Raw` (a media request: memory, disk cache, folders, web), at most 4096 names.
 - **Drawing:** rounded shapes and line icons come from `ui/shapes.go`, white masks rasterised once with
   `golang.org/x/image/vector` and tinted per draw, so they cost a few copies and no allocation.
 - **Character Select's ★** reads a lowercase membership set rebuilt only when the store's revision moves.

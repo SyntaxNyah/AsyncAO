@@ -227,9 +227,9 @@ func NewManager(cfg Config) *Manager {
 	}
 	m := &Manager{cfg: cfg, wake: make(chan struct{}, 1), stop: make(chan struct{}), stopped: make(chan struct{}),
 		active: map[Key]*request{}, queues: map[*Pool]*poolQueue{}, hostBusy: map[string]int{}, winners: map[Key]File{}}
-	m.skipped = newAsset(Key{}, Later, 0, nil)
+	m.skipped = newAsset(Key{}, Later, 0, nil, m.stopped)
 	m.skipped.finish(Ready, nil, nil, cfg.Clock())
-	m.unnamed = newAsset(Key{}, Later, 0, nil)
+	m.unnamed = newAsset(Key{}, Later, 0, nil, m.stopped)
 	m.unnamed.finish(Missing, nil, nil, cfg.Clock())
 	go m.run()
 	return m
@@ -263,7 +263,7 @@ func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *As
 			}
 			return a
 		}
-		fresh := newAsset(key, urgency, flags, alts)
+		fresh := newAsset(key, urgency, flags, alts, m.stopped)
 		if m.assets.CompareAndSwap(key, a, fresh) {
 			m.post(&request{event: eventNew, asset: fresh, urgency: urgency})
 			return fresh
@@ -272,12 +272,12 @@ func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *As
 	}
 	// Later work is refused at the cap, unstored, so the caller's next ask tries again.
 	if urgency == Later && m.count.Load() >= int64(m.cfg.MaxAssets) {
-		a := newAsset(key, urgency, flags, alts)
+		a := newAsset(key, urgency, flags, alts, m.stopped)
 		a.finish(Refused, nil, ErrRefused, m.cfg.Clock())
 		m.refused.Add(1)
 		return a
 	}
-	a := newAsset(key, urgency, flags, alts)
+	a := newAsset(key, urgency, flags, alts, m.stopped)
 	if v, loaded := m.assets.LoadOrStore(key, a); loaded {
 		v.(*Asset).add(flags)
 		return v.(*Asset)
@@ -291,18 +291,14 @@ func (m *Manager) expired(a *Asset) bool {
 	return a.State() == Missing && m.cfg.Clock().Sub(time.Unix(0, a.finished.Load())) >= m.cfg.MissingTTL
 }
 
-// Load waits for key on a worker thread; it panics on the main thread, which must never wait.
-func (m *Manager) Load(ctx context.Context, key Key, urgency Urgency) (any, error) {
+// Load is Get that waits until the Asset finishes, ctx ends or the media system stops, for a caller off the main thread;
+// it panics on the main thread, which must never wait.
+func (m *Manager) Load(ctx context.Context, key Key, urgency Urgency, flags Flags, alts ...string) (*Asset, error) {
 	if m.cfg.IsMainThread != nil && m.cfg.IsMainThread() {
 		panic("media: Load called on the main thread")
 	}
-	a := m.Get(key, urgency, 0)
-	select {
-	case <-a.done:
-		return a.Result(), a.Err()
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	a := m.Get(key, urgency, flags, alts...)
+	return a, a.Wait(ctx)
 }
 
 // Forget drops a finished Asset, such as one whose texture was evicted, so the next Get asks again.
@@ -506,6 +502,9 @@ func (m *Manager) end(r *request, state AssetState, result any, err error) {
 	if state == Failed && m.assets.CompareAndDelete(r.asset.key, r.asset) {
 		m.count.Add(-1)
 	}
+	if state == Ready && r.file != "" {
+		r.asset.hit.Store(&Hit{File: r.file, Source: m.cfg.Chains[r.asset.key.Place].entries[r.entry].Source})
+	}
 	r.asset.finish(state, result, err, m.cfg.Clock())
 	if m.cfg.Finished != nil {
 		m.cfg.Finished(r.asset)
@@ -565,6 +564,17 @@ func (m *Manager) namesOf(a *Asset) []nameFiles {
 		files.all = files.server
 		if m.cfg.AllFormats != nil {
 			files.all = m.cfg.AllFormats(a.key, name)
+		}
+		if a.every {
+			every := files.all
+			if m.cfg.AllFormats == nil {
+				every = EveryFormat(a.key, name)
+			}
+			for _, f := range every {
+				if !slices.Contains(files.server, f) {
+					files.server = append(files.server, f)
+				}
+			}
 		}
 		names = append(names, files)
 	}

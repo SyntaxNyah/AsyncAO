@@ -50,7 +50,7 @@ func roomFactoryApp(t *testing.T) (*App, func()) {
 // roomFactoryAppMounted is roomFactoryApp with the Manager's local mount FOLDER
 // handed back, so a gate can write a real asset file into it and drive the byte
 // path end to end (write characters/<x>/char.ini, point urls at
-// assets.LocalOriginFor of the same folder, and Manager.FetchRaw reads it).
+// assets.LocalOriginFor of the same folder, and assets.Raw reads it).
 //
 // The split exists because a fixture that owns its mount privately can only ever
 // serve misses: every consumer of roomFactoryApp before this one drove the

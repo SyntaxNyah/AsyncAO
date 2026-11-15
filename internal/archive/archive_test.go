@@ -105,7 +105,8 @@ func TestExportReplayRoundTrip(t *testing.T) {
 
 	repUrls := courtroom.NewURLBuilder(repLocal.BaseURL())
 	idle := repUrls.Emote("Phoenix", "normal", courtroom.EmoteIdle)
-	_, data, ok := repMgr.ResolveRaw(idle, assets.AssetTypeCharSprite)
+	found, ok := assets.Resolve(context.Background(), repMgr.Media(), idle, assets.AssetTypeCharSprite, false)
+	data := found.Data
 	if !ok {
 		t.Fatal("speaker idle sprite did NOT resolve from the archive — round-trip broken")
 	}
@@ -213,7 +214,9 @@ func TestExportDecodesBundleNames(t *testing.T) {
 	repLocal := assets.NewLocalFetcher([]string{archDir})
 	repMgr := buildManager(t, repLocal, true)
 	repUrls := courtroom.NewURLBuilder(repLocal.BaseURL())
-	_, data, ok := repMgr.ResolveRaw(repUrls.Emote(char, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite)
+	found, ok := assets.Resolve(context.Background(), repMgr.Media(), repUrls.Emote(char, "normal", courtroom.EmoteIdle),
+		assets.AssetTypeCharSprite, false)
+	data := found.Data
 	if !ok {
 		t.Fatal("decoded-name character did NOT resolve from the clean archive — round-trip broken")
 	}

@@ -1438,7 +1438,7 @@ func (a *App) ensurePreviewEmotes(name string) {
 		ctx, cancel := context.WithTimeout(context.Background(), smallFetchTimeout)
 		defer cancel()
 		// Layered: a character from the user's own pack must show their emotes, not the server's.
-		data, err := mgr.FetchRaw(ctx, url)
+		data, err := assets.Raw(ctx, mgr.Media(), url)
 		if err != nil {
 			return
 		}
@@ -1530,7 +1530,7 @@ func (a *App) loadCharINI() {
 	ch := a.charINIres
 	go func() {
 		// Layered: a character from the user's own folders must bring its own emote list.
-		data, err := mgr.FetchRaw(context.Background(), url)
+		data, err := assets.Raw(context.Background(), mgr.Media(), url)
 		if err != nil {
 			ch <- charINIFetch{key: key, char: name, err: err}
 			PushWake() // wake the event-driven loop so Background drains this at idle=0

@@ -199,7 +199,8 @@ func newAudio(mgr *assets.Manager, m *mix.Mixer) *Audio {
 	}
 	a.loopFetchCtx, a.cancelLoopFetch = context.WithCancel(context.Background())
 	if mgr != nil {
-		a.fetchSidecar = mgr.FetchRaw
+		m := mgr.Media()
+		a.fetchSidecar = func(ctx context.Context, url string) ([]byte, error) { return assets.Raw(ctx, m, url) }
 		a.wake = mgr.NotifyDelivery
 	}
 	if m == nil {

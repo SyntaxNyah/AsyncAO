@@ -208,7 +208,7 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	prefixed := local.BaseURL() + "characters/hobo/(a)normal"
 	// Seed the format learn to .png for this host so the folder resolves the bare
 	// PNG (the default probe list is webp-only; a real server would have learned or
-	// the manifest seeded it — see TestResolveRawFromLocalArchive).
+	// the manifest seeded it — see TestResolveFromLocalArchive).
 
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker.Visible = true

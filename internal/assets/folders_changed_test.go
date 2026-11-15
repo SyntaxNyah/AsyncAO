@@ -16,7 +16,7 @@ func TestChangedFolderFilesReloadsAnEdit(t *testing.T) {
 	pr := newPackRig(t, nil, map[string]string{"characters/witch/char.ini": before})
 	m := pr.rig.manager
 	url := pr.base("characters/witch/char.ini")
-	if data, err := m.FetchRaw(context.Background(), url); err != nil || string(data) != before {
+	if data, err := Raw(context.Background(), m.Media(), url); err != nil || string(data) != before {
 		t.Fatalf("first read = %q, %v", data, err)
 	}
 	if got := m.ChangedFolderFiles(); len(got) != 0 {
@@ -37,7 +37,7 @@ func TestChangedFolderFilesReloadsAnEdit(t *testing.T) {
 	if got := m.ChangedFolderFiles(); !slices.Equal(got, []string{url}) {
 		t.Fatalf("ChangedFolderFiles() = %v, want [%s]", got, url)
 	}
-	if data, err := m.FetchRaw(context.Background(), url); err != nil || string(data) != after {
+	if data, err := Raw(context.Background(), m.Media(), url); err != nil || string(data) != after {
 		t.Errorf("read after the edit = %q, %v; want the new copy", data, err)
 	}
 }

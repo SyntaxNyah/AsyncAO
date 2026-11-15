@@ -63,7 +63,7 @@ func (a *App) fetchServerEvidenceIndex() {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), evidServerFetchTO)
 	defer cancel()
-	data, err := a.d.Manager.FetchRaw(ctx, a.urls.EvidenceRoot())
+	data, err := assets.Raw(ctx, a.d.Manager.Media(), a.urls.EvidenceRoot())
 	if err != nil {
 		a.evidServerRes <- nil
 		return

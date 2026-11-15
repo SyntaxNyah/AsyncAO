@@ -102,21 +102,6 @@ func (b *mediaBridge) found(k media.Key, f media.File) {
 }
 
 // learn is found for a raw walk on a worker: url turned up for base.
-func (b *mediaBridge) learn(base string, t AssetType, url string) {
-	b.media.Do(func() { b.found(ChainKey(base, t), media.File(url)) })
-}
-
-// candidates lists the URLs base may be, in the order the live chain asks; for workers, as it waits on the Manager.
-func (b *mediaBridge) candidates(base string, t AssetType) []string {
-	var files []media.File
-	b.media.Call(func() { files = b.builder.Build(ChainKey(base, t), base) })
-	urls := make([]string, len(files))
-	for i, f := range files {
-		urls[i] = string(f)
-	}
-	return urls
-}
-
 // AllowFormats gives origin a format list per asset type, as its extensions.json would, such as a replay archive's
 // recorded formats.
 func (m *Manager) AllowFormats(origin string, byType map[AssetType]string) {

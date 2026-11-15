@@ -328,7 +328,7 @@ type gifExportJob struct {
 	// per-origin dedupe as the session path. seedDone (1-buffered) delivers the outcome to tickGifSeed. Where the
 	// manifest does not answer, the warm keeps its behavior (demand pipeline and missingno): walking the full chain on
 	// the render path would break zero-fallback. A prior content report of the same demo already learned the formats
-	// (probeRef, ResolveRawFull).
+	// (probeRef, assets.Resolve).
 	seeding      bool
 	seedDone     chan seedResult
 	seedOriginTo string // the origin being seeded (for WarmFromPrefs gating + the overlay)
