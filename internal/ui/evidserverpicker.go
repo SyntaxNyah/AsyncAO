@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
@@ -68,13 +69,13 @@ func (a *App) fetchServerEvidenceIndex() {
 		a.evidServerRes <- nil
 		return
 	}
-	entries := parseAutoindexEntries(data, evidServerCap)
+	entries, _ := media.ParseListing(data, evidServerCap)
 	var out []string
 	for _, e := range entries {
-		if e.dir {
+		if e.Dir {
 			continue // only image files, not nested folders
 		}
-		out = append(out, e.name)
+		out = append(out, e.Name)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
 	a.evidServerRes <- out
