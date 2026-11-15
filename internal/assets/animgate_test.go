@@ -79,3 +79,34 @@ func TestSetAnimatedDecodedAssetBytes(t *testing.T) {
 		t.Fatalf("reset budget = %d, want default %d", got, defaultMaxAnimatedDecodedAssetBytes)
 	}
 }
+
+// Waiters go in by arrival order, so a small loop that came first isn't left behind a long animation that came later.
+func TestAnimGateAdmitsWaitersInArrivalOrder(t *testing.T) {
+	const waiters = 8
+	g := newAnimGate(1)
+	g.acquire()
+	order := make(chan int, waiters)
+	for i := range waiters {
+		go func() {
+			g.acquire()
+			order <- i
+			g.release()
+		}()
+		for queued := false; !queued; time.Sleep(time.Millisecond) {
+			g.mu.Lock()
+			queued = len(g.waiting) == i+1
+			g.mu.Unlock()
+		}
+	}
+	g.release()
+	for want := range waiters {
+		select {
+		case got := <-order:
+			if got != want {
+				t.Fatalf("waiter %d went in at turn %d", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("waiter %d never went in", want)
+		}
+	}
+}
