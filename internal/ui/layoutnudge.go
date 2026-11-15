@@ -20,10 +20,10 @@ const (
 )
 
 // editorDrawSiteRuns reports whether an armed editor's draw reaches the screen this frame; the editor flag can outlive
-// its overlay (no room, theater, gif, replay, scene maker), and then it must not eat arrow keys.
+// its overlay (no room, gif, replay, scene maker), and then it must not eat arrow keys.
 func (a *App) editorDrawSiteRuns() bool {
 	return a.layoutEditorArmed() && a.screen == ScreenCourtroom &&
-		a.room != nil && a.sess != nil && !a.theaterOn && !a.screenDispatchPreempted()
+		a.room != nil && a.sess != nil && !a.screenDispatchPreempted()
 }
 
 // keyboardSurfaceOverEditor reports whether another keyboard surface owns the arrows despite an armed editor: the

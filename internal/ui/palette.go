@@ -31,7 +31,7 @@ type paletteMatch struct {
 	run    func(a *App)
 }
 
-// paletteExtra is one palette-only action row: the actions of the retired Extras "Hide chrome"/"Theater"/"Edit Layout"
+// paletteExtra is one palette-only action row: the actions of the retired Extras "Hide chrome"/"Edit Layout"
 // widgets plus the toolbox's own entries, which have no extrasWidgets() slot. run is a method value bound at
 // table-build time, never a closure capturing an *App, so the table is package-level and iteration stays
 // allocation-free (as with compactToolboxChips).
@@ -44,7 +44,6 @@ type paletteExtra struct {
 // compact* method values so the palette, hotkey and toolbox chip behave identically.
 var paletteExtraActions = []paletteExtra{
 	{"Edit Layout", "Rearrange the courtroom — drag & resize every box", (*App).compactEditLayout},
-	{"Theater", "Theater mode — stage only, Esc exits", (*App).compactTheater},
 	{"Hide UI pieces", "Per-piece show/hide list for the courtroom chrome", (*App).compactHideUI},
 }
 
@@ -138,7 +137,7 @@ func (a *App) runPaletteMatch(m paletteMatch) {
 		}
 		return
 	}
-	if m.run != nil { // a palette-only extra action (Edit Layout / Theater / Hide UI pieces)
+	if m.run != nil { // a palette-only extra action (Edit Layout / Hide UI pieces)
 		m.run(a)
 		return
 	}

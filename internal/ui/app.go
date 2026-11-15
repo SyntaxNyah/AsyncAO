@@ -1069,9 +1069,6 @@ type App struct {
 	// lastDPIDisplayIndex is the display last queried, so a move within one monitor costs no syscall or font rebuild.
 	// -1 = never queried.
 	lastDPIDisplayIndex int
-	// theaterOn is the borderless viewport-only mode. Session-only, so it can't persist someone into a chrome-less
-	// client.
-	theaterOn bool
 
 	// fontPick lists the fonts a family can name, for the font fields' suggestions.
 	fontPick fontPicker
@@ -1342,19 +1339,6 @@ func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 	if pct != a.detectedScalePct {
 		a.detectedScalePct = pct
 		a.ctx.SetUIScale(a.UIScale()) // mouse unprojection follows immediately
-	}
-}
-
-// setTheater flips the borderless viewport-only mode; every caller is on the render thread, so the SDL call is legal.
-func (a *App) setTheater(on bool) {
-	a.theaterOn = on
-	if on {
-		// No toolbox draws in theater, so clear the pieces panel and pin: an invisible armed panel would swallow
-		// clicks.
-		a.toolboxPieces, a.toolboxPinned = false, false
-	}
-	if a.ctx.win != nil {
-		a.ctx.win.SetBordered(!on)
 	}
 }
 

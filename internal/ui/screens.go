@@ -256,11 +256,10 @@ func (a *App) drawCourtroom(w, h int32) {
 	fenceMark := c.overlayFenceMark()
 	defer c.overlayFenceRelease(fenceMark)
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
-	// Only drawCourtroomThemed re-arms this; a stale true would misplace the classic or theater toolbox, which draws
+	// Only drawCourtroomThemed re-arms this; a stale true would misplace the classic toolbox, which draws
 	// post-court in app.go.
 	a.toolboxThemeRectOn = false
-	// Only fenceCompactToolbox sets this, so a theater, dropped-session or lobby frame can't replay last frame's
-	// answer.
+	// Only fenceCompactToolbox sets this, so a dropped-session or lobby frame can't replay last frame's answer.
 	a.toolboxFence = compactToolboxLatch{}
 	// Decided once here and replayed by both paint sites (chrometop.go). It must precede anything that arms or disarms
 	// an editor mid-pass, or the strip paints twice or not at all.
@@ -272,15 +271,6 @@ func (a *App) drawCourtroom(w, h int32) {
 			a.stopClassicEdit() // session dropped mid-edit — release the fence so the lobby isn't stuck
 		}
 		a.screen = ScreenLobby
-		return
-	}
-
-	// Theater mode preempts both layouts.
-	if a.theaterOn {
-		if a.classicEdit {
-			a.stopClassicEdit() // can't edit the layout from theater mode — release the fence
-		}
-		a.drawTheater(w, h)
 		return
 	}
 

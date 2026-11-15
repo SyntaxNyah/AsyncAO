@@ -131,14 +131,8 @@ func (a *App) extrasWidgets() []extrasWidget {
 	return a.extrasWidgetCache
 }
 
-// toggleExtrasBox shows or hides the box (hotkeyExtras, or Esc in the bare courtroom);
-// from theater it exits theater instead of drawing over the stage-only view.
+// toggleExtrasBox shows or hides the box (hotkeyExtras, or Esc in the bare courtroom).
 func (a *App) toggleExtrasBox() {
-	if a.theaterOn {
-		a.setTheater(false)
-		a.showWidgets = true
-		return
-	}
 	a.showWidgets = !a.showWidgets
 }
 
@@ -297,8 +291,6 @@ func (a *App) closeTopOverlay() bool {
 	// A pinned sprite preview paints inside the courtroom pass, under the panels above; unpinned boxes close on leave.
 	case a.previewBase != "" && a.previewIsPinned():
 		a.closeSpritePreview()
-	case a.theaterOn: // theater mode's "Esc exits" — handled here so it beats the leave-server shortcut
-		a.setTheater(false)
 	default:
 		return false
 	}

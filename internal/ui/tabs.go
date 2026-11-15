@@ -704,7 +704,7 @@ func (a *App) tabStripOrigin(def sdl.Rect, w, h int32) sdl.Rect {
 // Excludes gif export, replay and scene maker: they keep a.screen == Courtroom but rebuild the shared layout cache at
 // the export's own dimensions.
 func (a *App) tabStripThemeRect() (sdl.Rect, bool) {
-	if a.screen != ScreenCourtroom || a.room == nil || a.theaterOn || a.screenDispatchPreempted() {
+	if a.screen != ScreenCourtroom || a.room == nil || a.screenDispatchPreempted() {
 		return sdl.Rect{}, false
 	}
 	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {

@@ -256,9 +256,9 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	a.drawResizeGrip(grip)
 }
 
-// canRenderFullClient is false in theater and the layout editors: they reskin drawCourtroom globally.
+// canRenderFullClient is false in the layout editors: they reskin drawCourtroom globally.
 func (a *App) canRenderFullClient() bool {
-	return !a.theaterOn && !a.classicEdit && !a.layoutEdit
+	return !a.classicEdit && !a.layoutEdit
 }
 
 // drawClientBody lays out the pinned server's stage, chat log and IC input; clicking the stage takes control.

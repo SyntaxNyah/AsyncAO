@@ -458,7 +458,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawCourtroom(winW, winH)      // primary always full-screen; the pinned server floats on top
 			a.drawFloatingPanels(winW, winH) // non-blocking Extras + Pair + the floating client window, on top of the live courtroom (input already restored)
 			// Here because boxFencesPointer runs the courtroom pass pointer-blind while the cursor is over the panel.
-			// It checks toolboxPinned and toolboxPieces itself, so theater and modals suppress it.
+			// It checks toolboxPinned and toolboxPieces itself, so modals suppress it.
 			// The editor block sets c.modalOn for the whole pass, and unblocking leaves it: release it for this draw.
 			editingLayout := a.classicEdit || a.layoutEdit
 			if editingLayout {

@@ -486,7 +486,7 @@ func (a *App) closeEditorPanels() {
 
 // drawEditorCanvas paints the theme full bleed: the real courtroom with a live room, else the fitted geometry canvas.
 func (a *App) drawEditorCanvas(w, h int32) {
-	if a.room != nil && a.sess != nil && !a.theaterOn {
+	if a.room != nil && a.sess != nil {
 		// Courtroom widgets go inert while used as a canvas: the kit is single-pass, so a select press would also press
 		// them.
 		// Save and restore, not assign: a rail's open dropdown may hold modalOn legitimately.

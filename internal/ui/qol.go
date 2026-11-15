@@ -36,7 +36,6 @@ const (
 	hotkeyScreenshot  = "screenshot"
 	hotkeyRecordScene = "record_scene"
 	hotkeyReplayLast  = "replay_last"
-	hotkeyTheater     = "theater"
 	hotkeyLogin       = "login"
 	hotkeyMuteSFX     = "mute_sfx"
 	hotkeyEmoteCycle  = "emote_cycle"
@@ -94,7 +93,6 @@ var hotkeyDefs = []struct {
 	{hotkeyScreenshot, "Screenshot", "s"},
 	{hotkeyRecordScene, "Record scene to a replay file (start/stop)", "w"},
 	{hotkeyReplayLast, "Replay the last recording (start/stop)", "i"},
-	{hotkeyTheater, "Theater mode", "t"},
 	{hotkeyLogin, "Server login (saved creds)", "g"},
 	{hotkeyMuteSFX, "Mute sound effects", "{"},
 	{hotkeyEmoteCycle, "Cycle emote (next)", "e"},
@@ -306,8 +304,6 @@ func (a *App) handleHotkeys() {
 		a.clipInstantReplay()
 	case a.hotkeyFor(hotkeyPalette):
 		a.togglePalette()
-	case a.hotkeyFor(hotkeyTheater):
-		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):
 		a.loginNow()
 	case a.hotkeyFor(hotkeyMuteSFX):
@@ -350,10 +346,6 @@ func (a *App) handleHotkeys() {
 		a.showModcall = true
 	case a.hotkeyFor(hotkeyUIChrome):
 		// Opens the per-piece panel even when the grip is hidden, so a user who hid the toolbox can recover it.
-		// Theater mode exits first: re-arming these flags under theater would float the panel over the bare stage.
-		if a.theaterOn {
-			a.setTheater(false)
-		}
 		a.toolboxPinned, a.toolboxPieces = true, true
 	case a.hotkeyFor(hotkeyToggleMenuBar):
 		a.toggleChromePanel(panelMenuBar, "Menu bar")
@@ -785,34 +777,6 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 			}
 		}
 		y += hkRowH
-	}
-}
-
-const theaterHint = "Esc exits theater"
-
-// drawTheater is the borderless viewport-only courtroom: the stage letterboxed to 4:3, chat overlay and hotkeys.
-func (a *App) drawTheater(w, h int32) {
-	c := a.ctx
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{A: 255})
-	vpW, vpH := w, w*3/4
-	if vpH > h {
-		vpH = h
-		vpW = vpH * 4 / 3
-	}
-	vp := sdl.Rect{X: (w - vpW) / 2, Y: (h - vpH) / 2, W: vpW, H: vpH}
-	a.renderViewportZoomed(vp)
-	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
-	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
-	if a.vpZoom <= 1 {
-		a.handleSpriteDrag(vp)
-		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
-	}
-	a.handleHotkeys()
-	a.drawChatOverlay(vp, false, 0, 0) // theater mode keeps the clean stage-bottom chatbox
-	a.drawCourtOverlays(vp, nil)       // splashes/HP still play — part of the show
-	c.Label(w-c.TextWidth(theaterHint)-8, 6, theaterHint, ColTextDim)
-	if c.escPressed {
-		a.setTheater(false)
 	}
 }
 

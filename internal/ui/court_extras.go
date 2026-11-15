@@ -58,8 +58,7 @@ const (
 	// so hiding it gives the canvas the whole window. menuBarHeight() reports 0 when hidden and screens offset by
 	// topChromeH(). It is a mouse lifeline (mouseLifelines, courttoolbox.go); hiding the last one is refused.
 	panelMenuBar = "menubar"
-	// panelToolbox hides the compact hover toolbox, the bottom-right grip that reveals Theater / Edit-layout /
-	// Hide-UI
+	// panelToolbox hides the compact hover toolbox, the bottom-right grip that reveals Edit-layout / Hide-UI
 	// chips. Hideable from the dialog one of its chips opens.
 	panelToolbox = "toolbox"
 	// Individual right-column tabs. A hidden tab leaves the docked strip and isn't drawn even if torn out.
@@ -106,7 +105,7 @@ var hideablePanels = []struct{ id, label, short string }{
 	{panelTestimony, "Testimony recording badge", "Testimony"},
 	{panelJudge, "Judge controls (even when granted)", "Judge"},
 	{panelMenuBar, "Top menu bar (Servers / View / Window / Extras / Help)", "Menu bar"},
-	{panelToolbox, "Compact toolbox (bottom-right hover chips: Theater / Edit layout / Hide UI)", "Toolbox"},
+	{panelToolbox, "Compact toolbox (bottom-right hover chips: Edit layout / Hide UI)", "Toolbox"},
 }
 
 // ctrlSettingsSlot is the toolbar Settings button's ctrl.* key; it and panelToolbox are two of the mouse lifelines

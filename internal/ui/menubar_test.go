@@ -210,7 +210,6 @@ func TestMenuBarPaintDecisionSurvivesAMidFrameEditor(t *testing.T) {
 		// recover — editorHeld must stay clear or the bar would paint over an export.
 		for name, set := range map[string]func(*App){
 			"gif export":  func(a *App) { a.gifExporting = true },
-			"theater":     func(a *App) { a.theaterOn = true },
 			"scene maker": func(a *App) { a.makerOpen = true },
 		} {
 			a := stageMenuBarApp(t)
@@ -474,10 +473,10 @@ func TestMenuBarModalFenceHeldAndReleased(t *testing.T) {
 	// A frame on which the bar is not shown at all still has to release it.
 	a.menuOpen = menuBarMenus[1].title
 	menuBarFrameFor(a, w, h)
-	a.theaterOn = true
+	a.gifExporting = true
 	menuBarFrameFor(a, w, h)
 	if c.modalOn || a.menuFenceOn || a.menuBarOpen() {
-		t.Fatal("hiding the bar (theater mode) must close the pane and release the fence")
+		t.Fatal("hiding the bar (gif export) must close the pane and release the fence")
 	}
 }
 
@@ -702,7 +701,6 @@ func TestMenuBarHeightIsZeroWhenHidden(t *testing.T) {
 		set  func()
 		undo func()
 	}{
-		{"theater", func() { a.theaterOn = true }, func() { a.theaterOn = false }},
 		{"gif export", func() { a.gifExporting = true }, func() { a.gifExporting = false }},
 		{"scene maker", func() { a.makerOpen = true }, func() { a.makerOpen = false }},
 	} {

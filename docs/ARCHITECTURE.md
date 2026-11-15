@@ -519,7 +519,7 @@ so a release hit-tests where it actually happened.
   server-tab strip (`tabs.go`), and **every screen offsets its content by
   it** — no screen may hardcode `menuBarH` or `tabBarH`. Both halves
   self-zero (the menu bar in the full-window modes that preempt the
-  screen dispatch — gif export, replay, scene maker, theater; the strip
+  screen dispatch — gif export, replay, scene maker; the strip
   when there are no sessions or the user has dragged it out of the band),
   so a screen never has to ask *which* chrome is showing. The strip has
   exactly two draw sites — inside the courtroom pass, beneath a layout

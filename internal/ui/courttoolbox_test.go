@@ -61,7 +61,7 @@ func TestToolIconAllocFree(t *testing.T) {
 	r := sdl.Rect{X: 10, Y: 10, W: compactChipH, H: compactChipH}
 	col := ColText
 	// Every iconKind the chip set uses, drawn in a tight loop, must be 0-alloc.
-	kinds := []iconKind{iconTheater, iconEdit, iconEyeOff, iconPin, iconGrid}
+	kinds := []iconKind{iconEdit, iconEyeOff, iconPin, iconGrid}
 	draw := func() {
 		for _, k := range kinds {
 			drawToolIcon(c, k, r, col)

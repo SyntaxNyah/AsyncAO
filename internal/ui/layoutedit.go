@@ -233,10 +233,6 @@ func (a *App) stopLayoutEdit() {
 
 // openLayoutEditor opens from a menu: the theme's design rects on a themed courtroom, otherwise the classic box editor.
 func (a *App) openLayoutEditor() {
-	// Leave theater first, or the editor arms behind a view that never draws it.
-	if a.theaterOn {
-		a.setTheater(false)
-	}
 	if a.themeLay.valid && a.d.Prefs.Load().ThemeLayoutOn {
 		a.startLayoutEdit()
 		return
