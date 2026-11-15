@@ -7,14 +7,13 @@ package ui
 import (
 	"context"
 	"fmt"
-	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -385,70 +384,13 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, budget *int64) {
 	}
 }
 
-// autoindexEntry is one parsed directory-listing link.
-type autoindexEntry struct {
-	href string // raw URL segment from the listing (already escaped; dirs keep the trailing /)
-	name string // decoded display / filesystem name
-	dir  bool   // trailing slash in the listing
-}
-
-// autoindexHref captures href targets from an HTML directory listing; [^"?#] drops Apache's ?C=N;O=A sort links.
-var autoindexHref = regexp.MustCompile(`(?i)href="([^"?#]+)"`)
-
-// cleanAutoindexEntry normalizes one raw href into an entry and reports whether it is usable, one level deep and
-// non-escaping. It is the security boundary for the listing: ../, ./, /x, x://, a/b and any raw or percent-encoded
-// ".." are rejected.
-func cleanAutoindexEntry(raw string) (autoindexEntry, bool) {
-	if raw == "" || strings.HasPrefix(raw, "/") || strings.Contains(raw, "://") {
-		return autoindexEntry{}, false
-	}
-	dir := strings.HasSuffix(raw, "/")
-	name := strings.TrimSuffix(raw, "/")
-	if dec, err := url.PathUnescape(name); err == nil {
-		name = dec
-	}
-	name = strings.TrimSpace(name)
-	if name == "" || name == "." || name == ".." || strings.Contains(name, "..") {
-		return autoindexEntry{}, false
-	}
-	if strings.ContainsAny(name, `/\`) { // one level deep only
-		return autoindexEntry{}, false
-	}
-	return autoindexEntry{href: raw, name: name, dir: dir}, true
-}
-
-// parseAutoindexEntries returns up to limit unique files and dirs; a non-autoindex response yields nothing.
-func parseAutoindexEntries(data []byte, limit int) []autoindexEntry {
-	out := make([]autoindexEntry, 0)
-	seen := make(map[string]struct{})
-	for _, m := range autoindexHref.FindAllSubmatch(data, -1) {
-		e, ok := cleanAutoindexEntry(string(m[1]))
-		if !ok {
-			continue
-		}
-		key := strings.ToLower(e.name)
-		if e.dir {
-			key += "/"
-		}
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, e)
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out
-}
-
 // parseAutoindexDirs is the picker's discovery list: sorted, de-duplicated folder names from a listing.
 func parseAutoindexDirs(data []byte) []string {
-	entries := parseAutoindexEntries(data, bgListCap)
+	entries, _ := media.ParseListing(data, bgListCap)
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if e.dir {
-			names = append(names, e.name)
+		if e.Dir {
+			names = append(names, e.Name)
 		}
 	}
 	sort.SliceStable(names, func(i, j int) bool {
