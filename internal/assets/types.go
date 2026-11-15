@@ -97,9 +97,6 @@ type Decoded struct {
 	DXTFormat uint32
 	// Opaque reports that every pixel of every frame has full alpha, so the frames can be copied without blending.
 	Opaque bool
-
-	// pooledPix tracks pool-drawn frame buffers to return on Release.
-	pooledPix []*[]byte
 }
 
 // PixelBytes returns the payload size the T1 budget accounts for: w*h*4 per frame, or the DXT size when compressed.
@@ -119,12 +116,8 @@ func (d *Decoded) PixelBytes() int64 {
 	return total
 }
 
-// Release returns pooled frame buffers; call exactly once, after upload, and do not use the Decoded afterwards.
+// Release drops the frames after upload, so they can be collected while something still holds the Decoded.
 func (d *Decoded) Release() {
-	for _, buf := range d.pooledPix {
-		putPixBuf(buf)
-	}
-	d.pooledPix = nil
 	d.Frames = nil
 	d.Compressed = nil
 }

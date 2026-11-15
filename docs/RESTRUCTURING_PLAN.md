@@ -137,7 +137,10 @@ in **Status**. Update Status in the same commit that completes a step.
       - [x] background decodes claim their decoded size from the file header and wait under a 64 MiB limit until the
             pump uploads (2026-11-15). Burst of 112 vanilla APNGs: peak live heap ~950 → ~220 MiB, heap after it
             ~700 → 31-56 MiB; the burst takes 2.2 s instead of 1.6 s. Requests for the current message are not limited
-      - [ ] still open: what is left of the 220 MiB peak, and a profile from the real client
+      - [x] the size-classed pixel pool is gone (it rounded 192 KiB frames to 256 KiB and kept freed buffers through a
+            collection) and APNG decodes one frame at a time (`assets/apng.go`, output identical to `kettek/apng`):
+            same burst, peak ~220 → ~155 MiB, heap after it ~85 → 18 MiB, 2.2 → 2.0 s
+      - [ ] still open: a profile from the real client
     - [ ] move callers (decided 2026-11-15): callers call `media.Manager` directly with keys from small assets helpers,
           and the bridge goes at the end. Order: `Pump` on `TakeResults`, then courtroom, screens, theme and audio;
           music streaming after them

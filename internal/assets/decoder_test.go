@@ -247,36 +247,6 @@ func TestDecoderDeliversResults(t *testing.T) {
 	}
 }
 
-func TestPixPoolRoundTrip(t *testing.T) {
-	buf, token := getPixBuf(1024)
-	if len(buf) != 1024 {
-		t.Fatalf("len = %d", len(buf))
-	}
-	for i := range buf {
-		buf[i] = 0xAA
-	}
-	putPixBuf(token)
-	buf2, token2 := getPixBuf(2048)
-	defer putPixBuf(token2)
-	for i, b := range buf2 {
-		if b != 0 {
-			t.Fatalf("recycled buffer not zeroed at %d", i)
-		}
-	}
-}
-
-func TestPixPoolOversizeUnpooled(t *testing.T) {
-	huge := pixClassSizes[len(pixClassSizes)-1] + 1
-	buf, token := getPixBuf(huge)
-	if token != nil {
-		t.Error("oversize buffer claims pool token")
-	}
-	if len(buf) != huge {
-		t.Errorf("len = %d, want %d", len(buf), huge)
-	}
-	putPixBuf(token) // must be a no-op
-}
-
 // pinSmallAnimatedBudget shrinks the live animated frame budget so the
 // budget-fit downscale can be exercised deterministically regardless of the
 // shipped (128 MiB) default, restoring the prior value on cleanup.

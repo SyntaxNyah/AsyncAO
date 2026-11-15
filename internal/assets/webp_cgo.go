@@ -59,14 +59,14 @@ func peekWebPAnimDims(data []byte) (width, height, frames int, ok bool) {
 	return w, h, n, true
 }
 
-// decodeWebPStatic decodes a still WebP directly into a pooled RGBA buffer.
+// decodeWebPStatic decodes a still WebP directly into an RGBA buffer.
 func decodeWebPStatic(data []byte) (*Decoded, error) {
 	var w, h C.int
 	if C.WebPGetInfo((*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)), &w, &h) == 0 {
 		return nil, fmt.Errorf("assets: invalid webp header")
 	}
 	width, height := int(w), int(h)
-	rgba, token := newPooledRGBA(width, height)
+	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
 
 	out := C.WebPDecodeRGBAInto(
 		(*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)),
@@ -74,7 +74,6 @@ func decodeWebPStatic(data []byte) (*Decoded, error) {
 		C.int(rgba.Stride),
 	)
 	if out == nil {
-		putPixBuf(token)
 		return nil, fmt.Errorf("assets: webp decode failed (%dx%d payload)", width, height)
 	}
 
@@ -84,9 +83,6 @@ func decodeWebPStatic(data []byte) (*Decoded, error) {
 		Animated: false,
 		Width:    width,
 		Height:   height,
-	}
-	if token != nil {
-		d.pooledPix = append(d.pooledPix, token)
 	}
 	return d, nil
 }
@@ -183,21 +179,14 @@ func decodeWebPAnim(data []byte, playAnimations bool, maxH int) (*Decoded, error
 		if !keepIt {
 			continue
 		}
-		rgba, token := newPooledRGBA(width, height)
+		rgba := image.NewRGBA(image.Rect(0, 0, width, height))
 		src := unsafe.Slice((*byte)(unsafe.Pointer(frameRGBA)), canvasBytes)
 		copy(rgba.Pix, src)
 		if down {
-			small, smallTok := downscaleFrame(rgba, tw, th)
-			putPixBuf(token)
+			small := downscaleFrame(rgba, tw, th)
 			d.Frames = append(d.Frames, small)
-			if smallTok != nil {
-				d.pooledPix = append(d.pooledPix, smallTok)
-			}
 		} else {
 			d.Frames = append(d.Frames, rgba)
-			if token != nil {
-				d.pooledPix = append(d.pooledPix, token)
-			}
 		}
 		d.Delays = append(d.Delays, folded)
 	}
@@ -269,16 +258,10 @@ func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 
 	canvasBytes := width * height * webpBytesPerPixel
 
-	// When downscaling, reuse one native buffer instead of churning the pool; else it is the delivered frame.
+	// When downscaling, one native buffer is reused for every frame; else it is the delivered frame.
 	var reuse *image.RGBA
-	var reuseToken *[]byte
 	if down {
-		reuse, reuseToken = newPooledRGBA(width, height)
-		defer func() {
-			if reuseToken != nil {
-				putPixBuf(reuseToken)
-			}
-		}()
+		reuse = image.NewRGBA(image.Rect(0, 0, width, height))
 	}
 
 	for i := 0; i < walk; i++ {
@@ -294,19 +277,17 @@ func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 			continue // frame 0 already delivered by the progressive first frame
 		}
 		var rgba *image.RGBA
-		var token *[]byte
 		if down {
 			rgba = reuse
 		} else {
-			rgba, token = newPooledRGBA(width, height)
+			rgba = image.NewRGBA(image.Rect(0, 0, width, height))
 		}
 		src := unsafe.Slice((*byte)(unsafe.Pointer(frameRGBA)), canvasBytes)
 		copy(rgba.Pix, src)
 		out := rgba
 		if down {
-			small, smallTok := downscaleFrame(rgba, tw, th)
+			small := downscaleFrame(rgba, tw, th)
 			out = small
-			token = smallTok
 		}
 		chunk := &Decoded{
 			Frames:       []*image.RGBA{out},
@@ -318,9 +299,6 @@ func decodeWebPAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 			Stream:       true,
 			FrameOffset:  i,
 			Partial:      true,
-		}
-		if token != nil {
-			chunk.pooledPix = append(chunk.pooledPix, token)
 		}
 		emit(chunk)
 	}

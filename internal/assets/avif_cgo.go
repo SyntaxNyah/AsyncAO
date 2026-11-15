@@ -2,7 +2,7 @@
 
 package assets
 
-// CGO binding over libavif: dav1d/aom decode into pooled RGBA, for still images and AV1 image sequences.
+// CGO binding over libavif: dav1d/aom decode into RGBA, for still images and AV1 image sequences.
 
 /*
 #cgo pkg-config: libavif
@@ -94,29 +94,21 @@ func decodeAVIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		rgb.format = C.AVIF_RGB_FORMAT_RGBA
 		rgb.depth = 8
 
-		rgba, token := newPooledRGBA(width, height)
+		rgba := image.NewRGBA(image.Rect(0, 0, width, height))
 		// The rgb struct carries a Go pointer into C, legal only while the buffer is pinned (cgo pointer rules).
 		pinner.Pin(&rgba.Pix[0])
 		rgb.pixels = (*C.uint8_t)(unsafe.Pointer(&rgba.Pix[0]))
 		rgb.rowBytes = C.uint32_t(rgba.Stride)
 
 		if res := C.avifImageYUVToRGB(dec.image, &rgb); res != C.AVIF_RESULT_OK {
-			putPixBuf(token)
 			d.Release()
 			return nil, avifError(fmt.Sprintf("frame %d yuv→rgb", i), res)
 		}
 		if down {
-			small, smallTok := downscaleFrame(rgba, tw, th)
-			putPixBuf(token)
+			small := downscaleFrame(rgba, tw, th)
 			d.Frames = append(d.Frames, small)
-			if smallTok != nil {
-				d.pooledPix = append(d.pooledPix, smallTok)
-			}
 		} else {
 			d.Frames = append(d.Frames, rgba)
-			if token != nil {
-				d.pooledPix = append(d.pooledPix, token)
-			}
 		}
 		d.Delays = append(d.Delays, folded)
 	}
@@ -159,17 +151,11 @@ func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 		return false, walk, nil // decimation needed — fall back to the full decode
 	}
 
-	// When downscaling, reuse one native buffer instead of churning the pool; else it is the delivered frame.
+	// When downscaling, one native buffer is reused for every frame; else it is the delivered frame.
 	var reuse *image.RGBA
-	var reuseToken *[]byte
 	if down {
-		reuse, reuseToken = newPooledRGBA(width, height)
+		reuse = image.NewRGBA(image.Rect(0, 0, width, height))
 		pinner.Pin(&reuse.Pix[0])
-		defer func() {
-			if reuseToken != nil {
-				putPixBuf(reuseToken)
-			}
-		}()
 	}
 
 	for i := 0; i < walk; i++ {
@@ -185,11 +171,10 @@ func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 		}
 
 		var rgba *image.RGBA
-		var token *[]byte
 		if down {
 			rgba = reuse
 		} else {
-			rgba, token = newPooledRGBA(width, height)
+			rgba = image.NewRGBA(image.Rect(0, 0, width, height))
 		}
 
 		var rgb C.avifRGBImage
@@ -203,14 +188,12 @@ func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 		rgb.rowBytes = C.uint32_t(rgba.Stride)
 
 		if res := C.avifImageYUVToRGB(dec.image, &rgb); res != C.AVIF_RESULT_OK {
-			putPixBuf(token)
 			return true, walk, avifError(fmt.Sprintf("frame %d yuv→rgb", i), res)
 		}
 		out := rgba
 		if down {
-			small, smallTok := downscaleFrame(rgba, tw, th)
+			small := downscaleFrame(rgba, tw, th)
 			out = small
-			token = smallTok
 		}
 		chunk := &Decoded{
 			Frames:       []*image.RGBA{out},
@@ -222,9 +205,6 @@ func decodeAVIFAnimStream(data []byte, maxH int, emit func(*Decoded)) (streamed 
 			Stream:       true,
 			FrameOffset:  i,
 			Partial:      true,
-		}
-		if token != nil {
-			chunk.pooledPix = append(chunk.pooledPix, token)
 		}
 		emit(chunk)
 	}
