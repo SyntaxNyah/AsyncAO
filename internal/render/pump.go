@@ -71,6 +71,10 @@ func (p *Pump) Frame() {
 			if d.Err != nil && p.store.MarkFailed(d.Base) {
 				log.Printf("render: asset %s failed: %v", d.Base, d.Err)
 			}
+			// Shown as missing, so a message waiting on it starts and the sprite draws the placeholder.
+			if !d.FromPack {
+				p.mgr.ReportUndecodable(d.Base, d.Type)
+			}
 			return
 		}
 		// The carry can reorder a partial after its own full set; uploading it would reduce the animation to one frame.

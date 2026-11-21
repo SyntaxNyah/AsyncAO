@@ -378,3 +378,82 @@ func TestSpriteMaskClipsToStage(t *testing.T) {
 		t.Errorf("sprite-mask render allocates %.1f/op, want 0", allocs)
 	}
 }
+
+// TestHoldPreviousNeverShowsThePartner: after a paired speaker swap, a cold sprite must not stand in with the
+// character who is now on the other side; the same character's previous sprite still does.
+func TestHoldPreviousNeverShowsThePartner(t *testing.T) {
+	const (
+		targetW, targetH  = 512, 384
+		fixtureSize       = 64
+		bytesPerPixel     = 4
+		frameDelay        = 50 * time.Millisecond
+		step              = 16 * time.Millisecond
+		pairX, speakerX   = 64, 448
+		sampleY           = targetH / 2
+		leftPct, rightPct = -50, 50
+	)
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStoreBudget(ren, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	if err := store.Upload("patty", decodedFixture()); err != nil { // red
+		t.Fatal(err)
+	}
+	green := image.NewRGBA(image.Rect(0, 0, fixtureSize, fixtureSize))
+	for p := 0; p < len(green.Pix); p += bytesPerPixel {
+		green.Pix[p+1], green.Pix[p+3] = 0xFF, 0xFF
+	}
+	if err := store.Upload("chihiro", &assets.Decoded{
+		Width: fixtureSize, Height: fixtureSize, Frames: []*image.RGBA{green}, Delays: []time.Duration{frameDelay},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ct, err := NewCaptureTarget(ren, targetW, targetH)
+	if err != nil {
+		t.Skipf("capture target unavailable headlessly: %v", err)
+	}
+	defer ct.Close()
+
+	vp := NewViewport(store, false)
+	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
+	scene := &courtroom.Scene{PairActive: true}
+	scene.Speaker = courtroom.SpriteLayer{Name: "Patty", Active: "patty", Visible: true, OffsetX: rightPct}
+	scene.Pair = courtroom.SpriteLayer{Name: "Chihiro", Active: "chihiro", Visible: true, OffsetX: leftPct}
+	pairSide := func() (r, g uint8) {
+		img, err := ct.Capture(ren, func(dst sdl.Rect) {
+			vp.Update(scene, step)
+			vp.Render(ren, scene, dst)
+		})
+		if err != nil {
+			t.Skipf("ReadPixels unavailable headlessly: %v", err)
+		}
+		if spk := img.RGBAAt(speakerX, sampleY); spk.R == 0 && spk.G == 0 {
+			t.Fatal("setup: the speaker did not draw")
+		}
+		px := img.RGBAAt(pairX, sampleY)
+		return px.R, px.G
+	}
+	if _, g := pairSide(); g == 0 {
+		t.Fatal("setup: the pair partner did not draw")
+	}
+
+	// Chihiro now speaks; Patty's sprite on the pair side has not arrived.
+	scene.Speaker = courtroom.SpriteLayer{Name: "Chihiro", Active: "chihiro", Visible: true, OffsetX: rightPct}
+	scene.Pair = courtroom.SpriteLayer{Name: "Patty", Active: "patty-cold", Visible: true, OffsetX: leftPct}
+	if r, g := pairSide(); r != 0 || g != 0 {
+		t.Errorf("Patty's cold slot drew another character (r=%d g=%d), want it empty", r, g)
+	}
+
+	// Patty's own previous sprite still bridges her next cold one.
+	scene.Pair.Active = "patty"
+	if r, _ := pairSide(); r == 0 {
+		t.Fatal("setup: Patty's sprite did not draw on the pair side")
+	}
+	scene.Pair.Active = "patty-cold"
+	if r, _ := pairSide(); r == 0 {
+		t.Error("the same character's previous sprite must still hold while the new one loads")
+	}
+}

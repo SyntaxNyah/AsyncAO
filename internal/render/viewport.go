@@ -48,6 +48,8 @@ type animState struct {
 
 	// lastGood is the base last drawn; reset keeps it, and a string because a page pointer could be evicted.
 	lastGood string
+	// lastGoodName is the character lastGood belongs to.
+	lastGoodName string
 
 	// scaleName/scaleIdleH hold the idle page height; reset keeps them so a character shares one filter height.
 	scaleName  string
@@ -339,6 +341,8 @@ type Viewport struct {
 
 	// spriteLoadMode chooses what a layer draws while its new sprite loads; drawSprite's miss path only.
 	spriteLoadMode int
+	// soloStage is true while one character is on stage; only then may hold-previous show a different character.
+	soloStage bool
 
 	// clipSprites masks character sprites to the stage so a big offset can't spill over the chatbox or log.
 	clipSprites bool
@@ -824,6 +828,7 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		v.maskClip = stage
 		_ = ren.SetClipRect(&v.maskClip)
 	}
+	v.soloStage = !scene.PairActive && len(scene.Group) == 0
 	// Group pairing (JSON-only GP roster): draw other members first, front-most last, so the roster's z-order holds.
 	if sl := &scene.Slide; sl.Active {
 		lastVP := vp
@@ -1259,7 +1264,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			return
 		}
 		// Hold by string as the LRU owns lifetime; draw path only, so the preanim lifecycle never sees it.
+		// With a partner on stage, another character's sprite would draw them twice.
 		if v.spriteLoadMode == SpriteLoadHoldPrev && anim.lastGood != "" && anim.lastGood != anim.base &&
+			(v.soloStage || anim.lastGoodName == layer.Name) &&
 			(v.holdMaxAge <= 0 || anim.coldFor <= v.holdMaxAge) { // max-age knob: 0 = bridge forever
 			if held, ok2 := v.store.Get(anim.lastGood); ok2 && len(held.Frames) > 0 {
 				v.drawHeldSprite(ren, layer, held, vp)
@@ -1269,7 +1276,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	// During a crossfade lastGood must keep naming the old sprite while it draws under the ramp.
 	if anim.fadeLeft <= 0 && anim.lastGood != anim.base {
-		anim.lastGood = anim.base
+		anim.lastGood, anim.lastGoodName = anim.base, layer.Name
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
 

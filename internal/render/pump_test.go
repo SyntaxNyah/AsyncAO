@@ -174,3 +174,43 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 		t.Error("corrupt bytes never entered the decode negative cache")
 	}
 }
+
+// TestPumpUndecodableReportsMissing: bytes that arrive but don't decode raise the missing-asset warning, so a message
+// waiting on the sprite starts and the stage draws the placeholder instead of waiting out its timeout.
+func TestPumpUndecodableReportsMissing(t *testing.T) {
+	const (
+		waitLimit = 5 * time.Second
+		pollEvery = 5 * time.Millisecond
+	)
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "these bytes are not an image")
+	}))
+	defer srv.Close()
+
+	mgr := buildPumpManager(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
+	store, err := NewTextureStoreBudget(ren, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	pump := NewPump(store, mgr, nil)
+
+	base := srv.URL + "/characters/patty/(a)embarrassed"
+	mgr.Media().Get(assets.ChainKey(base, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (test)
+	deadline := time.Now().Add(waitLimit)
+	for time.Now().Before(deadline) {
+		pump.Frame()
+		select {
+		case w := <-mgr.Warnings():
+			if w.Base != base || w.Type != assets.AssetTypeCharSprite {
+				t.Fatalf("warning for %q (%v), want %q as a character sprite", w.Base, w.Type, base)
+			}
+			return
+		default:
+		}
+		time.Sleep(pollEvery)
+	}
+	t.Fatal("an undecodable sprite raised no missing-asset warning")
+}

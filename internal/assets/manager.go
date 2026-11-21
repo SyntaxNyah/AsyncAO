@@ -342,6 +342,11 @@ func (m *Manager) skipExhausted(base string, t AssetType, quiet bool) {
 	if quiet {
 		return // speculative: no one asked for this, so no one hears about it
 	}
+	m.ReportUndecodable(base, t)
+}
+
+// ReportUndecodable raises the missing-asset warning for an asset whose bytes decode to nothing, which can't load either.
+func (m *Manager) ReportUndecodable(base string, t AssetType) {
 	select {
 	case m.warningCh <- Warning{Base: base, Type: t}:
 	default:
