@@ -8,12 +8,11 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
 const (
-	// decodedChanCap bounds the render-thread handoff; when full, workers block, so results never drop.
-	decodedChanCap = 64
 	// audioChanCap bounds the raw-audio handoff to the audio system.
 	audioChanCap = 64
 	// warningChanCap bounds missing-asset warnings; these may be dropped, results may not.
@@ -29,8 +28,6 @@ type DecodedAsset struct {
 	Type  AssetType
 	Asset *Decoded
 	Err   error
-	// Transient marks a network failure: bytes were never seen, so keep it out of the negative cache.
-	Transient bool
 	// FromPack marks bytes from the player's folders; Base is still the server's URL, so never MarkFailed(Base) on
 	// them, or a corrupt local file takes the server's good copy offline.
 	FromPack bool
@@ -42,6 +39,8 @@ type AudioAsset struct {
 	Base string
 	Type AssetType
 	Data []byte
+	// Stream is a music track, opened where it lies or still downloading, in place of Data; the receiver closes it.
+	Stream media.Stream
 	// FromPack is as on DecodedAsset; audio skips the upload pump, so the audio loader quarantines itself.
 	FromPack bool
 }
@@ -67,29 +66,26 @@ type Fetcher interface {
 // Manager answers asset requests through internal/media, in the order memory, disk cache, the player's folders,
 // then the web, and hands results to the render thread and the audio system.
 type Manager struct {
-	bridge   *mediaBridge
-	resolver *Resolver
-	prefs    *config.AssetPreferences
-	t2       *cache.ByteBudgetLRU[string, []byte]
-	disk     *cache.DiskCache
-	client   Fetcher
-	decoder  *DecoderPool
+	bridge  *mediaBridge
+	prefs   *config.AssetPreferences
+	t2      *cache.ByteBudgetLRU[string, []byte]
+	disk    *cache.DiskCache
+	client  Fetcher
+	decoder *Decoder
+	// learnedPath is where the media system's learned formats and winners are kept between sessions.
+	learnedPath string
 
 	// t1Contains reports whether a texture is uploaded; pass the upload's key: base if probed, full URL if exact.
 	t1Contains func(url string) bool
 	// t1Failed reports a recent decode failure of base, so one bad asset cannot storm the network.
 	t1Failed func(base string) bool
 
-	decodedCh   chan DecodedAsset
 	audioCh     chan AudioAsset
 	warningCh   chan Warning
 	musicFailCh chan MusicFailure
 
 	// deliveryNotify wakes the event-driven render loop; on workers, so cheap, non-blocking and SDL-free.
 	deliveryNotify atomic.Pointer[func()]
-
-	// refused counts requests the media system turned away at its cap.
-	refused atomic.Int64
 
 	// offline blocks every network fetch; caches and folders still read, and misses learn no 404s.
 	offline atomic.Bool
@@ -104,6 +100,8 @@ type Manager struct {
 	missing         atomic.Int64
 	mountFetches    atomic.Int64
 	packQuarantined atomic.Int64
+	// failed counts requests that ended in a fetch failure rather than a missing file.
+	failed atomic.Int64
 }
 
 // SetOffline opens or closes the network block.
@@ -188,21 +186,21 @@ func (m *Manager) ColdLoadStats() (fetch, decode time.Duration) {
 
 // ManagerDeps wires a Manager; every field is required except T1Contains and T1Failed.
 type ManagerDeps struct {
-	Resolver *Resolver
-	Prefs    *config.AssetPreferences
-	T2       *cache.ByteBudgetLRU[string, []byte]
-	Disk     *cache.DiskCache
+	Prefs *config.AssetPreferences
+	T2    *cache.ByteBudgetLRU[string, []byte]
+	Disk  *cache.DiskCache
 	// Source is the network client, or a fake in tests.
 	Source     Fetcher
-	Decoder    *DecoderPool
+	Decoder    *Decoder
 	T1Contains func(url string) bool
 	T1Failed   func(base string) bool
+	// LearnedPath is the learned.json the media system's learned formats and winners are kept in; "" keeps none.
+	LearnedPath string
 }
 
 // NewManager builds the Manager and starts its media system; CloseMedia stops it.
 func NewManager(deps ManagerDeps) *Manager {
 	m := &Manager{
-		resolver:    deps.Resolver,
 		prefs:       deps.Prefs,
 		t2:          deps.T2,
 		disk:        deps.Disk,
@@ -210,7 +208,7 @@ func NewManager(deps ManagerDeps) *Manager {
 		decoder:     deps.Decoder,
 		t1Contains:  deps.T1Contains,
 		t1Failed:    deps.T1Failed,
-		decodedCh:   make(chan DecodedAsset, decodedChanCap),
+		learnedPath: deps.LearnedPath,
 		audioCh:     make(chan AudioAsset, audioChanCap),
 		warningCh:   make(chan Warning, warningChanCap),
 		musicFailCh: make(chan MusicFailure, musicFailChanCap),
@@ -221,23 +219,17 @@ func NewManager(deps ManagerDeps) *Manager {
 
 // WorkStats shows what the decoders and handoffs hold, for diagnostics.
 type WorkStats struct {
-	Refused                   int64
-	DecodeQueued, DecodeCap   int
-	DecodeWorkers             int
-	DecodedQueued, DecodedCap int
-	AudioQueued, AudioCap     int
-	Decoding                  []network.WorkItem
+	Refused               int64
+	DecodeWorkers         int
+	AudioQueued, AudioCap int
+	Decoding              []network.WorkItem
 }
 
 // WorkStats snapshots the decoders and handoffs; it allocates, so call it only while the debug panel shows it.
 func (m *Manager) WorkStats() WorkStats {
 	return WorkStats{
-		Refused:       m.refused.Load(),
-		DecodeQueued:  len(m.decoder.jobs),
-		DecodeCap:     cap(m.decoder.jobs),
-		DecodeWorkers: m.decoder.workers,
-		DecodedQueued: len(m.decodedCh),
-		DecodedCap:    cap(m.decodedCh),
+		Refused:       m.bridge.media.Refused(),
+		DecodeWorkers: DecodeWorkers(),
 		AudioQueued:   len(m.audioCh),
 		AudioCap:      cap(m.audioCh),
 		Decoding:      m.decoder.running.Snapshot(),
@@ -260,8 +252,43 @@ func (m *Manager) NotifyDelivery() {
 	}
 }
 
-// Decoded returns the channel the render thread drains for texture uploads.
-func (m *Manager) Decoded() <-chan DecodedAsset { return m.decodedCh }
+// Media is the media system callers ask directly, with keys from ChainKey and ExactKey.
+func (m *Manager) Media() *media.Manager {
+	if m == nil {
+		return nil
+	}
+	return m.bridge.media
+}
+
+// Delivery is one decoded page for the render thread, and the request it belongs to.
+type Delivery struct {
+	DecodedAsset
+	asset *media.Asset
+	final bool
+}
+
+// TakeDeliveries hands the render thread every decoded page waiting, in order; it calls Done on each once through.
+func (m *Manager) TakeDeliveries(use func(Delivery)) {
+	m.bridge.media.TakeResults(func(a *media.Asset, v any, final bool) {
+		d, ok := v.(DecodedAsset)
+		if !ok {
+			// Only images need the render thread; anything else is finished here so its claim is freed.
+			m.Done(Delivery{asset: a, final: final})
+			return
+		}
+		use(Delivery{DecodedAsset: d, asset: a, final: final})
+	})
+}
+
+// Done tells the media system the render thread is through with d: the final page finishes its request and forgets it,
+// so an evicted texture can ask again.
+func (m *Manager) Done(d Delivery) {
+	if !d.final {
+		return
+	}
+	m.bridge.media.Finish(d.asset, nil)
+	m.bridge.media.ForgetAsset(d.asset)
+}
 
 // Audio returns the channel the audio system drains for SDL_mixer loads.
 func (m *Manager) Audio() <-chan AudioAsset { return m.audioCh }
@@ -278,49 +305,6 @@ func (m *Manager) reportMusicFailure(url string, err error) {
 	case m.musicFailCh <- MusicFailure{URL: url, Err: err}:
 		m.NotifyDelivery()
 	default:
-	}
-}
-
-// Prefetch asks for base (URL without extension), with no other spelling.
-func (m *Manager) Prefetch(base string, t AssetType, prio network.Priority) {
-	m.PrefetchChain(base, nil, t, prio)
-}
-
-// PrefetchChain asks for base, then each alt while earlier names miss, like CharLayer::load_image ("(a)X" then "X");
-// call sites bound the length (hard rule 4).
-func (m *Manager) PrefetchChain(base string, alts []string, t AssetType, prio network.Priority) {
-	if base == "" || !t.Valid() {
-		return
-	}
-	if m.t1Failed != nil && m.t1Failed(base) {
-		return // recently failed to decode — back off (the negative cache absorbs retries)
-	}
-	m.bridge.askChain(base, alts, t, prio, false)
-}
-
-// PrefetchSticky is Prefetch for assets that survive room changes, such as UI chrome.
-func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority) {
-	if base == "" || !t.Valid() {
-		return
-	}
-	m.bridge.askChain(base, nil, t, prio, true)
-}
-
-// PrefetchExact asks for a complete URL with no candidate probing, such as a music track.
-func (m *Manager) PrefetchExact(url string, t AssetType, prio network.Priority) {
-	if url == "" || !t.Valid() {
-		return
-	}
-	if m.t1Failed != nil && m.t1Failed(url) {
-		return // recently failed to decode — back off
-	}
-	m.bridge.askExact(url, t, prio)
-}
-
-// PrefetchRaw warms the caches for a complete URL without decoding (char.ini on hover); silent on 404.
-func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
-	if url != "" {
-		m.bridge.askRaw(url, prio)
 	}
 }
 
@@ -358,128 +342,15 @@ func (m *Manager) skipExhausted(base string, t AssetType, quiet bool) {
 	if quiet {
 		return // speculative: no one asked for this, so no one hears about it
 	}
+	m.ReportUndecodable(base, t)
+}
+
+// ReportUndecodable raises the missing-asset warning for an asset whose bytes decode to nothing, which can't load either.
+func (m *Manager) ReportUndecodable(base string, t AssetType) {
 	select {
 	case m.warningCh <- Warning{Base: base, Type: t}:
 	default:
 	}
-}
-
-// FetchRaw fetches a complete URL through memory, the disk cache, the player's folders and the web without decoding;
-// call it off the render thread.
-func (m *Manager) FetchRaw(ctx context.Context, url string) ([]byte, error) {
-	data, _, err := m.fetchRaw(ctx, url)
-	return data, err
-}
-
-// fetchRaw is FetchRaw that also says whether the bytes came from the player's folders.
-func (m *Manager) fetchRaw(ctx context.Context, url string) (data []byte, fromPack bool, err error) {
-	if data, ok := m.t2.Get(url); ok {
-		m.t2Hits.Add(1)
-		return data, false, nil
-	}
-	if !skipDisk(url) {
-		if data, ok := m.disk.Get(url); ok {
-			m.diskHits.Add(1)
-			m.t2.Add(url, data, int64(len(data)))
-			return data, false, nil
-		}
-	}
-	if data, ok := m.bridge.folders.read(url); ok {
-		return data, true, nil // counted by the folder source
-	}
-	data, err = m.netFetch(ctx, url)
-	if err != nil {
-		return nil, false, err
-	}
-	m.netFetches.Add(1)
-	m.t2.Add(url, data, int64(len(data)))
-	if !skipDisk(url) {
-		m.disk.Put(url, data)
-	}
-	return data, false, nil
-}
-
-// ResolveRaw returns the first candidate whose bytes fetch and learns its format; export and replay share this order.
-func (m *Manager) ResolveRaw(base string, t AssetType) (string, []byte, bool) {
-	url, data, _, ok := m.ResolveRawLayered(base, t)
-	return url, data, ok
-}
-
-// ResolveRawLayered is ResolveRaw that also says whether the bytes came from the player's folders, for the content
-// report and scene exporter.
-func (m *Manager) ResolveRawLayered(base string, t AssetType) (url string, data []byte, fromPack, ok bool) {
-	if base == "" || !t.Valid() {
-		return "", nil, false, false
-	}
-	host := hostOf(base)
-	cands := m.resolver.BuildCandidates(base, t, host)
-	defer m.resolver.PutCandidates(cands)
-	for _, url := range cands.URLs {
-		data, fromPack, err := m.fetchRaw(context.Background(), url)
-		if err == nil && len(data) > 0 {
-			m.resolver.RecordSuccess(host, t, url[len(base):]) // learn the winning ext
-			return url, data, fromPack, true
-		}
-	}
-	return "", nil, false, false
-}
-
-// ResolveRawFull is ResolveRaw for report and export passes: the learned format, then the full probe chain.
-func (m *Manager) ResolveRawFull(base string, t AssetType) (string, []byte, bool) {
-	if base == "" || !t.Valid() {
-		return "", nil, false
-	}
-	host := hostOf(base)
-	// A learned format is the fast single-probe path.
-	if ext, ok := m.resolver.Learned(host, t); ok {
-		url := base + ext
-		if data, err := m.FetchRaw(context.Background(), url); err == nil && len(data) > 0 {
-			return url, data, true
-		}
-		// fall through to the full walk
-	}
-	// Learn the winner; a different-format sibling still reaches this walk via the fall-through above.
-	for _, ext := range fullProbeChain(m.prefs, t) {
-		url := base + ext
-		data, err := m.FetchRaw(context.Background(), url)
-		if err == nil && len(data) > 0 {
-			m.resolver.RecordSuccess(host, t, ext) // learn so a repeat pass is single-probe
-			return url, data, true
-		}
-	}
-	return "", nil, false
-}
-
-// fullProbeChain is the configured order then the type's fallback chain, deduped, covering each decoder's formats.
-func fullProbeChain(prefs *config.AssetPreferences, t AssetType) []string {
-	name := t.Name()
-	var order []string
-	if prefs != nil {
-		order = prefs.Load().FormatOrder(name) // configured order (defaults to the zero-fallback list)
-	}
-	if len(order) == 0 {
-		order = config.DefaultFormatOrder(name)
-	}
-	out := make([]string, 0, len(order)+len(config.LegacyFallbackChain(name)))
-	seen := map[string]bool{}
-	appendExt := func(exts []string) {
-		for _, e := range exts {
-			if e == "" || seen[e] {
-				continue
-			}
-			seen[e] = true
-			out = append(out, e)
-		}
-	}
-	appendExt(order)
-	appendExt(config.LegacyFallbackChain(name))
-	return out
-}
-
-// onDecoded hands one decoded page to the render thread.
-func (m *Manager) onDecoded(url, base string, t AssetType, fromPack bool, d *Decoded, err error) {
-	m.decodedCh <- DecodedAsset{URL: url, Base: base, Type: t, Asset: d, Err: err, FromPack: fromPack}
-	m.NotifyDelivery()
 }
 
 // PurgeCorrupt evicts url from memory and the disk cache so the next demand refetches; url is the full fetch URL.
@@ -568,6 +439,8 @@ type ManagerStats struct {
 	MountFetches int64
 	// PackQuarantined counts folder files withdrawn after a decode failure.
 	PackQuarantined int64
+	// Failed counts requests that ended in a fetch failure rather than a missing file.
+	Failed int64
 }
 
 // Stats snapshots the manager's counters.
@@ -580,5 +453,6 @@ func (m *Manager) Stats() ManagerStats {
 		Missing:         m.missing.Load(),
 		MountFetches:    m.mountFetches.Load(),
 		PackQuarantined: m.packQuarantined.Load(),
+		Failed:          m.failed.Load(),
 	}
 }

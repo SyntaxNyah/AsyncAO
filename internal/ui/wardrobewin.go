@@ -316,7 +316,7 @@ func (a *App) fetchWardrobeServerList() {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), wardrobeListTimeout)
 		defer cancel()
-		data, err := mgr.FetchRaw(ctx, url)
+		data, err := assets.Raw(ctx, mgr.Media(), url)
 		if err != nil {
 			ch <- wardrobeListFetch{key: key, err: err}
 		} else {

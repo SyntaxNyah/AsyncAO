@@ -117,7 +117,7 @@ Then set `CGO_ENABLED=1`,
 
 ```bash
 go test -race -count=1 ./...                       # full gate
-go test -run=NONE -bench=. -benchmem ./...         # alloc gates (see docs/BENCHMARKS.md)
+go test -run=NONE -bench=. -benchmem ./...         # compare against the previous commit, run side by side
 gofmt -w . && go vet ./...                         # before every commit
 ```
 
@@ -142,17 +142,18 @@ heap corruption.
 |---|---|---|
 | `internal/safepath` | the ONE copy of the zip-slip / symlink / `..` / depth guards (shared by mounts and theme bundles) | no |
 | `internal/netproxy` | the socket factory: opens every outbound connection (direct or through an HTTP proxy) by the one configuration | no |
+| `internal/saver` | the one background file writer: a change schedules one whole-file replace (temp file + rename) | no |
 | `internal/config` | preferences + debounced atomic saver; favorites; local mounts; the Wardrobe's `wardrobe.json` | no |
-| `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys) | no |
-| `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), request priority, master list + tiers + direct connect | no |
-| `internal/assets` | AssetType enum, lock-free resolver (learned formats), `Manager` over `internal/media` (the bridge), the player's folders as a media source, decode pool (magic-byte sniffing), WebP/AVIF CGO binding + fallback, Markov prefetcher | no (decoder is SDL-free by rule) |
-| `internal/media` | the media system every asset request goes through: `Manager` owns every table on one goroutine, `Get` is safe from any thread, pools run single steps; sources memory → disk cache → `Folders` (the player's folders and .zip packs) → web | no |
+| `internal/cache` | ByteBudgetLRU (T1/T2) + async disk tier (T3, xxhash full-URL keys; downloads arrive in `partial/` and are adopted when complete) | no |
+| `internal/network` | dedup HTTP client (singleflight, 404 TTL, backoff, DNS warm), master list + tiers + direct connect | no |
+| `internal/assets` | AssetType enum, `Manager` over `internal/media` (the bridge; learned formats and winners kept in `learned.json`), the player's folders as a media source, decode pool (magic-byte sniffing), WebP/AVIF CGO binding + fallback, Markov prefetcher | no (decoder is SDL-free by rule) |
+| `internal/media` | the media system every asset request goes through: `Manager` owns every table on one goroutine, `Get` is safe from any thread, pools run single steps; sources memory → disk cache → `Folders` (the player's folders and .zip packs) → web; music opens as a `Stream` (downloaded as it plays) instead of bytes | no |
 | `internal/protocol` | AO wire (delegated to aolib-go: FantaCode + JSON), MS 2.6/2.8 parse/build, pairing semantics, FeatureSet, WebSocket conn | no |
 | `internal/packetutil` | thin bridge over aolib-go: FantaCode primitives, enum maps, typed-parser dispatch, MS both-wire codec | no |
 | `internal/courtroom` | session handshake reducer, message lifecycle state machine, typewriter pacing, URL conventions, char.ini | no |
 | `internal/theme` | AO2 theme INIs (design/fonts/sounds), asset lookup ladder | no |
 | `internal/metrics` | 1 Hz sampler (heap, GC p99, hit rates), cold-load report | no |
-| `internal/sdl`, `ttf`, `mix` | our cgo binding to SDL3, SDL3_ttf and SDL3_mixer (Go-style names, Rect/event/display conversion at the boundary) | **yes** |
+| `internal/sdl`, `ttf`, `mix` | our cgo binding to SDL3, SDL3_ttf and SDL3_mixer (Go-style names, Rect/event/display conversion at the boundary); `mix.Decoder` reads a Go reader, for music decoded off the main thread | **yes** |
 | `internal/render` | TextureStore (T1), viewport compositor, message raster, upload pump, SDL3_mixer audio | **yes** |
 | `internal/ui` | immediate-mode kit + screens (lobby/phone book, char select, courtroom, settings, about) | **yes** |
 | `internal/ui/wardrobe` | what the Wardrobe window lists: filtering, sorting and grouping saved characters, and parsing the server's `iniswaps.ini` | no |
@@ -183,7 +184,7 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
   `askchaa` (sent on PN). Only the askchar2 *paging* is legacy — drop the
   askchaa reply and every server hangs at "handshaking".
 - Sprites have two spellings: `(a)X`/`(b)X` **or** bare `X` (AO2-Client
-  CharLayer::load_image probes both). `PrefetchWithFallback` owns that
+  CharLayer::load_image probes both). The alts passed to `media.Get` own that
   chain; the prefixed base stays the asset's identity everywhere.
 - MS evidence ids are shifted by 1 on the wire (0 = none, legacy); LE
   shares SC's lossy double-decode — a literal `&` in evidence text cannot
@@ -196,14 +197,14 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
   keys are the discovery source. Receive strips a trailing extension from
   `4&<name>` (other clients send their dir-scan filename).
 - Evidence images are EXACT URLs (`evidence/<file.ext>` — the extension
-  ships in the LE name): `PrefetchExact`, never the format-probing path.
+  ships in the LE name): `assets.ExactKey`, never the format-probing path.
 - Theme chatbox skin candidates are `chat` → `chatbox` → `chatblank`
   (courtroom.cpp:3328) — the stock default theme has NO chatbox.png.
   Theme text colors apply only while the theme's own skin drew: they're
   designed for that skin (black-on-paper), not our flat dark panel.
 - `extensions.json` at the asset origin (webAO convention) is the format
-  manifest; autodetect (default ON) seeds per-host learned formats from
-  it. `.webp.static`/`.webp.animated` pseudo-suffixes normalize to .webp.
+  manifest; it is read on every connect and sets that host's formats and
+  their order, as written. `.webp.static`/`.webp.animated` pseudo-suffixes normalize to .webp.
 - Theme textures live in T1 under `theme://<stem>` keys; the scheme prefix
   can't collide with asset URLs. They heal on eviction via themePage.
 
@@ -239,7 +240,7 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
   reports, what the code used to do and how it got here belong in commit messages.
   Trim by content, never by length: length-based rounds lost the reasons and were
   reverted (47e3f7d7).
-- Every `Prefetch` call site carries an `// AssetType: X` comment.
+- Every `media.Get` call site for an asset carries an `// AssetType: X` comment.
 - Tests pin behavior, including performance gates (`testing.AllocsPerRun`).
 - Cache keys are full URLs (host included) — per-server separation is
   structural. Never key by bare path.

@@ -714,7 +714,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			if uid, sender, ok := courtroom.ParsePMSender(ev.Name); ok {
 				a.routeIncomingPM(uid, sender, ev.Text)
 			}
-			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
+			a.pushOOC(ev.Name+": "+ev.Text, ev.Name, ev.FromServer)
 			if a.d.Prefs.Load().CallwordsOOC && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
 				names := a.mentionNames()
 				a.checkCallwords(ev.Text, names, isSelfName(ev.Name, names))
@@ -734,24 +734,25 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				force := a.d.Prefs.Load().ForceCharNames
 				// The log's name resolves through the same char.ini rung as the plate (remoteIniShownameFor).
 				line, speaker, bodyRuneStart, styles := icLogEntry(ev.Message, force, a.friendNick(ev.Message), a.remoteIniShownameFor)
-				a.pushICStyled(line, ev.Message.TextColor, fr, fc, speaker, styles, bodyRuneStart)
-				// Store the speaker's position (wire Side) per entry for the advanced pos filter.
-				a.icLog[len(a.icLog)-1].pos = icPos(ev.Message)
-				// This line has a message in the play queue behind it: the log is written on arrival, the courtroom
-				// speaks it later, and ghost text (ghosttext.go) pairs the two by counting. Stamped only here because
-				// the EventMessage branch is the only push that enqueues.
-				a.icLog[len(a.icLog)-1].speech = true
-				// Reactions: stamp the entry with its content-stable ref, computed from the raw wire fields (CharName +
-				// marker-free text), not the display line, which bakes in client-local showname, nick and timestamp and
-				// wouldn't match a peer's ref. A speaker line becomes a reaction target and the "last message"; float
-				// any reaction this message carries.
-				if speaker != "" {
-					ref := courtroom.MakeReactionRef(ev.Message.CharName, courtroom.StripSpriteStyle(ev.Message.Message))
-					a.icLog[len(a.icLog)-1].ref = ref
-					a.lastReactRef, a.lastReactName = ref, speaker
-				}
-				if r, ok := courtroom.DecodeReactionMarker(ev.Message.Message); ok {
-					a.onIncomingReaction(r)
+				if a.pushICStyled(line, ev.Message.TextColor, fr, fc, speaker, styles, bodyRuneStart) {
+					// Store the speaker's position (wire Side) per entry for the advanced pos filter.
+					a.icLog[len(a.icLog)-1].pos = icPos(ev.Message)
+					// This line has a message in the play queue behind it: the log is written on arrival, the courtroom
+					// speaks it later, and ghost text (ghosttext.go) pairs the two by counting. Stamped only here because
+					// the EventMessage branch is the only push that enqueues.
+					a.icLog[len(a.icLog)-1].speech = true
+					// Reactions: stamp the entry with its content-stable ref, computed from the raw wire fields (CharName +
+					// marker-free text), not the display line, which bakes in client-local showname, nick and timestamp and
+					// wouldn't match a peer's ref. A speaker line becomes a reaction target and the "last message"; float
+					// any reaction this message carries.
+					if speaker != "" {
+						ref := courtroom.MakeReactionRef(ev.Message.CharName, courtroom.StripSpriteStyle(ev.Message.Message))
+						a.icLog[len(a.icLog)-1].ref = ref
+						a.lastReactRef, a.lastReactName = ref, speaker
+					}
+					if r, ok := courtroom.DecodeReactionMarker(ev.Message.Message); ok {
+						a.onIncomingReaction(r)
+					}
 				}
 				a.noteShowname(ev.Message.CharName, ev.Message.Showname) // live-roster name cache
 				a.notePairPartner(ev.Message)                            // #20: track each player's current pair
@@ -782,7 +783,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventWTCE:
 			a.handleWTCE(ev.Text, ev.Int)
 		case courtroom.EventModcall:
-			a.pushOOC("[MOD CALL] "+ev.Text, "")
+			a.pushOOC("[MOD CALL] "+ev.Text, "", false)
 			// AO2's ui_guard silences only the modcall alert (courtroom.cpp:4997-5001: sound and window flash); the OOC
 			// line and auto-clip still land, so a guarded mod loses the interruption, never the report.
 			if !a.modcallGuard {
@@ -795,21 +796,21 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// AO2 surfaces auth transitions as CLIENT lines in the OOC log (on_authentication_state_received).
 			switch {
 			case ev.Int >= 1:
-				a.pushOOC("CLIENT: Logged in as a moderator.", "")
+				a.pushOOC("CLIENT: Logged in as a moderator.", "", false)
 				// Mod now: re-pull /getarea so IPIDs (mod-only, absent from PR/PU) reach the roster; the first
 				// auto-pull can fire before this auto-login lands.
 				if a.sess != nil {
 					a.fetchRoster()
 				}
 			case ev.Int == 0:
-				a.pushOOC("CLIENT: Login unsuccessful.", "")
+				a.pushOOC("CLIENT: Login unsuccessful.", "", false)
 			default:
-				a.pushOOC("CLIENT: You were logged out.", "")
+				a.pushOOC("CLIENT: You were logged out.", "", false)
 			}
 		case courtroom.EventSetPos:
 			a.sidePref = ev.Text // SP: the server moved us
 		case courtroom.EventCase:
-			a.pushOOC("[CASE] "+ev.Text, "")
+			a.pushOOC("[CASE] "+ev.Text, "", false)
 			if enabled, roles := a.d.Prefs.Load().Casing(); enabled && ev.Int&roles != 0 {
 				a.playThemeSFX("case_call")
 				a.ctx.FlashWindow()
@@ -818,7 +819,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// BB is AO2's call_notice, shown in a modal (courtroom.cpp). Do both: the OOC log keeps it searchable, the
 			// box makes it copyable and unmissable. serverNoticeInfo, so dismissing touches nothing; the connection is
 			// fine.
-			a.pushOOC("[SERVER] "+ev.Text, "")
+			a.pushOOC("[SERVER] "+ev.Text, "", false)
 			if strings.TrimSpace(ev.Text) != "" {
 				a.openServerNotice(serverNoticeInfo, serverNoticeInfoTitle, a.serverName, ev.Text)
 			}
@@ -827,9 +828,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// The server (un)muted us: log it and flash the window; the IC input shows a muted chip and refuses sends
 			// while Session.Muted is set (AO2 set_mute disables ui_ic_chat_message).
 			if ev.Int == 1 {
-				a.pushOOC("[SERVER] You have been muted — you can't speak in-character.", "")
+				a.pushOOC("[SERVER] You have been muted — you can't speak in-character.", "", false)
 			} else {
-				a.pushOOC("[SERVER] You have been unmuted.", "")
+				a.pushOOC("[SERVER] You have been unmuted.", "", false)
 			}
 			a.ctx.FlashWindow()
 		case courtroom.EventEvidence:
@@ -1106,19 +1107,6 @@ func (a *App) pickCharacter(idx int) {
 	a.sess.PickCharacter(idx)
 }
 
-// extProfileFor returns the effective format profile (extensions.json text) for an asset host: a user-set per-server
-// profile wins, else the official vanilla server gets the bundled example. "" means fetch the server's own
-// extensions.json.
-func (a *App) extProfileFor(host string) string {
-	if p := a.d.Prefs.Load().ExtProfile(host); p != "" {
-		return p
-	}
-	if a.isOfficialVanilla(host) {
-		return assets.BundledVanillaManifestJSON
-	}
-	return ""
-}
-
 // isOfficialVanilla matches the AO official vanilla base by asset host, or the official vanilla server by connected
 // server key, so joining it uses the vanilla format profile.
 func (a *App) isOfficialVanilla(assetHost string) bool {
@@ -1185,7 +1173,7 @@ func (a *App) probeCasing(host, name, origin string) {
 		base := courtroom.NewURLBuilder(origin).WithCharCase(cc).CharIcon(name)
 		found := false
 		for _, ext := range []string{config.ExtPNG, config.ExtWebP} {
-			if _, err := a.d.Manager.FetchRaw(ctx, base+ext); err == nil {
+			if _, err := assets.Raw(ctx, a.d.Manager.Media(), base+ext); err == nil {
 				found = true
 				break
 			}
@@ -1232,43 +1220,32 @@ func charCaseName(c uint8) string {
 	}
 }
 
-// fetchManifestAsync seeds this host's learned formats from <origin>/extensions.json (webAO convention) so the first
-// asset of each class costs one probe. Auto-detect (Settings) gates the network fetch; manual orders cover servers
-// without a manifest.
+// vanillaManifest is the official vanilla server's formats: it publishes no extensions.json, and its art is PNG.
+const vanillaManifest = `{
+	"charicon_extensions": [".png"],
+	"emote_extensions": [".apng", ".webp", ".png"],
+	"emotions_extensions": [".png"],
+	"background_extensions": [".png"]
+}`
+
+// fetchManifestAsync reads <origin>/extensions.json (webAO convention) into the media system, so the first asset of
+// each class costs one request.
 func (a *App) fetchManifestAsync() {
 	origin := a.urls.Origin()
-	// Settings' re-seed hooks blank manifestFor to force a fresh fetch after a profile or auto-detect change; drop the
-	// origin from the dedupe set so the guard below re-runs.
-	if a.manifestFor == "" {
-		delete(a.manifestSeeded, origin)
-	}
-	a.manifestFor = origin
 	if a.originSeeded(origin) || !strings.HasPrefix(origin, "http") {
 		return
 	}
 	a.markOriginSeeded(origin)
 	host := hostOfURL(origin)
-	// A per-host format profile (user-set, or the built-in official-vanilla example) applies even with auto-detect off;
-	// it seeds instantly, so the first probe already uses the right formats, and wins over the global default for this
-	// host.
-	if profile := a.extProfileFor(host); profile != "" {
-		if m, err := assets.ParseManifest([]byte(profile)); err == nil {
-			n := m.SeedLearned(a.d.Prefs, host)
-			a.d.Resolver.WarmFromPrefs()
-			a.pushDebug(fmt.Sprintf("format profile: seeded %d classes for %s (instant)", n, host))
-			return
-		}
-	}
-	// The network fetch of the server's own extensions.json is gated on auto-detect; the per-server profile above is
-	// not.
-	if !a.d.Prefs.Load().AutoDetectFormats {
+	if a.isOfficialVanilla(host) {
+		a.d.Manager.AllowManifest(origin, []byte(vanillaManifest))
+		a.pushDebug("formats: the vanilla server's built-in list for " + host)
 		return
 	}
 	mgr := a.d.Manager
-	prefs := a.d.Prefs
 	ch := a.manifestRes
 	go func() {
-		res := seedOriginFormats(mgr, prefs, origin)
+		res := seedOriginFormats(mgr, origin)
 		mf := manifestFetch{host: host, seeded: res.seeded, status: res.status, err: res.err}
 		// pollManifest treats a nil err as "seeded". A host with no manifest or an unreadable one is not a seed, so
 		// surface it as an error and let pollManifest log "learn per probe instead".
@@ -1309,7 +1286,7 @@ func (a *App) markOriginSeeded(origin string) {
 type seedStatus int
 
 const (
-	seedSkipped seedStatus = iota // not attempted (non-http origin, or autodetect off)
+	seedSkipped seedStatus = iota // not attempted (non-http origin)
 	seedApplied                   // extensions.json fetched + parsed; N classes seeded
 	seedAbsent                    // no reachable extensions.json (host publishes none)
 	seedFailed                    // reachable but unparseable / transport fault
@@ -1324,17 +1301,11 @@ type seedResult struct {
 	err    error
 }
 
-// seedOriginFormats is the blocking core shared by the session connect path (fetchManifestAsync) and the diagnostic
-// paths (content report, export loader) to seed a host's learned formats from <origin>/extensions.json. It runs off the
-// render thread (FetchRaw blocks; RecordLearned/SeedLearned take the prefs mutex). The caller republishes the resolver
-// table (WarmFromPrefs) on the render thread. absent (a clean 404) is distinct from failed (transport/parse fault) so
-// the panel can say which.
-func seedOriginFormats(mgr *assets.Manager, prefs *config.AssetPreferences, origin string) seedResult {
-	if mgr == nil || prefs == nil || !strings.HasPrefix(origin, "http") {
-		return seedResult{status: seedSkipped}
-	}
-	host := hostOfURL(origin)
-	if host == "" {
+// seedOriginFormats reads origin's extensions.json into the media system; it blocks, so the connect path and the
+// diagnostic passes (content report, export loader) run it off the render thread. absent (a clean 404) is distinct
+// from failed (transport or parse fault) so the panel can say which.
+func seedOriginFormats(mgr *assets.Manager, origin string) seedResult {
+	if mgr == nil || !strings.HasPrefix(origin, "http") || hostOfURL(origin) == "" {
 		return seedResult{status: seedSkipped}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), smallFetchTimeout)
@@ -1346,14 +1317,14 @@ func seedOriginFormats(mgr *assets.Manager, prefs *config.AssetPreferences, orig
 		}
 		return seedResult{status: seedFailed, err: err}
 	}
-	m, perr := assets.ParseManifest(data)
+	lists, perr := media.ParseManifest(data)
 	if perr != nil {
 		return seedResult{status: seedFailed, err: perr}
 	}
-	return seedResult{status: seedApplied, seeded: m.SeedLearned(prefs, host)}
+	return seedResult{status: seedApplied, seeded: len(lists)}
 }
 
-// pollManifest lands autodetect results: republish the resolver snapshot with the seeds and report on the debug lane.
+// pollManifest reports a finished extensions.json read on the debug lane.
 func (a *App) pollManifest() {
 	select {
 	case res := <-a.manifestRes:
@@ -1362,13 +1333,12 @@ func (a *App) pollManifest() {
 			a.pushDebug("extensions.json: " + res.err.Error() + " — formats learn per probe instead")
 			return
 		}
-		a.d.Resolver.WarmFromPrefs()
-		a.pushDebug(fmt.Sprintf("extensions.json: seeded %d format classes for %s", res.seeded, res.host))
+		a.pushDebug(fmt.Sprintf("extensions.json: %d format classes for %s", res.seeded, res.host))
 	default:
 	}
 }
 
-// noteManifestStatus records whether a host published a usable extensions.json, for Settings -> Formats. Render thread
+// noteManifestStatus records whether a host published a usable extensions.json, for Settings -> Assets. Render thread
 // only (the map is unsynchronized); bounded by the distinct asset hosts visited in a session.
 func (a *App) noteManifestStatus(host string, st seedStatus) {
 	if host == "" {
@@ -1499,7 +1469,7 @@ func (a *App) prefetchCharIcons() {
 		if i >= charIconWarmup {
 			break
 		}
-		a.d.Manager.Prefetch(a.urls.CharIcon(c.Name), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
+		a.d.Manager.Media().Get(assets.ChainKey(a.urls.CharIcon(c.Name), assets.AssetTypeCharIcon), media.Later, 0) // AssetType: CharIcon
 	}
 }
 

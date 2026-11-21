@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -30,7 +30,10 @@ const (
 	// missingSpritesCap bounds the 404'd base set (hard rule 4); past it SpriteWaitTimeout bounds any unrecorded miss.
 	// sequentialWaitLimit releases a strict-sequencing hold: a transient error or dropped warning never settles an asset.
 	sequentialWaitLimit = 10 * time.Second
-	missingSpritesCap   = 512
+	// waitReaskInterval is how often a hold asks again for what it still waits on: an answer lost on the way, such as a
+	// dropped missing warning, would otherwise keep the message until the limit.
+	waitReaskInterval = time.Second
+	missingSpritesCap = 512
 	// missingDesksCap bounds the 404'd desk set (hard rule 4); past it the render-side release covers the layer.
 	missingDesksCap = 512
 	// blipVolumeFull is the unattenuated blip scale, used with no BlipVolumeFor callback.
@@ -243,7 +246,8 @@ type EnvResolver interface {
 
 type Courtroom struct {
 	urls  URLBuilder
-	mgr   *assets.Manager
+	media *media.Manager
+	pin   ScenePinner
 	sess  *Session
 	audio AudioSink
 
@@ -324,9 +328,11 @@ type Courtroom struct {
 	// CatchUpLinger holds each fast-forwarded message before the next; default zero drains one per frame.
 	CatchUpLinger time.Duration
 
-	// waitLeft counts down an armed hold; waitFor is its message by pointer, so a new head re-arms.
-	waitLeft time.Duration
-	waitFor  *protocol.ChatMessage
+	// waitLeft counts down an armed hold, and waitAskLeft to its next ask; waitFor is its message by pointer, so a new
+	// head re-arms.
+	waitLeft    time.Duration
+	waitAskLeft time.Duration
+	waitFor     *protocol.ChatMessage
 	// waitBlocker is the need holding the message, needs messageNeeds' reused list.
 	waitBlocker messageNeed
 	needs       []messageNeed
@@ -400,14 +406,26 @@ type Courtroom struct {
 	RealizationSFX string
 }
 
-// NewCourtroom wires the state machine. audio may be nil (NopAudio).
-func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio AudioSink) *Courtroom {
+// ask asks the media system for base, then each alt while earlier names miss, as CharLayer::load_image does.
+func (c *Courtroom) ask(base string, alts []string, t assets.AssetType) {
+	if c.media == nil {
+		return
+	}
+	c.media.Get(assets.ChainKey(base, t), media.Now, 0, alts...)
+}
+
+// ScenePinner keeps a room's background folder in memory while it is on screen.
+type ScenePinner interface{ PinScenery(folder string) }
+
+// NewCourtroom wires the state machine. m and pin may be nil, asking for nothing; audio may be nil (NopAudio).
+func NewCourtroom(urls URLBuilder, m *media.Manager, pin ScenePinner, sess *Session, audio AudioSink) *Courtroom {
 	if audio == nil {
 		audio = NopAudio{}
 	}
 	c := &Courtroom{
 		urls:       urls,
-		mgr:        mgr,
+		media:      m,
+		pin:        pin,
 		sess:       sess,
 		audio:      audio,
 		Typewriter: NewTypewriter(),
@@ -480,9 +498,11 @@ func (c *Courtroom) setScenery(bg, pos string) {
 	s := c.urls.PositionScenery(bg, pos, c.design)
 	c.Scene.BackgroundBase, c.Scene.BackgroundAlts, c.Scene.DeskBase = s.Background, s.Alts, s.Desk
 	c.placeScenery(fileStem(s.Background))
-	c.mgr.PinScenery(s.Background[:strings.LastIndexByte(s.Background, '/')+1])
-	c.mgr.PrefetchChain(s.Background, s.Alts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
-	c.mgr.Prefetch(s.Desk, assets.AssetTypeDeskOverlay, network.PriorityHigh)                   // AssetType: DeskOverlay
+	if c.pin != nil {
+		c.pin.PinScenery(s.Background[:strings.LastIndexByte(s.Background, '/')+1])
+	}
+	c.ask(s.Background, s.Alts, assets.AssetTypeBackground) // AssetType: Background
+	c.ask(s.Desk, nil, assets.AssetTypeDeskOverlay)         // AssetType: DeskOverlay
 	c.followBackground()
 }
 
@@ -591,7 +611,10 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	// This runs every frame of a hold: the need that stopped the last check is one lookup, the full list 174 allocations.
 	// A release is always decided on a fresh list.
 	armed := c.waitFor == msg
-	if !armed || c.needSettled(c.waitBlocker) {
+	if armed {
+		c.waitAskLeft -= dt
+	}
+	if !armed || c.needSettled(c.waitBlocker) || c.waitAskLeft <= 0 {
 		needs := c.messageNeeds(msg)
 		blocker, blocked := c.firstUnsettled(needs)
 		if !blocked {
@@ -609,6 +632,7 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		// Every fresh list, not only the first: a need that joins once char.ini lands (chat skin, blip) has no other
 		// requester until begin, which runs only after the gate releases.
 		c.requestNeeds(needs)
+		c.waitAskLeft = waitReaskInterval
 	}
 	c.waitLeft -= dt
 	if c.waitLeft <= 0 {
@@ -875,21 +899,21 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// Prefetch fan-out, all HIGH. Sprites walk "(a)X", bare, "(a)/X" (animationlayer.cpp:422-444).
 	idle := c.urls.Emote(speakerName, msg.Emote, EmoteIdle)
 	talk := c.urls.Emote(speakerName, msg.Emote, EmoteTalk)
-	c.mgr.PrefetchChain(idle, c.spriteAlts(speakerName, msg.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	c.mgr.PrefetchChain(talk, c.spriteAlts(speakerName, msg.Emote, EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	c.ask(idle, c.spriteAlts(speakerName, msg.Emote, EmoteIdle), assets.AssetTypeCharSprite) // AssetType: CharSprite
+	c.ask(talk, c.spriteAlts(speakerName, msg.Emote, EmoteTalk), assets.AssetTypeCharSprite) // AssetType: CharSprite
 
 	pre := ""
 	if hasPreanim(msg) {
 		pre = c.urls.Emote(speakerName, msg.PreEmote, EmotePreanim)
 		if !c.restoring { // settled form never plays the preanim — don't probe for it
-			c.mgr.Prefetch(pre, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+			c.ask(pre, nil, assets.AssetTypeCharSprite) // AssetType: CharSprite
 		}
 	}
 
 	pairIdle := ""
 	if msg.Pair.Active() {
 		pairIdle = c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle)
-		c.mgr.PrefetchChain(pairIdle, c.spriteAlts(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (pair partner)
+		c.ask(pairIdle, c.spriteAlts(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), assets.AssetTypeCharSprite) // AssetType: CharSprite (pair partner)
 	}
 
 	if msg.IsShout() {
@@ -898,9 +922,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.ShoutDefaultBase = defaultBase
 		if !c.restoring { // settled form never shows the bubble — don't probe for it
 			if defaultBase != "" {
-				c.mgr.Prefetch(defaultBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
+				c.ask(defaultBase, nil, assets.AssetTypeShoutBubble) // AssetType: ShoutBubble
 			}
-			c.mgr.Prefetch(charBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
+			c.ask(charBase, nil, assets.AssetTypeShoutBubble) // AssetType: ShoutBubble
 		}
 		c.audio.PlayShout(shoutSFX) // AssetType: SFX
 	}
@@ -919,7 +943,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		if misc := c.Chars.ChatSkinFor(speakerName); misc != "" {
 			cands := c.urls.MiscChatboxCandidates(misc)
 			c.Scene.ChatSkinBase = cands[0]
-			c.mgr.PrefetchChain(cands[0], cands[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (chatbox skin)
+			c.ask(cands[0], cands[1:], assets.AssetTypeMisc) // AssetType: Misc (chatbox skin)
 		}
 	}
 	// The speaker's chatbox colours (misc/<chat>/courtroom_fonts.ini, get_chat), falling back to the theme.
@@ -975,8 +999,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if msg.EmoteMod == protocol.EmoteModZoom || msg.EmoteMod == protocol.EmoteModPreanimZoom {
 		c.Scene.SpeedlinesSide = ZoomSide(msg.Side)
 		c.Scene.SpeedlinesChain = c.urls.SpeedlinesCandidates(speakerName, msg.Side)
-		c.mgr.PrefetchChain(c.Scene.SpeedlinesChain[0], c.Scene.SpeedlinesChain[1:],
-			assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (zoom speedlines)
+		c.ask(c.Scene.SpeedlinesChain[0], c.Scene.SpeedlinesChain[1:], assets.AssetTypeMisc) // AssetType: Misc (zoom speedlines)
 	}
 
 	// Parse FRAME_* once here, never per frame, after the Speaker bases so NotifyFrameShown can bind the group.
@@ -1011,7 +1034,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 			continue // the speaker is already on the Speaker layer
 		}
 		base := c.urls.Emote(m.Name, m.Emote, EmoteIdle)
-		c.mgr.PrefetchChain(base, c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)
+		c.ask(base, c.spriteAlts(m.Name, m.Emote, EmoteIdle), assets.AssetTypeCharSprite)
 		c.Scene.Group = append(c.Scene.Group, SpriteLayer{
 			Name:     m.Name,
 			IdleBase: base,
@@ -1062,7 +1085,7 @@ func (c *Courtroom) resolveBlip() {
 		return
 	}
 	c.blipRef = ref
-	c.mgr.PrefetchChain(ref.Base, ref.Alts, ref.Type, network.PriorityHigh)
+	c.ask(ref.Base, ref.Alts, ref.Type)
 }
 
 // blipRefFor builds the chain for the wait gate; pending means char.ini is in flight, so skip the blip, don't hold.
@@ -1268,8 +1291,8 @@ func (c *Courtroom) armSFXDelay(msg *protocol.ChatMessage) {
 		return // nothing to schedule
 	}
 	// Warm now so a first play adds no fetch latency on top of SFX_DELAY.
-	if base != "" && c.mgr != nil {
-		c.mgr.Prefetch(base, assets.AssetTypeSFX, network.PriorityHigh) // AssetType: SFX
+	if base != "" && c.media != nil {
+		c.ask(base, nil, assets.AssetTypeSFX) // AssetType: SFX
 	}
 	c.sfxArmed = true
 	c.sfxLeft = time.Duration(msg.SFXDelay) * sfxDelayUnit
@@ -1719,7 +1742,7 @@ func (c *Courtroom) followBackground() {
 		return
 	}
 	c.Scene.DeskBase = desk
-	c.mgr.Prefetch(desk, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
+	c.ask(desk, nil, assets.AssetTypeDeskOverlay) // AssetType: DeskOverlay
 	if c.current != nil {
 		c.applyDeskMods(c.phase == PhasePreanim)
 	}

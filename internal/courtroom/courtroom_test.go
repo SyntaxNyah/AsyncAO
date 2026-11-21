@@ -67,7 +67,6 @@ func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioR
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	resolver := assets.NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -77,11 +76,10 @@ func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioR
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	local := assets.NewLocalFetcher([]string{t.TempDir()})
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: local, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)
@@ -90,7 +88,7 @@ func newCourtroomRig(t testing.TB) (*Courtroom, *Session, *sentRecorder, *audioR
 	rec := &sentRecorder{}
 	sess := NewSession(rec.send, "test-hdid")
 	audio := &audioRecorder{}
-	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr, sess, audio)
+	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr.Media(), mgr, sess, audio)
 	return room, sess, rec, audio
 }
 

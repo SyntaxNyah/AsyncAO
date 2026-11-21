@@ -425,7 +425,7 @@ func TestTabStripUndoOfTheFirstDragSendsItHome(t *testing.T) {
 // editor armed the strip painted AFTER drawLayoutEditor and buried its banner. The
 // predicate must not simply be "an editor is armed" either: an editor flag outlives
 // the frames where its draw site actually runs (drawCourtroom bails to the lobby with
-// no room, returns early in theater, and gif export / replay / the scene maker preempt
+// no room, and gif export / replay / the scene maker preempt
 // the whole screen dispatch), and the strip would then vanish on those frames.
 func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 	arm := map[string]func(*App){
@@ -451,7 +451,6 @@ func TestTabStripPaintSiteIsExclusiveWhileEditing(t *testing.T) {
 				"lobby":       func(a *App) { a.screen = ScreenLobby },
 				"no room":     func(a *App) { a.room = nil },
 				"no session":  func(a *App) { a.sess = nil },
-				"theater":     func(a *App) { a.theaterOn = true },
 				"gif export":  func(a *App) { a.gifExporting = true },
 				"replay":      func(a *App) { a.replaying, a.replayRoom = true, a.room },
 				"scene maker": func(a *App) { a.makerOpen = true },

@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -36,7 +37,6 @@ const (
 	hotkeyScreenshot  = "screenshot"
 	hotkeyRecordScene = "record_scene"
 	hotkeyReplayLast  = "replay_last"
-	hotkeyTheater     = "theater"
 	hotkeyLogin       = "login"
 	hotkeyMuteSFX     = "mute_sfx"
 	hotkeyEmoteCycle  = "emote_cycle"
@@ -94,7 +94,6 @@ var hotkeyDefs = []struct {
 	{hotkeyScreenshot, "Screenshot", "s"},
 	{hotkeyRecordScene, "Record scene to a replay file (start/stop)", "w"},
 	{hotkeyReplayLast, "Replay the last recording (start/stop)", "i"},
-	{hotkeyTheater, "Theater mode", "t"},
 	{hotkeyLogin, "Server login (saved creds)", "g"},
 	{hotkeyMuteSFX, "Mute sound effects", "{"},
 	{hotkeyEmoteCycle, "Cycle emote (next)", "e"},
@@ -306,8 +305,6 @@ func (a *App) handleHotkeys() {
 		a.clipInstantReplay()
 	case a.hotkeyFor(hotkeyPalette):
 		a.togglePalette()
-	case a.hotkeyFor(hotkeyTheater):
-		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):
 		a.loginNow()
 	case a.hotkeyFor(hotkeyMuteSFX):
@@ -350,10 +347,6 @@ func (a *App) handleHotkeys() {
 		a.showModcall = true
 	case a.hotkeyFor(hotkeyUIChrome):
 		// Opens the per-piece panel even when the grip is hidden, so a user who hid the toolbox can recover it.
-		// Theater mode exits first: re-arming these flags under theater would float the panel over the bare stage.
-		if a.theaterOn {
-			a.setTheater(false)
-		}
 		a.toolboxPinned, a.toolboxPieces = true, true
 	case a.hotkeyFor(hotkeyToggleMenuBar):
 		a.toggleChromePanel(panelMenuBar, "Menu bar")
@@ -788,34 +781,6 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	}
 }
 
-const theaterHint = "Esc exits theater"
-
-// drawTheater is the borderless viewport-only courtroom: the stage letterboxed to 4:3, chat overlay and hotkeys.
-func (a *App) drawTheater(w, h int32) {
-	c := a.ctx
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{A: 255})
-	vpW, vpH := w, w*3/4
-	if vpH > h {
-		vpH = h
-		vpW = vpH * 4 / 3
-	}
-	vp := sdl.Rect{X: (w - vpW) / 2, Y: (h - vpH) / 2, W: vpW, H: vpH}
-	a.renderViewportZoomed(vp)
-	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
-	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
-	if a.vpZoom <= 1 {
-		a.handleSpriteDrag(vp)
-		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
-	}
-	a.handleHotkeys()
-	a.drawChatOverlay(vp, false, 0, 0) // theater mode keeps the clean stage-bottom chatbox
-	a.drawCourtOverlays(vp, nil)       // splashes/HP still play — part of the show
-	c.Label(w-c.TextWidth(theaterHint)-8, 6, theaterHint, ColTextDim)
-	if c.escPressed {
-		a.setTheater(false)
-	}
-}
-
 // cyclePos advances our side through posChoices (the SD list when sent).
 func (a *App) cyclePos() {
 	choices := a.posChoices()
@@ -1107,30 +1072,31 @@ const oocWrapMinCharsPerRow = 4
 // Derived from oocLineCap so a legitimate entry is never clipped; the "…" marker needs a synthetic width.
 const oocWrapMaxLinesPerEntry = oocLineCap / oocWrapMinCharsPerRow
 
-// oocLinkSpan is one clickable link on one wrapped OOC row: its byte range in the displayed text, pixel range and URL.
+// linkSpan is one clickable link on one wrapped row: its byte range in the displayed text, pixel range and URL.
 // A link the wrap hard-split contributes one span per row sharing an id, so the highlight covers the whole link.
-type oocLinkSpan struct {
-	row    int32  // display-row index into a.oocWrap
-	lo, hi int32  // byte range inside a.oocWrap[row] (the drawn text)
+type linkSpan struct {
+	row    int32  // display-row index into the wrapped rows
+	lo, hi int32  // byte range inside the row (the drawn text)
 	x0, x1 int32  // pixel range relative to the row's TEXT origin (hanging indent NOT included)
 	link   int32  // link id; the pieces of one wrapped link share it and are contiguous in the table
 	url    string // what a click opens — read from the UNMASKED paragraph (streamer mode masks display only)
 }
 
-// oocLinksPerParagraphMax bounds the clickable links of one paragraph (hard rule 4); links past it still display.
-const oocLinksPerParagraphMax = 64
+// linksPerParagraphMax bounds the clickable links of one paragraph (hard rule 4); links past it still display.
+const linksPerParagraphMax = 64
 
-// appendLinkSpans records the link regions of one wrapped paragraph; only inside oocWrapped's cached rebuild.
-// Positions come from masked, the drawn text, since streamer mode shifts offsets; the URL to open comes from raw.
-func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw, masked string, nextID int32) ([]oocLinkSpan, int32) {
-	rawLinks := extractURLs(raw, oocLinksPerParagraphMax)
+// wrappedLinkSpans records the byte ranges of the links in one wrapped paragraph; callers measure x0/x1 in their face.
+// Positions come from drawn, the text the rows hold, since streamer mode and ellipses shift offsets; the URL to open
+// comes from raw.
+func wrappedLinkSpans(dst []linkSpan, rows []string, rowBase int, raw, drawn string, nextID int32) ([]linkSpan, int32) {
+	rawLinks := extractURLs(raw, linksPerParagraphMax)
 	if len(rawLinks) == 0 || len(rows) == 0 {
 		return dst, nextID // the overwhelming common case: no link in this paragraph, no work
 	}
 	start, startID := len(dst), nextID
 	rawAt := 0          // cursor into rawLinks
 	rowIdx, pos := 0, 0 // walk position: row, byte offset within it
-	for _, tok := range strings.Fields(masked) {
+	for _, tok := range strings.Fields(drawn) {
 		// Masking can eat or rewrite a link, so pair by exact match scanning forward from the cursor,
 		// falling back to the next unconsumed raw link when the drawn text no longer matches.
 		tlo, thi := urlTokenRange(tok)
@@ -1179,7 +1145,7 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 				// Intersect with the link's trimmed range; brackets and a sentence period are not part of it.
 				ovLo, ovHi := max(consumed, tlo), min(consumed+n, thi)
 				if ovHi > ovLo {
-					dst = append(dst, oocLinkSpan{
+					dst = append(dst, linkSpan{
 						row:  int32(rowBase + rowIdx),
 						lo:   int32(pos + ovLo - consumed),
 						hi:   int32(pos + ovHi - consumed),
@@ -1194,12 +1160,12 @@ func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw
 			nextID++
 		}
 	}
-	return a.measureLinkSpans(dst, start, rows, rowBase), nextID
+	return dst, nextID
 }
 
 // measureLinkSpans fills the pixel range of dst[start:] in the face each row draws in, so tint and hit test match.
 // A row the per-glyph raster draws has no advance to trust here, so its first link covers the whole row.
-func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowBase int) []oocLinkSpan {
+func (a *App) measureLinkSpans(dst []linkSpan, start int, rows []string, rowBase int) []linkSpan {
 	w := start
 	for k := start; k < len(dst); k++ {
 		s := dst[k]
@@ -1222,7 +1188,7 @@ func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowB
 }
 
 // oocRowLinks returns row li's link spans, a view into the flat table with no allocation.
-func (a *App) oocRowLinks(li int) []oocLinkSpan {
+func (a *App) oocRowLinks(li int) []linkSpan {
 	if li < 0 || li+1 >= len(a.oocWrapLinkAt) {
 		return nil
 	}
@@ -1242,7 +1208,6 @@ func (a *App) oocWrapped(width int32) []string {
 	}
 	out := a.oocWrap[:0]
 	name := a.oocWrapName[:0]  // parallel to out: speaker on each entry's first display line
-	cont := a.oocWrapCont[:0]  // parallel to out: wrap continuation rows (hanging indent)
 	src := a.oocWrapSrc[:0]    // parallel to out: source oocLog entry index
 	links := a.oocWrapLink[:0] // NOT parallel: the flat link-span table, rows index it via linkAt below
 	var nextLinkID int32       // link ids are unique across the whole rebuild, so a span identifies its link alone
@@ -1291,16 +1256,14 @@ func (a *App) oocWrapped(width int32) []string {
 			if len(lines) == 0 {
 				out = append(out, "") // blank MOTD spacer lines survive
 				name = append(name, "")
-				cont = append(cont, false)
 				src = append(src, i)
 				remaining-- // a spacer row spends budget too, so the count stays bounded
 				continue
 			}
 			rowBase := len(out) // where this paragraph's rows land — the spans index into the WRAP, not into lines
-			for row, ln := range lines {
+			for _, ln := range lines {
 				out = append(out, ln)
-				cont = append(cont, row > 0) // rows the WRAP made are continuations (hanging indent); the paragraph's own newline isn't
-				src = append(src, i)         // all rows of this entry carry its oocLog index
+				src = append(src, i) // all rows of this entry carry its oocLog index
 				if entryFirst {
 					name = append(name, sp)
 					entryFirst = false
@@ -1309,17 +1272,18 @@ func (a *App) oocWrapped(width int32) []string {
 				}
 			}
 			// Each URL on the line gets its own span, positioned on the drawn rows but opening the link as it arrived.
-			links, nextLinkID = a.appendLinkSpans(links, lines, rowBase, rawPara, trimmed, nextLinkID)
+			linkStart := len(links)
+			links, nextLinkID = wrappedLinkSpans(links, lines, rowBase, rawPara, trimmed, nextLinkID)
+			links = a.measureLinkSpans(links, linkStart, lines, rowBase)
 			remaining -= len(lines)
 			if truncated {
 				break // clipped this paragraph — no point wrapping later ones
 			}
 		}
 		if truncated {
-			// One marker row for the whole entry, parallel slices in step; cont=true hangs it under the entry.
+			// One marker row for the whole entry, parallel slices in step.
 			out = append(out, "…")
 			name = append(name, "")
-			cont = append(cont, true)
 			src = append(src, i)
 		}
 	}
@@ -1334,7 +1298,7 @@ func (a *App) oocWrapped(width int32) []string {
 		}
 		linkAt = append(linkAt, int32(k))
 	}
-	a.oocWrap, a.oocWrapName, a.oocWrapCont, a.oocWrapSrc = out, name, cont, src
+	a.oocWrap, a.oocWrapName, a.oocWrapSrc = out, name, src
 	a.oocWrapLink, a.oocWrapLinkAt = links, linkAt
 	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, pct, streamer
 	a.oocWrapEpoch = a.logViewEpoch
@@ -1350,10 +1314,15 @@ type icWrapLine struct {
 	// Both are 0 unless the entry has inline-colour runs.
 	headRunes int
 	bodyOff   int
+	// styles is the entry's runs over its whitespace-folded body, the text the rows were cut from.
+	styles []courtroom.StyleRun
 }
 
 // logWrapIndentPx is the hanging indent of wrapped rows; drawers wrap against width-logWrapIndentPx.
 const logWrapIndentPx = 14
+
+// logRowGapPx is the space between log rows, added to the font height.
+const logRowGapPx = 2
 
 // icRowIsEntryStart reports whether row li of a.icWrap begins a new icLog entry rather than continuing the row above.
 func (a *App) icRowIsEntryStart(li int) bool {
@@ -1361,14 +1330,9 @@ func (a *App) icRowIsEntryStart(li int) bool {
 }
 
 // logRowIndent is row li's draw indent in log which; selection hit-testing uses the same offset.
+// OOC rows never hang: AO2's server log is plain text, laid out as the server wrote it (#53).
 func (a *App) logRowIndent(which, li int) int32 {
-	if which == logSelIC {
-		if !a.icRowIsEntryStart(li) {
-			return logWrapIndentPx
-		}
-		return 0
-	}
-	if li >= 0 && li < len(a.oocWrapCont) && a.oocWrapCont[li] {
+	if which == logSelIC && !a.icRowIsEntryStart(li) {
 		return logWrapIndentPx
 	}
 	return 0
@@ -1408,6 +1372,15 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 			text = prefix + text
 			stampRunes = utf8.RuneCountInString(prefix)
 		}
+		// The wrap folds whitespace, so a styled entry is folded first and its offsets count what the rows hold.
+		styled := len(entry.styles) > 0
+		var styles []courtroom.StyleRun
+		var src []rune
+		bodyStart := 0
+		if styled {
+			text, bodyStart, styles = collapseStyled(text, stampRunes+entry.bodyRuneStart, entry.styles)
+			src = []rune(text)
+		}
 		// Wrap against the drawn width; emoji entries use the rune-granular wrap, as the word-wrap sizes them as tofu.
 		// Trigger the font load off the whole entry first: per-candidate picks see only rows within the cap.
 		a.ctx.noteScript(text)
@@ -1418,12 +1391,15 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 			wrapped = wrapToWidthMeasured(measure, text, width, icWrapMaxLinesPerEntry)
 		}
 		// For inline-colour entries, track each row's rune offset and fold the head into a leading default-colour span.
-		styled := len(entry.styles) > 0
-		bodyStart := stampRunes + entry.bodyRuneStart
 		off := 0
 		for _, ln := range wrapped {
-			row := icWrapLine{text: ln, entry: i}
+			row := icWrapLine{text: ln, entry: i, styles: styles}
 			if styled {
+				// A row break drops the space it broke at.
+				first, _ := utf8.DecodeRuneInString(ln)
+				for off < len(src) && src[off] != first && unicode.IsSpace(src[off]) {
+					off++
+				}
 				n := utf8.RuneCountInString(ln)
 				if head := bodyStart - off; head > 0 {
 					row.headRunes = head

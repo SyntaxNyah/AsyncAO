@@ -35,7 +35,6 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
 	mount := t.TempDir()
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -45,15 +44,13 @@ func emotePreviewFollowTestApp(t *testing.T) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   assets.NewLocalFetcher([]string{mount}),
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  assets.NewLocalFetcher([]string{mount}),
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders([]string{mount}, nil)

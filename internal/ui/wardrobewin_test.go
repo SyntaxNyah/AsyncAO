@@ -9,6 +9,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/ui/wardrobe"
 )
 
@@ -235,5 +236,70 @@ func TestWardrobeWearWithEveryCharacterTakenWearsNothing(t *testing.T) {
 	a.room, a.screen = nil, ScreenCharSelect
 	if a.wardrobeWear("Godot") || a.ward.wearAfter != "" || a.warnLine == "" {
 		t.Fatalf("no free slot: wore anyway or said nothing (queued %q, warning %q)", a.ward.wearAfter, a.warnLine)
+	}
+}
+
+// wardrobeClickTestApp is a rehearsal App whose pointer rests on a Wardrobe card; slot 1 (Maya) is free.
+func wardrobeClickTestApp(t *testing.T, single bool) (*App, sdl.Rect) {
+	t.Helper()
+	const charINILoads = 2
+	a := emotePreviewFollowTestApp(t) // switching enters the courtroom, which fetches the char.ini
+	a.iniChar = ""
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix", "Maya"})
+	a.d.Viewport = render.NewViewport(nil, false)
+	a.charINIres = make(chan charINIFetch, charINILoads)
+	a.room, a.screen = nil, ScreenCharSelect
+	a.d.Prefs.Update(func(sn *config.Settings) { sn.WardrobeSingleClick = single })
+	const side = 100
+	card := sdl.Rect{W: side, H: side}
+	a.ctx.mouseX, a.ctx.mouseY = side/2, side/2
+	a.ctx.downX, a.ctx.downY = side/2, side/2
+	return a, card
+}
+
+// click releases the button on the card as the streak's nth same-spot click.
+func wardrobeClickOn(a *App, card sdl.Rect, nth int) {
+	const double = 2
+	a.ctx.clicked, a.ctx.clickStreak, a.ctx.dblClick = true, nth, nth == double
+	a.wardrobeItemInput(wardrobe.Item{Char: "Maya"}, card)
+	a.ctx.clicked, a.ctx.dblClick = false, false
+}
+
+func TestWardrobeSingleClickWearsOnce(t *testing.T) {
+	const maya = 1
+	a, card := wardrobeClickTestApp(t, true)
+	wardrobeClickOn(a, card, 1)
+	if a.sess.MyCharID != maya {
+		t.Fatalf("one click left slot %d, want Maya's slot %d", a.sess.MyCharID, maya)
+	}
+	wardrobeClickOn(a, card, 2) // the second click of a double-click
+	if a.iniChar != "" {
+		t.Fatalf("a double-click wore Maya again as an iniswap (%q)", a.iniChar)
+	}
+}
+
+func TestWardrobeClickOnlySelectsByDefault(t *testing.T) {
+	a, card := wardrobeClickTestApp(t, false)
+	before := a.sess.MyCharID
+	wardrobeClickOn(a, card, 1)
+	if a.sess.MyCharID != before || a.ward.sel != "Maya" {
+		t.Fatalf("a click switched to slot %d or didn't select (sel %q)", a.sess.MyCharID, a.ward.sel)
+	}
+}
+
+// TestWardrobeCornersFollowSharp: under the Sharp chrome shape the Wardrobe's panels and controls are square; other
+// shapes keep its rounded corners.
+func TestWardrobeCornersFollowSharp(t *testing.T) {
+	a := wardrobeTestApp(t)
+	for _, shape := range []string{shapeSharp, shapeRounded, shapePillKey} {
+		a.d.Prefs.SetChromeShape(shape)
+		a.refreshShapeMasks()
+		want := wardRadRow
+		if shape == shapeSharp {
+			want = 0
+		}
+		if got := a.wardRad(wardRadRow); got != want {
+			t.Errorf("shape %q: row radius %d, want %d", shape, got, want)
+		}
 	}
 }

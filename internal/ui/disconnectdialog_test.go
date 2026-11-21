@@ -25,7 +25,7 @@ func froomApp(t *testing.T) *App {
 	a.tabs = []*courtTab{{}}
 	a.activeTab = 0
 	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
-	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, a.sess, courtroom.NopAudio{})
 	a.screen = ScreenCourtroom
 	return a
 }
@@ -180,7 +180,7 @@ func TestHandleInvoluntaryDropWithNoRoomGoesToLobby(t *testing.T) {
 func TestVoluntaryDisconnectGoesToLobby(t *testing.T) {
 	a := froomApp(t)
 	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
-	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, a.sess, courtroom.NopAudio{})
 	a.deliberateClose = true // the user chose to leave
 	a.handleInvoluntaryDrop("connection closed")
 	if a.disconnectDlg.open {

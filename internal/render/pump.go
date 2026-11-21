@@ -11,28 +11,23 @@ import (
 type Pump struct {
 	store *TextureStore
 	mgr   *assets.Manager
-	// carry holds budget-deferred uploads, bounded by the manager's decoded channel capacity plus its backlog.
-	carry []assets.DecodedAsset
+	// carry holds budget-deferred uploads; each still holds its request, so the media system's claim limit bounds it.
+	carry []assets.Delivery
 	// IsLive reports whether a base belongs to the message on screen, which bypasses the budget.
 	IsLive func(base string) bool
 
-	// uploadErrs and transientErrs are debug counters; atomic so the panel read can't race.
-	uploadErrs    atomic.Int64
-	transientErrs atomic.Int64
+	// uploadErrs is a debug counter; atomic so the panel read can't race.
+	uploadErrs atomic.Int64
 }
 
 // PumpStats is a snapshot of the pump's debug counters.
 type PumpStats struct {
-	UploadErrs    int64 // GPU texture-upload failures (over-budget canvas, OOM)
-	TransientErrs int64 // network-stage failures that reached the pump (not cached)
+	UploadErrs int64 // GPU texture-upload failures (over-budget canvas, OOM)
 }
 
 // Stats snapshots the error counters using atomic loads, so it never blocks Frame.
 func (p *Pump) Stats() PumpStats {
-	return PumpStats{
-		UploadErrs:    p.uploadErrs.Load(),
-		TransientErrs: p.transientErrs.Load(),
-	}
+	return PumpStats{UploadErrs: p.uploadErrs.Load()}
 }
 
 func NewPump(store *TextureStore, mgr *assets.Manager, isLive func(base string) bool) *Pump {
@@ -47,20 +42,17 @@ func (p *Pump) Frame() {
 	uploadedTextures := 0
 	uploadedBytes := int64(0)
 
-	withinBudget := func(d *assets.DecodedAsset) bool {
+	withinBudget := func(d *assets.Delivery) bool {
 		if p.IsLive(d.Base) {
 			return true // live-message uploads are never deferred
 		}
 		return uploadedTextures < speculativeUploadMaxTextures &&
 			uploadedBytes < speculativeUploadMaxBytes
 	}
-	upload := func(d assets.DecodedAsset) {
+	upload := func(delivery assets.Delivery) {
+		defer p.mgr.Done(delivery)
+		d := delivery.DecodedAsset
 		if d.Err != nil || d.Asset == nil {
-			// Network-stage failures skip the negative cache: the bytes were never seen, so the next demand must retry.
-			if d.Err != nil && d.Transient {
-				p.transientErrs.Add(1)
-				return
-			}
 			// Bad cached bytes: purge T2/T3 by d.URL (their key, never d.Base), or the same blob re-promotes forever.
 			if d.Err != nil {
 				p.mgr.PurgeCorrupt(d.URL)
@@ -78,6 +70,10 @@ func (p *Pump) Frame() {
 			// Back off the prefetch, logging once per decodeFailTTL.
 			if d.Err != nil && p.store.MarkFailed(d.Base) {
 				log.Printf("render: asset %s failed: %v", d.Base, d.Err)
+			}
+			// Shown as missing, so a message waiting on it starts and the sprite draws the placeholder.
+			if !d.FromPack {
+				p.mgr.ReportUndecodable(d.Base, d.Type)
 			}
 			return
 		}
@@ -123,16 +119,11 @@ func (p *Pump) Frame() {
 	}
 	p.carry = kept
 
-	for {
-		select {
-		case d := <-p.mgr.Decoded():
-			if withinBudget(&d) {
-				upload(d)
-			} else {
-				p.carry = append(p.carry, d)
-			}
-		default:
-			return
+	p.mgr.TakeDeliveries(func(d assets.Delivery) {
+		if withinBudget(&d) {
+			upload(d)
+		} else {
+			p.carry = append(p.carry, d)
 		}
-	}
+	})
 }

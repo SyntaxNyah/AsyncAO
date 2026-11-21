@@ -272,6 +272,23 @@ func (fs *Folders) Data(f File) ([]byte, error) {
 	return data, err
 }
 
+// Open opens a folder's file in place and reads a pack's entry whole, checking the folder like Data; pool workers only.
+func (fs *Folders) Open(f File) (Stream, error) {
+	s := fs.state.Load()
+	if s == nil {
+		return nil, ErrAbsent
+	}
+	dir, name, ok := s.locate(string(f))
+	if !ok {
+		return nil, ErrAbsent
+	}
+	st, onDisk, err := s.open(dir, name, fs.now())
+	if err == nil {
+		fs.note(f, onDisk)
+	}
+	return st, err
+}
+
 // Size reports the pages held.
 func (fs *Folders) Size() Contents {
 	n := 0
@@ -387,6 +404,41 @@ func (s *folderSet) read(dir, name string, now time.Time) ([]byte, string, error
 	case *zipMount:
 		data, err := m.read(pf.name)
 		return data, m.path, err
+	}
+	return nil, "", ErrAbsent
+}
+
+// open is read for a Stream: a folder's file is opened where it lies, and only a pack's entry is read into memory.
+func (s *folderSet) open(dir, name string, now time.Time) (Stream, string, error) {
+	if !s.mounts.acquire() {
+		return nil, "", ErrAbsent
+	}
+	defer s.mounts.release()
+	p := s.refresh(dir, now)
+	pf, ok := p.files[name]
+	if !ok {
+		return nil, "", ErrAbsent
+	}
+	switch m := s.mounts.mounts[pf.mount].(type) {
+	case *dirMount:
+		at, err := safepath.Join(m.root, path.Join(p.real[pf.mount], pf.name))
+		if err != nil {
+			return nil, "", err
+		}
+		st, err := FileStream(at)
+		if err != nil || st.Size() == 0 {
+			if st != nil {
+				st.Close()
+			}
+			return nil, "", ErrAbsent
+		}
+		return st, at, nil
+	case *zipMount:
+		data, err := m.read(pf.name)
+		if err != nil {
+			return nil, "", err
+		}
+		return BytesStream(data), m.path, nil
 	}
 	return nil, "", ErrAbsent
 }

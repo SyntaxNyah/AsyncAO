@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
+
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -270,7 +272,7 @@ func TestFormatReportShape(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestContentProbeWindowBounded pins that the probe never runs more than
-// contentProbeWorkers ResolveRaw/FetchRaw calls concurrently, however many
+// contentProbeWorkers lookups concurrently, however many
 // assets a scene references — the wave-1 in-flight-window discipline. It wires a
 // REAL Manager over a slow origin that COUNTS concurrent in-flight fetches; the
 // observed peak must never exceed the worker window.
@@ -297,7 +299,7 @@ func TestContentProbeWindowBounded(t *testing.T) {
 		// immediately (404 = no manifest) and UNGATED so the seed completes and the
 		// probe phase — the thing under test — actually starts. Only the asset
 		// probes are held on the gate so their concurrency is observable.
-		if r.URL.Path == "/"+assets.ManifestFileName {
+		if r.URL.Path == "/"+media.ManifestFile {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -651,7 +653,7 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 		// Answer the pre-probe format-seed's extensions.json UNGATED (404 = no
 		// manifest) so the seed completes and the PROBE phase — the phase this test
 		// cancels mid-flight — actually starts and its workers get held on the gate.
-		if r.URL.Path == "/"+assets.ManifestFileName {
+		if r.URL.Path == "/"+media.ManifestFile {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -1089,12 +1091,11 @@ func existingAorecs(t *testing.T) map[string]bool {
 // ---------------------------------------------------------------------------
 
 // headlessProbeApp wires a headless App with a REAL streaming Manager (no SDL /
-// no TextureStore — the content probe path is pure Manager: ResolveRaw/FetchRaw
+// no TextureStore — the content probe path is pure media lookups
 // never touch T1 or the pool's async delivery, so no channel drainer is needed).
 func headlessProbeApp(t *testing.T, source assets.Fetcher, localMode bool) *App {
 	t.Helper()
 	a := testTabApp(t)
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1104,16 +1105,13 @@ func headlessProbeApp(t *testing.T, source assets.Fetcher, localMode bool) *App 
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
-	a.d.Resolver = resolver
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   source,
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  source,
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
@@ -1123,12 +1121,11 @@ func headlessProbeApp(t *testing.T, source assets.Fetcher, localMode bool) *App 
 }
 
 // localMgr builds a bare Manager over a LocalFetcher mount and returns it plus
-// the mount's origin (BaseURL). FetchRaw over that origin reads files written by
+// the mount's origin (BaseURL). assets.Raw over that origin reads files written by
 // seedMount — standing in for the cache tiers the probe would have filled.
 func localMgr(t *testing.T, mount string) (*assets.Manager, string) {
 	t.Helper()
 	a := testTabApp(t) // reuse its prefs (a real config); we only need the Manager
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1138,16 +1135,14 @@ func localMgr(t *testing.T, mount string) (*assets.Manager, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(1)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	local := assets.NewLocalFetcher([]string{mount})
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   local,
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  local,
+		Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)
 	t.Cleanup(mgr.CloseMedia)
@@ -1156,7 +1151,7 @@ func localMgr(t *testing.T, mount string) (*assets.Manager, string) {
 }
 
 // seedMount writes an asset file into a LocalFetcher mount at its forward-slash
-// relative path, so FetchRaw(origin+rel) reads it back.
+// relative path, so assets.Raw(origin+rel) reads it back.
 func seedMount(t *testing.T, mount, rel string, data []byte) {
 	t.Helper()
 	full := filepath.Join(mount, filepath.FromSlash(rel))

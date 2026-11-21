@@ -79,7 +79,23 @@ func (f themeElemFont) faceIdx() int { return f.face - 1 }
 // time.
 type themeFontTable struct {
 	e [themeFontElemCount]themeElemFont
+	// senderInk is the OOC log's name ink per sender, from oocSenderKeys; senderInkSet false keeps the client's.
+	senderInk    [oocSenderCount]sdl.Color
+	senderInkSet [oocSenderCount]bool
 }
+
+// oocSender is who sent an OOC line, as CT's third field says.
+type oocSender uint8
+
+const (
+	oocFromPlayer oocSender = iota
+	oocFromServer
+	oocSenderCount
+)
+
+// oocSenderKeys are the courtroom_fonts.ini keys, less "_color", AO2 colours each sender's name with
+// (courtroom.cpp:1921-1932).
+var oocSenderKeys = [oocSenderCount]string{oocFromPlayer: "ms_chatlog_sender", oocFromServer: "server_chatlog_sender"}
 
 // themeFaceCap bounds the distinct theme-declared face files held at once. Real themes reuse one or two families, so 4
 // (matching fontChainCap) is enough; past it an element keeps the client font (hard rule 4).
@@ -259,6 +275,9 @@ func (res *themeApply) buildThemeFontTable(t *theme.Theme, sysDirs []string) {
 		if !elemChat(themeFontElem(i)) {
 			slot.color, slot.colorSet = declaredFontInk(spec)
 		}
+	}
+	for s, key := range oocSenderKeys {
+		res.fontTable.senderInk[s], res.fontTable.senderInkSet[s] = declaredFontInk(t.Font(key))
 	}
 }
 

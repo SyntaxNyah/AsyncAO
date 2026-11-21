@@ -27,7 +27,7 @@ func TestTopChromeHIsTheSumOfTheTwoStrips(t *testing.T) {
 }
 
 // TestTopChromeHDropsTheMenuBarOnFullWindowOverlays pins the L3 decision: gif
-// export, replay, the scene maker and theater mode all PREEMPT the screen dispatch
+// export, replay and the scene maker all PREEMPT the screen dispatch
 // and take the whole window, so the menu bar neither paints nor reserves space
 // there. The tab strip does still paint over them (app.go draws it after the
 // dispatch), so its band survives — which is why the scene maker's content top and the
@@ -40,7 +40,6 @@ func TestTopChromeHDropsTheMenuBarOnFullWindowOverlays(t *testing.T) {
 		{"gif export", func(a *App) { a.gifExporting = true }},
 		{"replay", func(a *App) { a.replaying, a.replayRoom = true, newRoomForTest(t) }},
 		{"scene maker", func(a *App) { a.makerOpen = true }},
-		{"theater", func(a *App) { a.theaterOn = true }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -828,10 +827,5 @@ func TestTabStripFollowsTheThemeRect(t *testing.T) {
 	a.screen = ScreenLobby
 	if got := a.tabStripOrigin(def, w, h); got != def {
 		t.Errorf("on the lobby the strip = %+v, want the docked default %+v", got, def)
-	}
-	// Theater mode is stage-only: the themed courtroom is not what is drawn there.
-	a.screen, a.theaterOn = ScreenCourtroom, true
-	if got := a.tabStripOrigin(def, w, h); got != def {
-		t.Errorf("in theater the strip = %+v, want the docked default %+v", got, def)
 	}
 }

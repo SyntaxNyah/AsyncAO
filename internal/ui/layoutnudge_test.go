@@ -528,7 +528,6 @@ func TestArrowsAreUntouchedWithNoEditorArmed(t *testing.T) {
 		{"not on the courtroom screen", func(a *App) { a.screen = ScreenSettings }},
 		{"no room", func(a *App) { a.room = nil }},
 		{"no session", func(a *App) { a.sess = nil }},
-		{"theater mode owns the stage", func(a *App) { a.theaterOn = true }},
 		{"a gif export preempts the screen dispatch", func(a *App) { a.gifExporting = true }},
 		{"the scene maker preempts the screen dispatch", func(a *App) { a.makerOpen = true }},
 	} {

@@ -225,100 +225,26 @@ func TestDecodeRejectsJunk(t *testing.T) {
 	}
 }
 
-// --- decoder pool ---------------------------------------------------------------
+// --- decoder ---------------------------------------------------------------------
 
-func TestDecoderPoolDeliversResults(t *testing.T) {
-	p := NewDecoderPool(2)
-	defer p.Close()
-
-	results := make(chan *Decoded, 4)
-	errs := make(chan error, 4)
+func TestDecoderDeliversResults(t *testing.T) {
+	const decodes = 4
+	p := NewDecoder()
 	payload := encodePNG(t, 8, 8, color.White)
-	for i := 0; i < 4; i++ {
-		ok := p.Submit(DecodeRequest{
-			URL:            "http://example.com/a.png",
-			Data:           payload,
-			Type:           AssetTypeCharSprite,
-			PlayAnimations: true,
+	for range decodes {
+		p.Decode(DecodeRequest{
+			URL: "http://example.com/a.png", Data: payload, Type: AssetTypeCharSprite, PlayAnimations: true,
 			OnDone: func(_ string, d *Decoded, err error) {
 				if err != nil {
-					errs <- err
-					return
+					t.Fatalf("decode error: %v", err)
 				}
-				results <- d
+				d.Release()
 			},
 		})
-		if !ok {
-			t.Fatal("Submit refused while pool open")
-		}
 	}
-	for i := 0; i < 4; i++ {
-		select {
-		case d := <-results:
-			d.Release()
-		case err := <-errs:
-			t.Fatalf("decode error: %v", err)
-		case <-time.After(5 * time.Second):
-			t.Fatal("decoder pool never delivered")
-		}
-	}
-	if s := p.Stats(); s.Decoded != 4 || s.Failed != 0 {
+	if s := p.Stats(); s.Decoded != decodes || s.Failed != 0 {
 		t.Errorf("Stats = %+v", s)
 	}
-}
-
-func TestDecoderPoolCloseFailsQueuedJobs(t *testing.T) {
-	p := NewDecoderPool(1)
-	p.Close()
-	heard := make(chan error, 1)
-	ok := p.Submit(DecodeRequest{
-		URL:  "x",
-		Data: nil,
-		OnDone: func(_ string, _ *Decoded, err error) {
-			heard <- err
-		},
-	})
-	if ok {
-		t.Error("Submit accepted after Close")
-	}
-	select {
-	case err := <-heard:
-		if err == nil {
-			t.Error("expected error for post-Close submit")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("post-Close submit never heard back")
-	}
-}
-
-func TestPixPoolRoundTrip(t *testing.T) {
-	buf, token := getPixBuf(1024)
-	if len(buf) != 1024 {
-		t.Fatalf("len = %d", len(buf))
-	}
-	for i := range buf {
-		buf[i] = 0xAA
-	}
-	putPixBuf(token)
-	buf2, token2 := getPixBuf(2048)
-	defer putPixBuf(token2)
-	for i, b := range buf2 {
-		if b != 0 {
-			t.Fatalf("recycled buffer not zeroed at %d", i)
-		}
-	}
-}
-
-func TestPixPoolOversizeUnpooled(t *testing.T) {
-	huge := pixClassSizes[len(pixClassSizes)-1] + 1
-	buf, token := getPixBuf(huge)
-	if token != nil {
-		t.Error("oversize buffer claims pool token")
-	}
-	if len(buf) != huge {
-		t.Errorf("len = %d, want %d", len(buf), huge)
-	}
-	putPixBuf(token) // must be a no-op
 }
 
 // pinSmallAnimatedBudget shrinks the live animated frame budget so the
@@ -620,31 +546,20 @@ func TestFrameKeepIndexMapping(t *testing.T) {
 // cell size inside the decode pool, so a 500×500 pack icon costs ~16 KB of
 // T1 instead of ~1 MB; every other type keeps its native size.
 func TestDecoderThumbnailsFixedCellTypes(t *testing.T) {
-	pool := NewDecoderPool(1)
-	defer pool.Close()
-
+	pool := NewDecoder()
 	decode := func(data []byte, typ AssetType) *Decoded {
 		t.Helper()
-		done := make(chan *Decoded, 1)
-		ok := pool.Submit(DecodeRequest{
+		var out *Decoded
+		pool.Decode(DecodeRequest{
 			URL: "x", Data: data, Type: typ, PlayAnimations: true,
 			OnDone: func(_ string, d *Decoded, err error) {
 				if err != nil {
 					t.Errorf("decode failed: %v", err)
 				}
-				done <- d
+				out = d
 			},
 		})
-		if !ok {
-			t.Fatal("submit refused")
-		}
-		select {
-		case d := <-done:
-			return d
-		case <-time.After(managerWait):
-			t.Fatal("decode timed out")
-			return nil
-		}
+		return out
 	}
 
 	big := encodePNG(t, 256, 256, color.RGBA{R: 9, G: 99, B: 199, A: 255})
@@ -755,27 +670,18 @@ func TestDecoderMarksOpaqueFrames(t *testing.T) {
 		solid = 255
 		faint = 254
 	)
-	pool := NewDecoderPool(1)
-	defer pool.Close()
+	pool := NewDecoder()
 	decode := func(data []byte) *Decoded {
 		t.Helper()
-		done := make(chan *Decoded, 1)
-		if !pool.Submit(DecodeRequest{URL: "x", Data: data, Type: AssetTypeBackground,
+		var out *Decoded
+		pool.Decode(DecodeRequest{URL: "x", Data: data, Type: AssetTypeBackground,
 			OnDone: func(_ string, d *Decoded, err error) {
 				if err != nil {
 					t.Errorf("decode failed: %v", err)
 				}
-				done <- d
-			}}) {
-			t.Fatal("submit refused")
-		}
-		select {
-		case d := <-done:
-			return d
-		case <-time.After(managerWait):
-			t.Fatal("decode timed out")
-			return nil
-		}
+				out = d
+			}})
+		return out
 	}
 
 	opaque := decode(encodePNG(t, side, side, color.RGBA{R: 1, G: 2, B: 3, A: solid}))

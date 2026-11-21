@@ -12,7 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
@@ -29,12 +29,14 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 	if e.Preanim != "" && e.Preanim != "-" { // "-" / "" = no preanim (AO convention)
 		a.previewBase = a.urls.Emote(char, e.Preanim, courtroom.EmotePreanim)
 		a.previewName, a.previewNameFor = name, a.previewBase
-		a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preanim preview)
+		a.notePreviewChar(char)
+		a.d.Manager.Media().Get(assets.ChainKey(a.previewBase, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (preanim preview)
 		return
 	}
 	a.previewBase = a.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
 	a.previewName, a.previewNameFor = name, a.previewBase
-	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+	a.notePreviewChar(char)
+	a.d.Manager.Media().Get(assets.ChainKey(a.previewBase, assets.AssetTypeCharSprite), media.Now, 0, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk)...) // AssetType: CharSprite (preview)
 }
 
 // followPinnedPreview retargets an open, pinned preview box to the picked emote; others are left alone.
@@ -159,13 +161,14 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		c.Label(r.X, r.Y+4, "No favourite emotes yet — turn off ★ Favs, then click the ★ on an emote.", ColTextDim)
 	}
 
-	// "<" and ">" move a whole page; the per-row step belongs to the wheel.
+	// "<" and ">" move a whole page, and show only where they can, as AO2's emote arrows (emotes.cpp:110-147); the per-row
+	// step belongs to the wheel.
 	if a.emoteGridScrolls() {
 		cy := r.Y + r.H - btnH
-		if c.Button(sdl.Rect{X: r.X, Y: cy, W: 30, H: btnH}, "<") && a.emoteCanScrollUp() {
+		if a.emoteCanScrollUp() && c.Button(sdl.Rect{X: r.X, Y: cy, W: 30, H: btnH}, "<") {
 			a.scrollEmotePages(-1)
 		}
-		if c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") && a.emoteCanScrollDown() {
+		if a.emoteCanScrollDown() && c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") {
 			a.scrollEmotePages(1)
 		}
 		c.Label(r.X+72, cy+6, a.emotePageCounter(a.emotePageShown(), a.emotePagesShown(), len(vis)), ColTextDim)
@@ -204,8 +207,8 @@ func (a *App) selectEmote(i int) {
 	a.icPreanim = emoteHasPreanim(&a.emotes[i]) // "Pre" auto-follows the pick (AO2-Client ui_pre, emotes.cpp:211-221)
 	me := a.activeCharName()
 	// Warm both states: _on for the selected cell and _off, which it falls back to while _on streams in.
-	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh)  // AssetType: EmoteButton (on)
-	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, false), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (off fallback)
+	a.d.Manager.Media().Get(assets.ChainKey(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton), media.Now, 0)  // AssetType: EmoteButton (on)
+	a.d.Manager.Media().Get(assets.ChainKey(a.urls.EmoteButton(me, i+1, false), assets.AssetTypeEmoteButton), media.Now, 0) // AssetType: EmoteButton (off fallback)
 	a.speculateEmote(me, &a.emotes[i])
 	a.followPinnedPreview(me, &a.emotes[i]) // a pinned box follows the pick; a closed one stays closed
 	a.ctx.FocusField("ic")
@@ -731,7 +734,7 @@ func (a *App) drawPairGhost(pv, grip sdl.Rect) {
 	} else {
 		c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
 		if a.sess.Background != "" {
-			a.d.Manager.PrefetchChain(base, scenery.Alts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (pair preview)
+			a.d.Manager.Media().Get(assets.ChainKey(base, assets.AssetTypeBackground), media.Now, 0, scenery.Alts...) // AssetType: Background (pair preview)
 		}
 	}
 	c.Border(pv, ColPanelHi)
@@ -817,7 +820,7 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 			_, known := a.ghostWarm[name]
 			if known || len(a.ghostWarm) < ghostWarmCap {
 				a.ghostWarm[name] = base
-				a.d.Manager.PrefetchChain(base, alts, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (ghost editor)
+				a.d.Manager.Media().Get(assets.ChainKey(base, assets.AssetTypeCharSprite), media.Now, 0, alts...) // AssetType: CharSprite (ghost editor)
 			}
 		}
 		c.Label(pv.X+pv.W/2-c.TextWidth(name)/2, pv.Y+pv.H/2, name, ColTextDim)
@@ -974,7 +977,7 @@ func (a *App) sendIC() {
 	}
 	// Muted (AO2 set_mute; on_chat_return_pressed returns early): refuse but keep the line, as no echo will clear it.
 	if a.sess.Muted {
-		a.pushOOC("[SERVER] You're muted — that message wasn't sent.", "")
+		a.pushOOC("[SERVER] You're muted — that message wasn't sent.", "", false)
 		return
 	}
 	// AO2-Client chat_ratelimit parity: drop sends inside the window.

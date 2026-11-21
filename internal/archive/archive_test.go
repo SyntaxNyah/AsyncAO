@@ -14,14 +14,13 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
-func buildManager(t *testing.T, source assets.Fetcher, localMode bool) (*assets.Manager, *assets.Resolver) {
+func buildManager(t *testing.T, source assets.Fetcher, localMode bool) *assets.Manager {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	resolver := assets.NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -31,17 +30,16 @@ func buildManager(t *testing.T, source assets.Fetcher, localMode bool) (*assets.
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: source, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)
 	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
 		mgr.SetFolders(lf.Mounts(), nil)
 	}
-	return mgr, resolver
+	return mgr
 }
 
 func writeFixture(t *testing.T, dir, rel string, data []byte) {
@@ -79,7 +77,7 @@ func TestExportReplayRoundTrip(t *testing.T) {
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteTalk)), []byte("PHOENIX-TALK"))
 	writeFixture(t, srcDir, rel(urls.Background("gs4", bgPart)), []byte("BG"))
 	writeFixture(t, srcDir, rel(urls.Background("gs4", deskPart)), []byte("DESK"))
-	srcMgr, _ := buildManager(t, srcLocal, true)
+	srcMgr := buildManager(t, srcLocal, true)
 
 	events := []courtroom.Event{
 		{Kind: courtroom.EventBackground, Text: "gs4"},
@@ -102,12 +100,13 @@ func TestExportReplayRoundTrip(t *testing.T) {
 	// REPLAY: a SEPARATE manager over the archive (source is gone), seeded from
 	// the export's format manifest — exactly what replaying a bundled .aorec does.
 	repLocal := assets.NewLocalFetcher([]string{archDir})
-	repMgr, repResolver := buildManager(t, repLocal, true)
-	SeedFormats(repResolver, repLocal.BaseURL(), res.Formats)
+	repMgr := buildManager(t, repLocal, true)
+	SeedFormats(repMgr, repLocal.BaseURL(), res.Formats)
 
 	repUrls := courtroom.NewURLBuilder(repLocal.BaseURL())
 	idle := repUrls.Emote("Phoenix", "normal", courtroom.EmoteIdle)
-	_, data, ok := repMgr.ResolveRaw(idle, assets.AssetTypeCharSprite)
+	found, ok := assets.Resolve(context.Background(), repMgr.Media(), idle, assets.AssetTypeCharSprite, false)
+	data := found.Data
 	if !ok {
 		t.Fatal("speaker idle sprite did NOT resolve from the archive — round-trip broken")
 	}
@@ -136,7 +135,7 @@ func TestExportNestedBackgroundSubfolder(t *testing.T) {
 	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteTalk)), []byte("TALK"))
 	writeFixture(t, srcDir, rel(urls.Background(nestedBg, bgPart)), []byte("BG"))
 	writeFixture(t, srcDir, rel(urls.Background(nestedBg, deskPart)), []byte("DESK"))
-	srcMgr, _ := buildManager(t, srcLocal, true)
+	srcMgr := buildManager(t, srcLocal, true)
 
 	events := []courtroom.Event{
 		{Kind: courtroom.EventBackground, Text: nestedBg},
@@ -186,7 +185,7 @@ func TestExportDecodesBundleNames(t *testing.T) {
 	bgPart, deskPart := "witnessempty", "stand" // legacy art; the export bundles every name and each name's desk
 	writeFixture(t, srcDir, rel(urls.Background("gs4", bgPart)), []byte("BG"))
 	writeFixture(t, srcDir, rel(urls.Background("gs4", deskPart)), []byte("DESK"))
-	srcMgr, _ := buildManager(t, srcLocal, true)
+	srcMgr := buildManager(t, srcLocal, true)
 
 	events := []courtroom.Event{
 		{Kind: courtroom.EventBackground, Text: "gs4"},
@@ -213,9 +212,11 @@ func TestExportDecodesBundleNames(t *testing.T) {
 	// And it still replays: a separate manager over the clean archive resolves the
 	// escaped URL via the local fetcher's decoded-spelling attempt.
 	repLocal := assets.NewLocalFetcher([]string{archDir})
-	repMgr, _ := buildManager(t, repLocal, true)
+	repMgr := buildManager(t, repLocal, true)
 	repUrls := courtroom.NewURLBuilder(repLocal.BaseURL())
-	_, data, ok := repMgr.ResolveRaw(repUrls.Emote(char, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite)
+	found, ok := assets.Resolve(context.Background(), repMgr.Media(), repUrls.Emote(char, "normal", courtroom.EmoteIdle),
+		assets.AssetTypeCharSprite, false)
+	data := found.Data
 	if !ok {
 		t.Fatal("decoded-name character did NOT resolve from the clean archive — round-trip broken")
 	}

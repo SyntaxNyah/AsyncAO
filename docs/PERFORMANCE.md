@@ -64,10 +64,10 @@ Power user tab's "Decode downscale & texture memory" group:
   compressed GPU textures, which is most of the ~4-8x RAM gap on integrated
   GPUs. Restart-applied.
 
-Under the hood the pixel pool gained an 8 MiB class: native 1600x1200 frames
-(~7.3 MiB) used to land in the 16 MiB class (~2x waste per frame), and with
-`NumCPU/2` decode workers that waste multiplied into the multi-GiB spike. The
-8 MiB class keeps per-frame overhead near 1.1x and halves the burst.
+Frames are allocated at their exact size. The size-classed pixel pool that used
+to supply them rounded each frame up to its class (a 256x192 frame took 256 KiB
+for 192 KiB of pixels) and kept freed buffers alive across a collection; removing
+it lowered a burst's peak heap by about a third at the same speed.
 
 Rough expectations (DXT5 compression on): 128 MiB budget ~= ~33 MiB per
 animation on the GPU; 256 MiB ~= ~67 MiB; 500 MiB ~= ~110 MiB. At 128 MiB +
@@ -116,10 +116,10 @@ Watch for:
 | Format resolution | atomic snapshot, pooled candidates, 1 alloc — and the unlearned path reads a generation-cached format table (no prefs lock, no rebuild) |
 | Cache hits | lock-free-ish LRU (internal lock, no wrapper), atomics for stats |
 | Fetch dedup | singleflight; 404 LRU; per-host backoff off the hot path |
-| Decode | worker pool, size-classed pixel pools, SIMD libwebp via CGO |
+| Decode | worker pool, SIMD libwebp via CGO; background decodes claim their decoded size and wait under a 64 MiB limit until uploaded |
 | Texture upload | budgeted per frame; live message bypasses the budget |
 | Typewriter | rasterize once per message; reveal = src-rect width per frame |
 | Animations | precomputed delay tables; frame advance is an index bump |
 | Render | zero allocations steady-state (cgo-escape pitfalls: never take the address of a stack rect for `Renderer.Copy` — use a reused field); texture pages are generation-cached per layer, so steady frames do zero LRU lookups |
-| Animated decode | composition canvas + DisposalPrevious snapshot from the pixel pool — allocations limited to the output frames |
+| Animated decode | one composition canvas + DisposalPrevious snapshot per decode; APNG frames inflate one at a time |
 | HTTP transport | 3 s response-header timeout fails stalled hosts before the 5 s deadline, freeing the per-host connection slot |

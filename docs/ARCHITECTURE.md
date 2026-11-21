@@ -179,7 +179,7 @@ Prefetch(base, type, prio)            PrefetchWithFallback(base, altBase, ...)
                        → Warning{base, formats tried} → UI banner (12 s,
                                                         courtroom + char select)
        chain already exhausted → warn, submit nothing  ← the gate, above the pool
-  decode pool: sniff magic bytes (never extensions) → RGBA frames (pooled px);
+  decode pool: sniff magic bytes (never extensions) → RGBA frames;
                STILL assets capped at maxDecodedAssetBytes (T1 budget / 4, the
                cache.MaxDecodedAssetBytes single source of truth — one landing
                page can never evict even half the main tier); ANIMATED assets
@@ -519,7 +519,7 @@ so a release hit-tests where it actually happened.
   server-tab strip (`tabs.go`), and **every screen offsets its content by
   it** — no screen may hardcode `menuBarH` or `tabBarH`. Both halves
   self-zero (the menu bar in the full-window modes that preempt the
-  screen dispatch — gif export, replay, scene maker, theater; the strip
+  screen dispatch — gif export, replay, scene maker; the strip
   when there are no sessions or the user has dragged it out of the band),
   so a screen never has to ask *which* chrome is showing. The strip has
   exactly two draw sites — inside the courtroom pass, beneath a layout
@@ -598,7 +598,7 @@ The Wardrobe saves characters for the player, across servers:
   server's list. The window rebuilds its list only when the store's revision, the query or the server changes, so
   painting allocates nothing per frame.
 - **The server's list:** `<asset origin>/iniswaps.ini`, AO2's name for it (courtroom.cpp:5349), fetched once per
-  server through `FetchRaw` (T2 + disk cached, singleflight), at most 4096 names.
+  server through `assets.Raw` (a media request: memory, disk cache, folders, web), at most 4096 names.
 - **Drawing:** rounded shapes and line icons come from `ui/shapes.go`, white masks rasterised once with
   `golang.org/x/image/vector` and tinted per draw, so they cost a few copies and no allocation.
 - **Character Select's ★** reads a lowercase membership set rebuilt only when the store's revision moves.
@@ -631,7 +631,7 @@ a solo sprite.
 | `hashicorp/golang-lru/v2` (+expirable) | thread-safe LRU; wrapped only for byte accounting |
 | `golang.org/x/sync` singleflight | fetch dedup (v0.20.0, matching the Go 1.25 directive) |
 | `cespare/xxhash/v2` | fast non-crypto cache keys |
-| `kettek/apng` | APNG decode (the draft's pick was a diff library!) |
+| `kettek/apng` | test-only: encodes APNG fixtures. The client decodes APNG itself (`internal/assets/apng.go`), one frame at a time through `image/png`, so a frame's pixels exist only until they are composited; the library decodes every frame before returning |
 | `golang.org/x/image` | pure-Go WebP fallback + embedded Go font |
 | `coder/websocket` | **addition:** AO2 ≥ 2.11 is WebSocket-only; stdlib has no WS client. Zero-dependency, maintained, context-aware. |
 | MSYS2 `libavif` (CGO, no Go module) | **addition (user request):** `.avif` as a probe format — native dav1d/aom decode for stills *and* AV1 image sequences, bound exactly like the libwebp CGO shim (~100 lines). The pure-Go alternatives embed a WASM runtime (gen2brain/avif → wazero), the opposite of this project's soul. CGO-less builds degrade to a descriptive decode error; sniffing (`ftyp` + `avif`/`avis` brands) stays pure Go. |

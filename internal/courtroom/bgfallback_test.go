@@ -41,20 +41,19 @@ func newBGRig(t *testing.T) *bgRig {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 
 	mount := t.TempDir()
 	local := assets.NewLocalFetcher([]string{mount})
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(prefs), Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: local, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)
 	mgr.SetFolders(local.Mounts(), nil)
 	sess := NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "court"
-	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr, sess, nil)
+	room := NewCourtroom(NewURLBuilder(local.BaseURL()), mgr.Media(), mgr, sess, nil)
 	return &bgRig{room: room, sess: sess, mgr: mgr, mount: mount}
 }
 
@@ -85,11 +84,18 @@ func awaitDelivery(t *testing.T, mgr *assets.Manager, want string) string {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case d := <-mgr.Decoded():
-			if d.Base == want {
-				return d.URL
+		answered := ""
+		mgr.TakeDeliveries(func(d assets.Delivery) {
+			if d.Base == want && answered == "" {
+				answered = d.URL
 			}
+			mgr.Done(d)
+		})
+		if answered != "" {
+			return answered
+		}
+		select {
+		case <-time.After(time.Millisecond):
 		case w := <-mgr.Warnings():
 			if w.Base == want {
 				t.Fatalf("the background chain reported %q missing instead of falling back (tried %v)", w.Base, w.Tried)
@@ -256,11 +262,14 @@ func TestTheDeskKeepsItsNoFallbackContract(t *testing.T) {
 	}
 	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case d := <-r.mgr.Decoded():
+		r.mgr.TakeDeliveries(func(d assets.Delivery) {
 			if d.Base == deskBase {
-				t.Fatalf("the desk must NOT fall back; it was served %q", d.URL)
+				t.Errorf("the desk must NOT fall back; it was served %q", d.URL)
 			}
+			r.mgr.Done(d)
+		})
+		select {
+		case <-time.After(time.Millisecond):
 		case w := <-r.mgr.Warnings():
 			if w.Base == deskBase {
 				return // conclusively missing → DeskDrawn hides the layer. Correct.

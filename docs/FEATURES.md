@@ -29,12 +29,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 
 ## Streaming & performance
 
-- **Format autodetect (default ON)**: `<origin>/extensions.json` (webAO
-  convention — every server ships its own mix) seeds the per-host learned
-  formats on connect, so each asset class costs ~one probe stone cold.
-  Manual per-type probing in Settings stays authoritative when autodetect
-  is off and covers manifest-less servers. `.webp.static`-style pseudo
-  suffixes are normalized away (animation is a payload property here).
+- **Formats from the server**: `<origin>/extensions.json` (webAO convention
+  — every server ships its own mix) is read on connect and sets that host's
+  formats and their order, so each asset class costs ~one request stone
+  cold. Without one, formats that worked there go first, then a built-in
+  order; what worked and each asset's file are kept in `learned.json`
+  between sessions. `.webp.static`-style pseudo suffixes are normalized
+  away (animation is a payload property here).
   A server can also declare `sfx_extensions` / `blips_extensions` to seed
   its sound-effect and blip formats; audio classes the manifest doesn't
   cover fall back to `.opus` → `.ogg` → `.mp3` → `.wav`.
@@ -46,11 +47,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   searched again. Each host, the server's own included, shows whether its
   format list was read, is absent, couldn't be read, or isn't checked yet,
   and the debug log gets one line per extra host when its result lands.
-- **Desks follow the manifest by default** (Settings → Formats): desk overlays
-  auto-detect from the server's `extensions.json` like every other class
-  (desks share the manifest's background class). Tick "Always use WebP for
-  desks" to pin them to `.webp` on servers whose manifest is wrong for desks;
-  the per-type format picker covers every format either way.
+- **Desks follow the manifest**: desk overlays take their formats from the
+  server's `extensions.json` like every other class (desks share the
+  manifest's background class).
 - **Live-scene self-heal**: if the background, desk, **or a character sprite**
   is evicted from the texture cache mid-message (memory pressure in a packed
   room, or a hover-preview fetch), it is re-demanded at high priority within a
@@ -705,7 +704,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - Settings shows a live chatbox preview with the applied colors.
 - **Floating Extras box** (the "★ Extras" button / **Ctrl+X**): a legacy AO2
   `courtroom_design.ini` has no element keys for AsyncAO's own features
-  (Jukebox, Background, Theater, Pair, Evidence, Login, Settings, …),
+  (Jukebox, Background, Pair, Evidence, Login, Settings, …),
   so when a theme drives the courtroom layout they'd be unreachable. Pressing
   **★ Extras** (pinned bottom-left) — or **Ctrl+X** — opens a **non-blocking
   floating box** of all of them: the courtroom, chat and logs stay live
@@ -719,7 +718,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   box-closed courtroom frame is byte-identical.
 - **Hover toolbox**: a slim, semi-transparent grip (a drawn hamburger, no glyph
   dependency) in the bottom-right corner of normal play (classic and themed).
-  Hovering expands it left into small labelled chips — **Theater**, **Edit
+  Hovering expands it left into small labelled chips — **Edit
   layout**, **Hide UI** — so those actions no longer live only inside the Hide-UI
   dialog (whose footer is now just **Done**). The toolbox is itself hideable (its
   own entry in the hide list) and is a pure hover reveal, so it stays on the
@@ -790,7 +789,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Phone Book, direct connect, disconnect, quit), **View** (keep aspect ratio, a
   **Theme fit ▸** submenu, plain backdrops, the F3 performance overlay),
   **Window** (restore default size, **Theme's design size**, fit to screen,
-  fullscreen), **Extras** (theater, edit layout, hide UI pieces, the floating
+  fullscreen), **Extras** (edit layout, hide UI pieces, the floating
   toolbox switch, Settings) and **Help** (hotkeys, What's New with its unread
   badge, privacy, glossary, chat logs, the server-owner guide, About). It
   **reserves its own band**, so nothing is painted over and no screen has to dodge
@@ -1767,9 +1766,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   — **Chat log text** and **Chatbox text** — that resize just the IC/OOC log +
   message text *without* zooming the courtroom art (the same persisted scales the
   in-courtroom Ctrl+wheel zoom tunes, so a change here shows at once and survives
-  restart). **Theater mode** (Ctrl+T, the UI... panel, Esc exits): the
-  borderless stage alone — viewport, chat overlay, splashes — session-
-  only by design.
+  restart).
 - **AsyncAO chrome themes** (#M3, **Settings → AsyncAO appearance**): pick the
   **client UI** palette — **Dark** (default), **Soft Dark** and **Warm** (the
   eye-friendly pair: gentler contrast, one calm accent, dim-but-readable

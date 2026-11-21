@@ -75,15 +75,15 @@ in **Status**. Update Status in the same commit that completes a step.
   - [ ] first release run: signing, the Flatpak and publishing have never run; use a `v0.0.0-ci.1` prerelease and delete it
   - [ ] `netproxy` against a real proxy, which has not been tried
   - [ ] the owner requires `ci-ok`; until then a red PR can merge, though it cannot release untested
-  - [ ] fix the real CodeQL findings, in their own PR: RGB values wrap instead of clamping (`theme.go`, `stylesheet.go`), and
-        check `ResizeWindow`'s sizes. The workflow-permission alerts close once this branch merges
+  - [x] CodeQL findings: RGB values clamp through `parse.Uint8`, every `ResizeWindow` size goes through
+        `ClampWindowSize`, and the workflow-permission alerts closed with the merge. No alert is open (checked 2026-11-14)
 - [ ] 3. Feature extraction and stable boundaries (decided 2026-11-01; replaces splitting the monolith first). Take tertiary
       functions out of `courtroom.Courtroom` and `internal/ui` into purpose-built types that own their state. Every move
       starts from a benchmark and is measured again after it; a cheap rewrite or optimisation found on the way is welcome.
       Moving work to a goroutine needs a measured cost or a blocking call, and work that applies in message order stays
       in order. `Scene` and the message state machine stay on the game thread
-  - [x] baseline benchmarks: `internal/courtroom/bench_test.go`, `internal/ui/framebench_test.go`, recorded in
-        `docs/BENCHMARKS.md`
+  - [x] baseline benchmarks: `internal/courtroom/bench_test.go`, `internal/ui/framebench_test.go`; a move is measured
+        by running them on the commit before it and after it, side by side
   - [x] one loop mode: the classic loop and its setting are gone (decided 2026-11-01)
   - [x] writer goroutine for `Conn.Send`, which proves the worker shape (one shape for background jobs, replacing the
         separate goroutine, channel and poll of each `ui` job). A full queue of 64 or a failed write ends the connection and
@@ -97,7 +97,16 @@ in **Status**. Update Status in the same commit that completes a step.
     - [x] core: `Manager` on its own goroutine, `Get` over a concurrent map, `Pool`, `Chain`, `Source`. Not used by the client yet
     - [x] sources: memory, disk index, remote index with host limits (1 worker until a host answers, then 16); candidates,
           format learning and `extensions.json`; withdrawing and raising requests. Not used by the client yet
-    - [ ] sources still to build: saving the disk index and learned formats, character mapping
+    - [x] saving between sessions (2026-11-14): learned formats and the winner table in `learned.json` through
+          `internal/saver`; the disk index is not saved, and the disk is asked until its startup scan lands; 404s are
+          never saved. The old resolver, `prefs.LearnedFormats`, the Formats tab and every format override setting
+          are gone; archive, export and replay use the media table
+    - [x] character mapping (2026-11-15): the first sprite asked of a character lists its folder, five deep, on the
+          origin and each extra host, so a file the listings leave out is answered absent with no request. Only a real
+          listing (one with a parent link) is trusted; a host that gives none keeps the per-file search for the
+          session. Maps are kept in `learned.json` and walked again after seven days or on Retry missing. Measured on a
+          host with no `extensions.json`, half the sprites bare-named: a cold session went from 241 requests to 121
+          plus 20 listings, 7.4 s to 3.7 s at 30 ms a request
     - [x] extra asset hosts per server: the user adds them in a fixed order with no speed ranking, the ASS packet's host is always
           first; Settings → Assets edits them. Raw fetch paths not on the media system yet don't ask them
     - [x] the client runs on it: `assets.Manager`'s requests go through `internal/media`, so callers and `Pump` are unchanged, and
@@ -123,9 +132,43 @@ in **Status**. Update Status in the same commit that completes a step.
           Settings → Check folders now end every folder check's trust. The old pipeline (network pool, mount index and
           layer, conclusive-miss set, Local-only mode in the Manager) and `-old-media` are deleted, and with them the wait
           gate's refusal re-ask: high-priority requests are never refused
-    - [ ] known problems from the benchmark: on a host with no `extensions.json`, 200 missing sprites cost 2,400 requests against the
-          old 1,600 until character mapping exists; peak heap with files asked for every frame is 384-617 MiB, unexplained
-    - [ ] move callers: courtroom, then screens, theme and audio; `Pump` on `TakeResults`; music streaming
+    - [ ] known problem from the benchmark: peak heap with files asked for every frame is 384-617 MiB (the request count
+          on hosts with no `extensions.json` is answered by character mapping above)
+      - [x] background decodes claim their decoded size from the file header and wait under a 64 MiB limit until the
+            pump uploads (2026-11-15). Burst of 112 vanilla APNGs: peak live heap ~950 → ~220 MiB, heap after it
+            ~700 → 31-56 MiB; the burst takes 2.2 s instead of 1.6 s. Requests for the current message are not limited
+      - [x] the size-classed pixel pool is gone (it rounded 192 KiB frames to 256 KiB and kept freed buffers through a
+            collection) and APNG decodes one frame at a time (`assets/apng.go`, output identical to `kettek/apng`):
+            same burst, peak ~220 → ~155 MiB, heap after it ~85 → 18 MiB, 2.2 → 2.0 s
+      - [ ] still open: a profile from the real client
+    - [ ] move callers (decided 2026-11-15): callers call `media.Manager` directly with keys from small assets helpers,
+          and the bridge goes at the end. Order: `Pump` on `TakeResults`, then courtroom, screens, theme and audio;
+          music streaming after them
+      - [x] `Pump` on `TakeResults`: images decode on the Compute worker holding the request, and an animation's opening
+            frames reach the pump as early pages of the same request (`Format.Decode`'s `page`). The decoder's own
+            goroutines and the 64-slot hand-off channel are gone
+      - [x] courtroom: asks `media.Get(assets.ChainKey(base, t), …)`. What the bridge did per request (skip a texture
+            already uploaded, start character mapping, warn on a repeat ask while missing, count refusals) is media's
+            `Skip`/`Asked`/`MissingAgain` hooks and `Refused()`
+      - [x] screens and audio (2026-11-15): every request in `ui` and `render` is `media.Get` with `assets.ChainKey`,
+            `ExactKey` or `RawKey`; the theme had no requests of its own. `Manager.Prefetch*` and `network.Priority` are
+            gone, and `media.Get` answers a key with no path as Missing. The synchronous `ResolveRaw*` export lookups
+            (archive, content job) stay until the bridge is deleted, as their own step
+      - [x] music streaming (2026-11-15): music is a `media.KindStream` key whose sources open a `media.Stream`
+            instead of reading bytes. The web downloads into a partial file on disk with the file's last 64 KiB
+            fetched by range (decoders read a file's end when they open it), and the disk cache adopts it when
+            complete; a complete file (disk cache, folders) plays through SDL3_mixer by path. A track still
+            downloading or held in memory (.zip packs) is decoded on its own goroutine into an SDL audio stream on the
+            music track, ahead of playback, reopening at each loop so loops stay gapless; a download that falls behind
+            pauses only the music. No track is held whole in memory
+    - [ ] delete the bridge (decided 2026-11-15): `assets.Manager` goes; `assets` exports the parts (formats, the T2 and
+          disk sources, the web fetcher with offline and archive handling, the folders source, the hooks, learned.json)
+          and `cmd/asyncao/main.go` wires `media.Manager` from them. One commit per group:
+      - [x] raw lookups: `assets.Raw` (a raw key) and `assets.Resolve` (a chain on a raw key; `media.Unlisted` also asks
+            the formats the host's list leaves out) replace `FetchRaw` and `ResolveRaw*`; `media.Manager.Load` is `Get`
+            plus `Asset.Wait`, which also returns when the media system stops, and `Asset.Hit` says which file answered
+      - [ ] settings pass-throughs, folders, learned formats and hosts, stats
+      - [ ] the wiring moves to `main.go` and the bridge goes
   - [ ] off-thread texture preparation: waits for the renderer overhaul (decided 2026-11-02). See below
   - [x] a sprite sometimes shows its old animation for a frame before the right one (reported 2026-11-01): the wait gate
         released on a first frame or a reduced page. The speaker's sprites now wait for every frame; a pair partner's still

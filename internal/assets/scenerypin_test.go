@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/media"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
 const (
@@ -53,8 +52,8 @@ func TestAFetchedBackgroundIsServedFromThePinAfterTheSharedCacheDropsIt(t *testi
 	host := &bridgeFakeHost{files: map[string][]byte{base + ".webp": webp}}
 	r := newBridgeRig(t, host)
 	r.manager.PinScenery(bridgeTestOrigin + "background/court/")
-	r.manager.PrefetchChain(base, nil, AssetTypeBackground, network.PriorityHigh) // AssetType: Background
-	nextDecoded(t, r.manager, base)
+	r.manager.Media().Get(ChainKey(base, AssetTypeBackground), media.Now, 0, nil...) // AssetType: Background
+	nextDecoded(t, r, base)
 	r.t2.Purge()
 	if (bridgeMemory{r.t2, r.manager.bridge.pin, r.manager}).Has(media.File(base+".webp")) != media.Yes {
 		t.Fatal("the room's background left memory with the shared cache")

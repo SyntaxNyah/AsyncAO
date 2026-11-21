@@ -45,25 +45,7 @@ func TestSettingsSearchMatch(t *testing.T) {
 		{"theme", tabTheme},
 		{"lobby", tabTheme},
 		{"audio", tabAudio},
-		// Formats now owns every "which file type is asked for" term. These used
-		// to split between Assets and Power user, which is why nobody found them.
-		{"format", tabFormats},
-		{"image format", tabFormats},
-		// "extensions" and not "extensions.json": the literal filename is found by
-		// the gather-search's ROW-LABEL pass (the auto-detect checkbox says it in
-		// full), and a keyword carrying the ".json" tail would swallow the Data
-		// tab's "json" — see TestSettingsSearchKeywordsDoNotShadowLaterTabs.
-		{"extensions", tabFormats},
-		{"manifest", tabFormats},
-		{"fallback", tabFormats},
-		{"autodetect", tabFormats},
-		{"probe", tabFormats},
 		{"learned", tabAssets},
-		{"apng", tabFormats},
-		{"opus", tabFormats},
-		{"format profile", tabFormats},
-		{"stuck images", tabFormats},
-		{"emotes not loading", tabFormats},
 	}
 	for _, c := range cases {
 		if got := settingsSearchMatch(c.q); got != c.tab {

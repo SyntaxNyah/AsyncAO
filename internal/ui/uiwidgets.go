@@ -172,7 +172,7 @@ func (c *Ctx) ButtonCol(r sdl.Rect, label string, bg, hoverBg, border, text sdl.
 	}
 	// A non-sharp chrome shape draws 9-sliced alpha masks and insets the label by shapeLabelInset so glyphs avoid the
 	// corner curve. Sharp, or before the masks are resident, draws plain Fill+Border+label.
-	shaped := c.activeShape != shapeSharp && c.activeShape != "" && c.shapeMaskReady
+	shaped := !c.sharp() && c.shapeMaskReady
 	if shaped {
 		c.FillShaped(r, col)
 		c.borderShaped(r, border)

@@ -6,22 +6,6 @@ import (
 	"testing"
 )
 
-func TestLearnedServerCountCountsHostsNotTypes(t *testing.T) {
-	t.Cleanup(func() { settings.learnedKeys, settings.learnedServers = 0, 0 })
-	const wantServers = 2
-	learned := map[string][]string{
-		"one.test|charsprite": {".webp"},
-		"one.test|background": {".png"},
-		"two.test|charsprite": {".gif"},
-	}
-	if got := learnedServerCount(learned); got != wantServers {
-		t.Errorf("learnedServerCount = %d, want %d", got, wantServers)
-	}
-	if got := learnedServerCount(map[string][]string{}); got != 0 {
-		t.Errorf("an empty table counted %d servers", got)
-	}
-}
-
 func TestFormatBytesPicksTheLargestUnit(t *testing.T) {
 	const half, oneAndHalf = 512, 3 << 29
 	for _, tc := range []struct {

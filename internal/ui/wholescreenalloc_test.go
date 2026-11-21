@@ -130,8 +130,8 @@ func stageSettledCourtroom(t testing.TB) (*App, func()) {
 	// for a fresh install — but with an empty OOC log its per-line raster loop
 	// never runs and the gate would silently stop measuring the panel that just
 	// became default. ASCII only, same reasoning as the IC lines above.
-	a.pushOOC("Judge: welcome to the courtroom", "Judge")
-	a.pushOOC("Witch: an ooc line for the raster", "Witch")
+	a.pushOOC("Judge: welcome to the courtroom", "Judge", false)
+	a.pushOOC("Witch: an ooc line for the raster", "Witch", false)
 
 	return a, func() {
 		store.Purge()

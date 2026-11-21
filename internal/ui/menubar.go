@@ -182,7 +182,6 @@ var menuExtrasItems = []menuItem{
 	{kind: menuItemCheck, label: "Mod dashboard", checked: menuModDashOpen, enabled: menuAmIMod, act: menuActModDash},
 	{kind: menuItemCheck, label: "CM area controls", checked: menuCMPanelOpen, enabled: menuAmICM, act: menuActCMPanel},
 	{kind: menuItemSeparator},
-	{kind: menuItemAction, label: "Theater mode", enabled: menuInCourtroom, act: menuActTheater},
 	{kind: menuItemAction, label: "Edit layout…", enabled: menuInCourtroom, act: menuActEditLayout},
 	{kind: menuItemCheck, label: "Hide UI pieces…", checked: menuToolboxPiecesOpen, enabled: menuInCourtroom, act: menuActHideUIPieces},
 	{kind: menuItemCheck, label: "Floating toolbox", checked: menuToolboxShown, act: menuToggleToolbox},
@@ -302,7 +301,6 @@ func menuToggleFullscreen(a *App, _ int)  { a.toggleFullscreen() }
 func menuInCourtroom(a *App, _ int) bool { return a.screen == ScreenCourtroom }
 
 // These call the toolbox's own methods, so the menu, chips, command palette and hotkeys are one implementation each.
-func menuActTheater(a *App, _ int)      { a.compactTheater() }
 func menuActEditLayout(a *App, _ int)   { a.compactEditLayout() }
 func menuActHideUIPieces(a *App, _ int) { a.compactHideUI() }
 
@@ -421,10 +419,10 @@ func newMenuBarLatch(mark int) menuBarLatch {
 	return menuBarLatch{open: -1, subRow: -1, mark: mark}
 }
 
-// menuBarShows reports whether the strip reserves its band at all: false for full-window modes, theater mode, and when
-// the user hid it, in which case they want the pixels back.
+// menuBarShows reports whether the strip reserves its band at all: false for full-window modes, and when the user hid
+// it, in which case they want the pixels back.
 func (a *App) menuBarShows() bool {
-	return !a.screenDispatchPreempted() && !a.theaterOn && !a.panelHidden(panelMenuBar)
+	return !a.screenDispatchPreempted() && !a.panelHidden(panelMenuBar)
 }
 
 // menuBarPaints is phase 1's answer to whether the strip paints: menuBarShows minus any layout editor or the theme

@@ -33,7 +33,7 @@ func TestOOCLogRespectsDetailedLogPref(t *testing.T) {
 	})
 	a.serverName = "Skrapegropen-ooc-pref-off"
 
-	a.pushOOC("Nyah: should not be logged", "Nyah")
+	a.pushOOC("Nyah: should not be logged", "Nyah", false)
 
 	if n := len(a.translogs); n != 0 {
 		t.Errorf("pushOOC opened %d transcript writer(s) with detailed logging OFF — it must stay a no-op", n)
@@ -104,7 +104,7 @@ func TestPushOOCSuppressedRosterBurstNeverReachesDisk(t *testing.T) {
 	}
 
 	beforeOOC := len(a.oocLog)
-	a.pushOOC("5 players online", "") // looksLikeAreaList == true
+	a.pushOOC("5 players online", "", false) // looksLikeAreaList == true
 	if len(a.oocLog) != beforeOOC {
 		t.Fatal("setup broken: the roster burst reached the on-screen OOC log, so it wasn't actually suppressed")
 	}
@@ -158,7 +158,7 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 		t.Fatal("opening tab one's transcript writer created no new file")
 	}
 
-	a.pushOOC("Nyah: hello from tab one", "Nyah")
+	a.pushOOC("Nyah: hello from tab one", "Nyah", false)
 
 	// Park tab one, bring up tab two on the SAME server.
 	a.tabs = append(a.tabs, &courtTab{})
@@ -178,7 +178,7 @@ func TestTwoTabsOOCLogsGoToSeparateFiles(t *testing.T) {
 		t.Fatalf("both tabs resolved to the SAME file %q — this is the reported defect", tab1File)
 	}
 
-	a.pushOOC("Nyah: hello from tab two", "Nyah")
+	a.pushOOC("Nyah: hello from tab two", "Nyah", false)
 
 	// The exact bug class reported: tab one, now BACKGROUNDED, logs OOC of its own.
 	// It must land in tab1File (its own log), not tab2File (the now-active tab's).

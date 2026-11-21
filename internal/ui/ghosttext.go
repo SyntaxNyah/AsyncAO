@@ -42,6 +42,7 @@ func queuedCount(queued int) int {
 }
 
 // firstQueuedEntry returns the index of the oldest of the n most recent speech lines, skipping system lines.
+// A folded blankpost entry stands for its whole run, so its weight is 1 + speechExtra.
 // Returns len(log) when n is 0 or the log holds too few: it can under-hide, never hide a line already said.
 func firstQueuedEntry(log []icEntry, n int) int {
 	if n <= 0 {
@@ -51,9 +52,11 @@ func firstQueuedEntry(log []icEntry, n int) int {
 		if !log[i].speech {
 			continue
 		}
-		if n--; n == 0 {
+		weight := 1 + log[i].speechExtra
+		if n <= weight {
 			return i
 		}
+		n -= weight
 	}
 	return len(log)
 }

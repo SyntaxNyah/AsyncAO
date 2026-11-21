@@ -15,6 +15,9 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
+// ctFromServer is CT's third field on a line the server itself sent; any other value is a player (packet_distribution.cpp:86).
+const ctFromServer = "1"
+
 // Handshake phases, as AO2-Client 2.11: decryptor→HI, ID→ID, PN→askchaa, SI→RC, SC→RM, SM→RD, DONE.
 // askchaa is what makes the server send SI; without it every server waits forever.
 type SessionPhase int
@@ -193,6 +196,8 @@ type Event struct {
 	// Loop and MusicEffects carry MC looping (field 3) and MUSIC_EFFECT flags (field 5); only EventMusic sets them.
 	Loop         bool
 	MusicEffects int
+	// FromServer is CT's third field, "1" for the server's own line (courtroom.cpp:1921); only EventOOC sets it.
+	FromServer bool
 	// Wipe is set_background's display parameter (packet_distribution.cpp:352, courtroom.cpp:1427): a BN with a pos.
 	// Only the reducer sets it; client-made EventBackgrounds must leave it false or they erase what they re-seed.
 	Wipe bool
@@ -518,11 +523,11 @@ func (s *Session) handleTyped(t aolib.Outgoing) (ev []Event, ok bool) {
 		if !s.Features.Has(protocol.FeatureAuthPacket) && v.Message == "Logged in as a moderator." {
 			s.ModGranted = true
 			return []Event{
-				{Kind: EventOOC, Name: v.Name, Text: v.Message},
+				{Kind: EventOOC, Name: v.Name, Text: v.Message, FromServer: v.IsFromServer},
 				{Kind: EventAuth, Int: 1},
 			}, true
 		}
-		return []Event{{Kind: EventOOC, Name: v.Name, Text: v.Message}}, true
+		return []Event{{Kind: EventOOC, Name: v.Name, Text: v.Message, FromServer: v.IsFromServer}}, true
 
 	case *aolib.KK:
 		return []Event{{Kind: EventDisconnect, Text: "Kicked: " + capServerText(v.Reason)}}, true
@@ -859,11 +864,11 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		if !s.Features.Has(protocol.FeatureAuthPacket) && p.Field(1) == "Logged in as a moderator." {
 			s.ModGranted = true
 			return []Event{
-				{Kind: EventOOC, Name: p.Field(0), Text: p.Field(1)},
+				{Kind: EventOOC, Name: p.Field(0), Text: p.Field(1), FromServer: p.Field(2) == ctFromServer},
 				{Kind: EventAuth, Int: 1},
 			}
 		}
-		return []Event{{Kind: EventOOC, Name: p.Field(0), Text: p.Field(1)}}
+		return []Event{{Kind: EventOOC, Name: p.Field(0), Text: p.Field(1), FromServer: p.Field(2) == ctFromServer}}
 
 	// Removal reasons are attacker-controlled, capped ahead of every consumer; cap the field (see capServerText).
 	case "KK":

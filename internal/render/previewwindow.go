@@ -303,27 +303,27 @@ func (p *PreviewWindow) Present() {
 	_ = p.ren.Clear()
 	if p.tex != nil {
 		winW, winH := p.win.GetSize()
-		dst := previewFitRect(winW, winH, p.texW, p.texH)
+		dst := FitRect(sdl.Rect{W: winW, H: winH}, p.texW, p.texH)
 		_ = p.ren.Copy(p.tex, nil, &dst)
 	}
 	_ = p.ren.Present() // the preview has its own renderer; a failed present only drops a preview frame
 }
 
-// previewFitRect fits src in win on both axes, centred, as the window can be narrower than the art.
-func previewFitRect(winW, winH, srcW, srcH int32) sdl.Rect {
-	if winW <= 0 || winH <= 0 || srcW <= 0 || srcH <= 0 {
-		return sdl.Rect{W: winW, H: winH}
+// FitRect fits src in box on both axes, centred, keeping its aspect; a source with no size fills the box.
+func FitRect(box sdl.Rect, srcW, srcH int32) sdl.Rect {
+	if box.W <= 0 || box.H <= 0 || srcW <= 0 || srcH <= 0 {
+		return box
 	}
 	// Cross-multiply to compare the ratios using only integer math.
 	var w, h int32
-	if int64(winW)*int64(srcH) <= int64(winH)*int64(srcW) {
-		w = winW
-		h = int32((int64(srcH)*int64(winW) + int64(srcW)/2) / int64(srcW)) // rounded, not truncated
+	if int64(box.W)*int64(srcH) <= int64(box.H)*int64(srcW) {
+		w = box.W
+		h = int32((int64(srcH)*int64(box.W) + int64(srcW)/2) / int64(srcW)) // rounded, not truncated
 	} else {
-		h = winH
-		w = int32((int64(srcW)*int64(winH) + int64(srcH)/2) / int64(srcH))
+		h = box.H
+		w = int32((int64(srcW)*int64(box.H) + int64(srcH)/2) / int64(srcH))
 	}
-	return sdl.Rect{X: (winW - w) / 2, Y: (winH - h) / 2, W: w, H: h}
+	return sdl.Rect{X: box.X + (box.W-w)/2, Y: box.Y + (box.H-h)/2, W: w, H: h}
 }
 
 // HandleEvent handles this window's events; the caller routes by window id, so no id check is needed.

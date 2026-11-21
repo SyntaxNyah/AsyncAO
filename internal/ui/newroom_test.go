@@ -50,7 +50,7 @@ func roomFactoryApp(t *testing.T) (*App, func()) {
 // roomFactoryAppMounted is roomFactoryApp with the Manager's local mount FOLDER
 // handed back, so a gate can write a real asset file into it and drive the byte
 // path end to end (write characters/<x>/char.ini, point urls at
-// assets.LocalOriginFor of the same folder, and Manager.FetchRaw reads it).
+// assets.LocalOriginFor of the same folder, and assets.Raw reads it).
 //
 // The split exists because a fixture that owns its mount privately can only ever
 // serve misses: every consumer of roomFactoryApp before this one drove the
@@ -61,7 +61,6 @@ func roomFactoryAppMounted(t *testing.T) (*App, string, func()) {
 	t.Helper()
 	a, cleanup := stageSettledCourtroom(t)
 	mount := t.TempDir()
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		cleanup()
@@ -73,30 +72,16 @@ func roomFactoryAppMounted(t *testing.T) (*App, string, func()) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   assets.NewLocalFetcher([]string{mount}),
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  assets.NewLocalFetcher([]string{mount}),
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders([]string{mount}, nil)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	// no manifest fetch interposes on the export path
 	return a, mount, cleanup
 }
 

@@ -44,11 +44,10 @@ const (
 type iconKind int
 
 const (
-	iconTheater iconKind = iota // a wide stage bar over two short legs
-	iconEdit                    // a diagonal-stepped 3-rect pencil
-	iconEyeOff                  // a horizontal lens bar with a slash
-	iconPin                     // a head rect over a vertical stem
-	iconGrid                    // a 2×2 block of small rects
+	iconEdit   iconKind = iota // a diagonal-stepped 3-rect pencil
+	iconEyeOff                 // a horizontal lens bar with a slash
+	iconPin                    // a head rect over a vertical stem
+	iconGrid                   // a 2×2 block of small rects
 	// The Music panel's header row: AO2 uses Qt pixmaps here, and a font glyph can show as a missing-character box.
 	iconStop        // an inset filled square (matches KFO's stop button)
 	iconDice        // a bordered square with five pips — "play a random song"
@@ -69,15 +68,6 @@ func drawToolIcon(c *Ctx, k iconKind, r sdl.Rect, col sdl.Color) {
 		return
 	}
 	switch k {
-	case iconTheater:
-		// A wide top bar resting on two short legs.
-		bar := sdl.Rect{X: ix, Y: iy, W: iw, H: ih / 3}
-		c.Fill(bar, col)
-		legW := iw / 4
-		legY := iy + ih/3
-		legH := ih - ih/3
-		c.Fill(sdl.Rect{X: ix, Y: legY, W: legW, H: legH}, col)
-		c.Fill(sdl.Rect{X: ix + iw - legW, Y: legY, W: legW, H: legH}, col)
 	case iconEdit:
 		// A pencil: three stepped squares along the diagonal plus a nib square.
 		step := iw / 4
@@ -206,7 +196,7 @@ const (
 	toolboxTipIDGrip      = "toolbox:grip"
 )
 
-var toolboxChipTipIDs = [...]string{"toolbox:chip:0", "toolbox:chip:1", "toolbox:chip:2", "toolbox:chip:3"}
+var toolboxChipTipIDs = [...]string{"toolbox:chip:0", "toolbox:chip:1", "toolbox:chip:2"}
 
 // toolboxChipTipID falls back to the grip's id past the table's end; a shared id only shares a dwell timer.
 func toolboxChipTipID(i int) string {
@@ -216,15 +206,13 @@ func toolboxChipTipID(i int) string {
 	return toolboxChipTipIDs[i]
 }
 
-// compactToolboxChips is the fixed chip set, right to left from the grip: Pin, Theater, Edit layout, Hide-UI.
+// compactToolboxChips is the fixed chip set, right to left from the grip: Pin, Edit layout, Hide-UI.
 var compactToolboxChips = []compactChip{
 	{iconPin, "Pin the toolbox open (press again or the grip to unpin)", (*App).compactTogglePin},
-	{iconTheater, "Theater mode — stage only, Esc exits", (*App).compactTheater},
 	{iconEdit, "Edit layout — drag & resize every box", (*App).compactEditLayout},
 	{iconEyeOff, "Hide UI pieces — per-piece show/hide list", (*App).compactHideUI},
 }
 
-func (a *App) compactTheater()    { a.setTheater(!a.theaterOn) }
 func (a *App) compactEditLayout() { a.openLayoutEditor() }
 
 // compactTogglePin pins the flyout; unpinning also closes the per-piece panel so a later hover doesn't reveal it.
@@ -262,7 +250,7 @@ func (a *App) drawCompactToolboxOverEditor(w, h int32) {
 }
 
 // drawCompactToolbox paints the grip and, while hovered or pinned, the chips, from an already-decided answer. Not drawn
-// in theater mode or when hidden via panelToolbox. While a layout editor is armed it draws post-courtroom.
+// when hidden via panelToolbox. While a layout editor is armed it draws post-courtroom.
 func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 	if !lat.draws {
 		return
@@ -297,7 +285,7 @@ func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
 			ring := sdl.Rect{X: grip.X - 1, Y: grip.Y - 1, W: grip.W + 2, H: grip.H + 2}
 			c.Border(ring, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: toolboxRingAlpha})
 		}
-		c.TooltipAfter(toolboxTipIDCollapsed, hoverArea, "Toolbox — hover or click for Theater, Edit layout & Hide UI")
+		c.TooltipAfter(toolboxTipIDCollapsed, hoverArea, "Toolbox — hover or click for Edit layout & Hide UI")
 		return
 	}
 

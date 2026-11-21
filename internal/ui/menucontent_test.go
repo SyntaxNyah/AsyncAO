@@ -236,13 +236,13 @@ func TestMenuWindowRowsExist(t *testing.T) {
 
 // TestMenuExtrasCarriesEveryToolboxCommand is the migration itself: every command the
 // floating chip strip offers is reachable from the menu, so the strip is no longer
-// the only way to reach Theater / Edit layout / the per-piece panel — which is what
+// the only way to reach Edit layout / the per-piece panel — which is what
 // made the reporter keep pressing the theme's "Call Mod" button underneath it.
 //
 // The Pin chip is deliberately NOT mirrored: it latches the FLOATING strip open, a
 // property of a surface the menu replaces rather than a command.
 func TestMenuExtrasCarriesEveryToolboxCommand(t *testing.T) {
-	for _, label := range []string{"Theater mode", "Edit layout…", "Hide UI pieces…", "Floating toolbox"} {
+	for _, label := range []string{"Edit layout…", "Hide UI pieces…", "Floating toolbox"} {
 		menuRow(t, menuExtrasTitle, label)
 	}
 	// The layout editor must stay reachable whatever happens to the strip.
@@ -282,7 +282,7 @@ func TestMenuExtrasTogglesTheFloatingToolbox(t *testing.T) {
 // because both editors live inside drawCourtroom — would leave no way out.
 func TestMenuExtrasCourtroomRowsDimElsewhere(t *testing.T) {
 	a := stageMenuBarApp(t)
-	rows := []string{"Theater mode", "Edit layout…", "Hide UI pieces…"}
+	rows := []string{"Edit layout…", "Hide UI pieces…"}
 
 	a.screen = ScreenLobby
 	for _, label := range rows {

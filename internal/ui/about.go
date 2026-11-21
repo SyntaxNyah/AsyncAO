@@ -105,7 +105,6 @@ var aboutLinks = []aboutLink{
 	{"golang.org/x/text — text encoding (BSD-3)", "https://pkg.go.dev/golang.org/x/text"},
 	{"cespare/xxhash — fast hashing for cache keys (MIT)", "https://github.com/cespare/xxhash"},
 	{"hashicorp/golang-lru — LRU caches (MPL-2.0)", "https://github.com/hashicorp/golang-lru"},
-	{"kettek/apng — animated-PNG decoding (BSD)", "https://github.com/kettek/apng"},
 	{"AO-Underground/aolib (go/v2) — AO2 wire protocol codec, FantaCode + JSON (MIT)", "https://github.com/AO-Underground/aolib"},
 	{"santhosh-tekuri/jsonschema (v6) — JSON Schema validation (Apache-2.0)", "https://github.com/santhosh-tekuri/jsonschema"},
 

@@ -55,13 +55,13 @@ func TestPaletteMatches(t *testing.T) {
 }
 
 // TestPaletteExtraActions pins FIX 2a: the palette-only actions (Edit Layout,
-// Theater, Hide UI pieces) — which have no extrasWidgets() slot because the
+// Hide UI pieces) — which have no extrasWidgets() slot because the
 // bottom-right toolbox owns them — are again reachable from the palette. Each
 // must appear as a runnable row (widget < 0, a non-nil run method value) when
 // searched for by name.
 func TestPaletteExtraActions(t *testing.T) {
 	a := &App{ctx: &Ctx{}}
-	for _, want := range []string{"Edit Layout", "Theater", "Hide UI pieces"} {
+	for _, want := range []string{"Edit Layout", "Hide UI pieces"} {
 		matches := a.paletteMatches(want)
 		var found *paletteMatch
 		for i := range matches {
@@ -80,10 +80,10 @@ func TestPaletteExtraActions(t *testing.T) {
 			t.Errorf("%q must carry a run method value so runPaletteMatch can fire it", want)
 		}
 	}
-	// The three actions must also be package-level (no per-App closure): the table
+	// The two actions must also be package-level (no per-App closure): the table
 	// is a fixed slice, so a nil-ctx App can enumerate it. Guard the count so a
 	// future edit can't silently drop one.
-	if len(paletteExtraActions) != 3 {
-		t.Fatalf("paletteExtraActions = %d rows, want 3 (Edit Layout / Theater / Hide UI pieces)", len(paletteExtraActions))
+	if len(paletteExtraActions) != 2 {
+		t.Fatalf("paletteExtraActions = %d rows, want 2 (Edit Layout / Hide UI pieces)", len(paletteExtraActions))
 	}
 }

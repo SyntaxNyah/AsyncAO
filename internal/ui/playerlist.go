@@ -197,8 +197,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		case plItemMenu:
 			// Same helper as the Music header, click consumption included, or click-away closes the menu at once.
 			// themed is derived: inside the theme's music_list, drawMusicList discards the Volume-sliders row.
-			if a.musicIconButton(it.r, iconKebab, "Roster & playback options — refresh details, legacy snapshot, pair status, follow") {
-				a.openMusicMenuFromButton(sdl.Point{X: it.r.X, Y: it.r.Y + it.r.H}, a.rosterMenuThemed())
+			if a.musicIconButton(it.r, iconKebab, "Roster options — refresh details, legacy snapshot, pair status, follow") {
+				a.openMusicMenuFromButton(sdl.Point{X: it.r.X, Y: it.r.Y + it.r.H}, a.rosterMenuThemed(), musicMenuFromRoster)
 			}
 		}
 	}

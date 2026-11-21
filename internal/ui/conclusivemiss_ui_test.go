@@ -10,7 +10,6 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
@@ -37,44 +36,47 @@ func wireEmptyPackManager(t *testing.T, a *App) *assets.LocalFetcher {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 
 	local := assets.NewLocalFetcher([]string{t.TempDir()}) // empty: nothing resolves
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(a.d.Prefs),
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   local,
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  local,
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders(local.Mounts(), nil)
-	// One extension per type keeps the probe chains short and the fixture's
-	// intent legible; the defaults differ per type and none of that is what
-	// these gates are about.
-	for _, typ := range []assets.AssetType{assets.AssetTypeCharIcon, assets.AssetTypeEmoteButton} {
-		a.d.Prefs.SetFormatOrder(typ.Name(), []string{config.ExtPNG})
-	}
 	return local
 }
 
-// drainManager empties the manager's result channels so the pipeline keeps
-// moving while a gate polls. Results are never dropped by the manager (rule
-// §17.7), so a gate that ignores them stalls the pool once the buffers fill.
+// drainManager finishes the decoded pages and empties the warnings, so the pipeline keeps moving while a gate polls.
 func drainManager(a *App) {
+	releaseDeliveries(a)
 	for {
 		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
 		case <-a.d.Manager.Warnings():
 		default:
 			return
 		}
 	}
+}
+
+// releaseDeliveries finishes every decoded page waiting, as the upload pump would, without uploading it.
+func releaseDeliveries(a *App) { deliveredBase(a, "") }
+
+// deliveredBase finishes every decoded page waiting and reports whether base arrived without an error.
+func deliveredBase(a *App, base string) bool {
+	got := false
+	a.d.Manager.TakeDeliveries(func(d assets.Delivery) {
+		got = got || base != "" && d.Base == base && d.Err == nil
+		if d.Asset != nil {
+			d.Asset.Release()
+		}
+		a.d.Manager.Done(d)
+	})
+	return got
 }
 
 // settleMissUI waits until the manager has established that base is absent.

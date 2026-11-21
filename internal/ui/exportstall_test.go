@@ -63,7 +63,6 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 	a.d.Viewport = render.NewViewport(store, false)
 	a.d.Audio = &render.Audio{} // disabled device: a safe no-op AudioSink
 
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -73,15 +72,13 @@ func newExportStallHarness(t *testing.T) (*App, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()), // stream over HTTP: every request 404s (the all-404 origin)
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  network.NewClientNotFoundTTL(0, netproxy.Direct()), // stream over HTTP: every request 404s (the all-404 origin)
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Pump = render.NewPump(store, a.d.Manager, nil)

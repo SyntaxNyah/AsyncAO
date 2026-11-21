@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kettek/apng"
 	xdraw "golang.org/x/image/draw"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
@@ -24,8 +23,6 @@ import (
 )
 
 const (
-	// decodeQueueCap bounds the decode job queue; Submit blocks briefly when full, since decode work is never shed.
-	decodeQueueCap = 64
 
 	// minDecodeWorkers is the floor of the worker count, max(2, NumCPU/2).
 	minDecodeWorkers = 2
@@ -89,12 +86,9 @@ func downscaleDecoded(d *Decoded, target int) *Decoded {
 		SourceFrames: d.SourceFrames,
 	}
 	for _, frame := range d.Frames {
-		small, token := newPooledRGBA(target, target)
+		small := image.NewRGBA(image.Rect(0, 0, target, target))
 		xdraw.ApproxBiLinear.Scale(small, small.Rect, frame, frame.Rect, xdraw.Src, nil)
 		out.Frames = append(out.Frames, small)
-		if token != nil {
-			out.pooledPix = append(out.pooledPix, token)
-		}
 	}
 	d.Release()
 	return out
@@ -119,12 +113,9 @@ func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
 		SourceFrames: d.SourceFrames, // see downscaleDecoded: pixels shrink, the frame space does not
 	}
 	for _, frame := range d.Frames {
-		small, token := newPooledRGBA(newW, maxH)
+		small := image.NewRGBA(image.Rect(0, 0, newW, maxH))
 		xdraw.CatmullRom.Scale(small, small.Rect, frame, frame.Rect, xdraw.Src, nil)
 		out.Frames = append(out.Frames, small)
-		if token != nil {
-			out.pooledPix = append(out.pooledPix, token)
-		}
 	}
 	d.Release()
 	return out
@@ -174,9 +165,9 @@ func decodeTargetDimsBudgeted(width, height, maxH, frames int) (tw, th int, down
 
 // downscaleFrame uses an area-average filter, as ApproxBiLinear skips source pixels and aliases.
 // Alpha is averaged premultiplied so transparent pixels cannot darken an edge.
-func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
+func downscaleFrame(src *image.RGBA, tw, th int) *image.RGBA {
 	sw, sh := src.Rect.Dx(), src.Rect.Dy()
-	out, token := newPooledRGBA(tw, th)
+	out := image.NewRGBA(image.Rect(0, 0, tw, th))
 	spix, dpix := src.Pix, out.Pix
 	sstride, dstride := src.Stride, out.Stride
 
@@ -215,7 +206,7 @@ func downscaleFrame(src *image.RGBA, tw, th int) (*image.RGBA, *[]byte) {
 			dpix[q+3] = uint8(sumA / uint32((x1-x0)*(y1-y0)))
 		}
 	}
-	return out, token
+	return out
 }
 
 // boundedFrameCount reports how many evenly spaced frames fit the budget, at least one.
@@ -329,44 +320,56 @@ func DecodeWorkers() int {
 // defaultAnimatedDecodeConcurrency bounds full animated decodes, since their per-frame RGBA is the memory spike.
 const defaultAnimatedDecodeConcurrency = 2
 
-// animGate is a resizable semaphore: a buffered channel cannot resize, so waiters re-check an atomic limit.
+// animGate bounds concurrent animated decodes and lets waiters in by arrival order, so a small loop that came first is
+// not left behind a long animation that came later; the limit can change live, and 0 means no bound. At most one
+// waiter per Compute worker, so the queue is bounded by the pool.
 type animGate struct {
-	mu     sync.Mutex
-	cond   *sync.Cond
-	limit  atomic.Int64
-	active atomic.Int64
+	mu      sync.Mutex
+	limit   int
+	active  int
+	waiting []chan struct{}
 }
 
-func newAnimGate(limit int) *animGate {
-	g := &animGate{}
-	g.cond = sync.NewCond(&g.mu)
-	g.limit.Store(int64(limit))
-	return g
-}
+func newAnimGate(limit int) *animGate { return &animGate{limit: limit} }
 
-// SetLimit changes the bound live; a raised limit wakes waiters.
+// SetLimit changes the bound live; a raised limit lets the longest waiters in.
 func (g *animGate) SetLimit(n int) {
 	g.mu.Lock()
-	g.limit.Store(int64(n))
-	g.cond.Broadcast()
+	g.limit = n
+	g.admitLocked()
 	g.mu.Unlock()
 }
 
-// acquire blocks until an animated decode may start.
+// acquire blocks until an animated decode may start, behind everyone already waiting.
 func (g *animGate) acquire() {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	for g.limit.Load() > 0 && g.active.Load() >= g.limit.Load() {
-		g.cond.Wait()
+	if len(g.waiting) == 0 && g.roomLocked() {
+		g.active++
+		g.mu.Unlock()
+		return
 	}
-	g.active.Add(1)
+	turn := make(chan struct{})
+	g.waiting = append(g.waiting, turn)
+	g.mu.Unlock()
+	<-turn
 }
 
 func (g *animGate) release() {
 	g.mu.Lock()
-	g.active.Add(-1)
-	g.cond.Broadcast()
+	g.active--
+	g.admitLocked()
 	g.mu.Unlock()
+}
+
+func (g *animGate) roomLocked() bool { return g.limit <= 0 || g.active < g.limit }
+
+// admitLocked lets the longest waiters in while there is room; the caller holds g.mu.
+func (g *animGate) admitLocked() {
+	for len(g.waiting) > 0 && g.roomLocked() {
+		g.active++
+		close(g.waiting[0])
+		g.waiting = g.waiting[1:]
+	}
 }
 
 // DecodeRequest is one decode job.
@@ -378,17 +381,13 @@ type DecodeRequest struct {
 	Type AssetType
 	// PlayAnimations decodes all frames when true, only the first when false.
 	PlayAnimations bool
-	// OnDone runs on a decoder goroutine: it must be cheap and must not touch SDL (hard rule 1).
+	// OnDone runs on the decoding goroutine, once per page: it must be cheap and must not touch SDL (hard rule 1).
 	OnDone func(url string, d *Decoded, err error)
 }
 
-// DecoderPool decodes image payloads into plain RGBA with no SDL calls; upload happens on the render thread.
-type DecoderPool struct {
-	jobs      chan DecodeRequest
-	stop      chan struct{}
-	wg        sync.WaitGroup
-	closeOnce sync.Once
-
+// Decoder decodes image payloads into plain RGBA with no SDL calls, on the caller's goroutine; upload happens on the
+// render thread.
+type Decoder struct {
 	decoded atomic.Int64
 	failed  atomic.Int64
 
@@ -407,7 +406,6 @@ type DecoderPool struct {
 	// decodeNsEWMA tracks decode+fit wall time.
 	decodeNsEWMA atomic.Int64
 
-	workers int
 	// running lists the decodes in progress, for diagnostics.
 	running *network.ActiveWork
 }
@@ -466,27 +464,13 @@ func heapSysMiB() uint64 {
 	return ms.Sys >> 20
 }
 
-// NewDecoderPool starts workers decode goroutines (DecodeWorkers() when workers <= 0).
-func NewDecoderPool(workers int) *DecoderPool {
-	if workers <= 0 {
-		workers = DecodeWorkers()
-	}
-	p := &DecoderPool{
-		jobs:     make(chan DecodeRequest, decodeQueueCap),
-		stop:     make(chan struct{}),
-		animGate: newAnimGate(defaultAnimatedDecodeConcurrency),
-		workers:  workers,
-		running:  network.NewActiveWork(workers),
-	}
-	p.wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go p.worker()
-	}
-	return p
+// NewDecoder makes a decoder; the media system's Compute workers run its decodes.
+func NewDecoder() *Decoder {
+	return &Decoder{animGate: newAnimGate(defaultAnimatedDecodeConcurrency), running: network.NewActiveWork(DecodeWorkers())}
 }
 
 // SetSpriteCap sets the height ceiling for full-size assets; 0 disables it.
-func (p *DecoderPool) SetSpriteCap(px int) {
+func (p *Decoder) SetSpriteCap(px int) {
 	if px < 0 {
 		px = 0
 	}
@@ -494,7 +478,7 @@ func (p *DecoderPool) SetSpriteCap(px int) {
 }
 
 // SetAnimatedSpriteCap sets the animated-only height cap; 0 disables it.
-func (p *DecoderPool) SetAnimatedSpriteCap(px int) {
+func (p *Decoder) SetAnimatedSpriteCap(px int) {
 	if px < 0 {
 		px = 0
 	}
@@ -502,17 +486,17 @@ func (p *DecoderPool) SetAnimatedSpriteCap(px int) {
 }
 
 // SetAnimatedBudgetMiB sets the per-animated-asset frame budget; <= 0 resets to the default.
-func (p *DecoderPool) SetAnimatedBudgetMiB(mib int) {
+func (p *Decoder) SetAnimatedBudgetMiB(mib int) {
 	SetAnimatedDecodedAssetBytes(int64(mib) << 20)
 }
 
 // SetAnimatedDecodeConcurrency sets the concurrent animated decode bound.
-func (p *DecoderPool) SetAnimatedDecodeConcurrency(n int) {
+func (p *Decoder) SetAnimatedDecodeConcurrency(n int) {
 	p.animGate.SetLimit(n)
 }
 
 // SetTextureCompression sets the compression mode (CompressOff, CompressDXT5, CompressDXT1) for new decodes.
-func (p *DecoderPool) SetTextureCompression(mode int) {
+func (p *Decoder) SetTextureCompression(mode int) {
 	switch mode {
 	case CompressDXT5:
 		p.texCompress.Store(DXT5FourCC)
@@ -525,7 +509,7 @@ func (p *DecoderPool) SetTextureCompression(mode int) {
 
 // prepareForUpload marks fully opaque frames, then compresses in place when a DXT mode is active and the canvas is
 // 4-aligned; idempotent, as compressing releases the frames the opaque check reads.
-func (p *DecoderPool) prepareForUpload(d *Decoded) {
+func (p *Decoder) prepareForUpload(d *Decoded) {
 	if d == nil {
 		return
 	}
@@ -558,7 +542,7 @@ func framesOpaque(frames []*image.RGBA) bool {
 }
 
 // fit downscales to the ceiling: fixed-cell types to a square, others to the sprite cap or the animated cap when set.
-func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
+func (p *Decoder) fit(t AssetType, d *Decoded) *Decoded {
 	if d == nil {
 		return d
 	}
@@ -578,51 +562,16 @@ func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
 }
 
 // fullSizeMaxH is the decode-time height cap for a full-size asset, 0 for fixed-cell types, which downscale in fit.
-func (p *DecoderPool) fullSizeMaxH(t AssetType) int {
+func (p *Decoder) fullSizeMaxH(t AssetType) int {
 	if decodeTargetPx(t) > 0 {
 		return 0
 	}
 	return int(p.spriteCap.Load())
 }
 
-// Submit queues a decode; a closed pool returns false and calls OnDone inline, so callers always hear back.
-func (p *DecoderPool) Submit(req DecodeRequest) bool {
-	if req.OnDone == nil {
-		return false
-	}
-	select {
-	case <-p.stop:
-		req.OnDone(req.URL, nil, fmt.Errorf("assets: decoder pool closed"))
-		return false
-	default:
-	}
-	select {
-	case p.jobs <- req:
-		return true
-	case <-p.stop:
-		req.OnDone(req.URL, nil, fmt.Errorf("assets: decoder pool closed"))
-		return false
-	}
-}
-
-// Close stops the workers and fails queued jobs so nobody waits forever.
-func (p *DecoderPool) Close() {
-	p.closeOnce.Do(func() {
-		close(p.stop)
-		p.wg.Wait()
-		for {
-			select {
-			case req := <-p.jobs:
-				req.OnDone(req.URL, nil, fmt.Errorf("assets: decoder pool closed"))
-			default:
-				return
-			}
-		}
-	})
-}
-
-func (p *DecoderPool) worker() {
-	defer p.wg.Done()
+// Decode decodes one payload on the calling goroutine; an animated payload hands OnDone frame 0 first, then the full set
+// replaces it at upload.
+func (p *Decoder) Decode(req DecodeRequest) {
 	// The render thread's crash guard cannot see this goroutine: log any panic to disk, then re-panic.
 	defer func() {
 		if r := recover(); r != nil {
@@ -630,18 +579,6 @@ func (p *DecoderPool) worker() {
 			panic(r)
 		}
 	}()
-	for {
-		select {
-		case req := <-p.jobs:
-			p.runJob(req)
-		case <-p.stop:
-			return
-		}
-	}
-}
-
-// runJob decodes one payload; animated payloads deliver frame 0 first, then the full set replaces it at upload.
-func (p *DecoderPool) runJob(req DecodeRequest) {
 	defer p.running.End(p.running.Begin(req.Type.Name(), req.URL))
 	done := req.OnDone
 	req.OnDone = func(url string, d *Decoded, err error) {
@@ -659,6 +596,8 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		defer p.animGate.release()
 	}
 
+	// established is whether frame 0 went out as a stream's first chunk; the stream appends only frames after it.
+	established := false
 	if animated {
 		if first, err := DecodeImage(req.Data, false); err == nil {
 			// GIF/APNG can sniff "maybe" but decode static, and a static would upload the same texture twice.
@@ -673,6 +612,7 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 				if streamable {
 					// Streaming pages grow frame by frame; frame 0 is the first chunk.
 					first.Stream = true
+					established = true
 				}
 				req.OnDone(req.URL, first, nil)
 			} else {
@@ -681,8 +621,9 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		}
 	}
 
-	// The definitely-animated CGO formats stream: frames land one at a time and the page plays what has arrived.
-	if streamable {
+	// The definitely-animated CGO formats stream: frames land one at a time and the page plays what has arrived. A file
+	// with the animation flag and one frame decodes as a still, as no stream ever sends its frame 0.
+	if streamable && established {
 		p.streamAnimated(req)
 		return
 	}
@@ -756,18 +697,15 @@ func fitEstablishingPrefix(first *Decoded, data []byte, maxH int) *Decoded {
 		SourceFrames: first.SourceFrames, // pixels shrink, the frame space does not
 	}
 	for _, frame := range first.Frames {
-		small, token := downscaleFrame(frame, tw, th)
+		small := downscaleFrame(frame, tw, th)
 		out.Frames = append(out.Frames, small)
-		if token != nil {
-			out.pooledPix = append(out.pooledPix, token)
-		}
 	}
 	first.Release()
 	return out
 }
 
 // streamAnimated appends each remaining WebP/AVIF frame; if decimation is needed it falls back to a full decode.
-func (p *DecoderPool) streamAnimated(req DecodeRequest) {
+func (p *Decoder) streamAnimated(req DecodeRequest) {
 	format := Sniff(req.Data)
 	maxH := p.fullSizeMaxH(req.Type)
 	start := time.Now()
@@ -837,7 +775,7 @@ type DecoderStats struct {
 }
 
 // Stats snapshots the pool's counters.
-func (p *DecoderPool) Stats() DecoderStats {
+func (p *Decoder) Stats() DecoderStats {
 	return DecoderStats{
 		Decoded:   p.decoded.Load(),
 		Failed:    p.failed.Load(),
@@ -905,7 +843,7 @@ func decodeJPEG(data []byte) (*Decoded, error) {
 
 // staticDecoded wraps a still image, converting to RGBA when needed.
 func staticDecoded(img image.Image) *Decoded {
-	rgba, token := toRGBA(img)
+	rgba := toRGBA(img)
 	d := &Decoded{
 		Frames:   []*image.RGBA{rgba},
 		Delays:   []time.Duration{0},
@@ -913,33 +851,18 @@ func staticDecoded(img image.Image) *Decoded {
 		Width:    rgba.Rect.Dx(),
 		Height:   rgba.Rect.Dy(),
 	}
-	if token != nil {
-		d.pooledPix = append(d.pooledPix, token)
-	}
 	return d
 }
 
-// toRGBA returns img as *image.RGBA; the pool token is nil when img was already RGBA.
-func toRGBA(img image.Image) (*image.RGBA, *[]byte) {
+// toRGBA returns img as *image.RGBA, converting only when it isn't one.
+func toRGBA(img image.Image) *image.RGBA {
 	if rgba, ok := img.(*image.RGBA); ok {
-		return rgba, nil
+		return rgba
 	}
 	bounds := img.Bounds()
-	rgba, token := newPooledRGBA(bounds.Dx(), bounds.Dy())
+	rgba := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	draw.Draw(rgba, rgba.Rect, img, bounds.Min, draw.Src)
-	return rgba, token
-}
-
-// newPooledRGBA builds a w×h RGBA image whose Pix comes from the pixel pool.
-func newPooledRGBA(w, h int) (*image.RGBA, *[]byte) {
-	const bytesPerPixel = 4
-	n := w * h * bytesPerPixel
-	buf, token := getPixBuf(n)
-	return &image.RGBA{
-		Pix:    buf,
-		Stride: w * bytesPerPixel,
-		Rect:   image.Rect(0, 0, w, h),
-	}, token
+	return rgba
 }
 
 // decodeGIF composes a GIF onto a persistent canvas, honoring disposal, producing full-canvas RGBA frames.
@@ -982,11 +905,8 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	}
 
 	// The backdrop snapshot supports DisposalPrevious.
-	canvas, canvasTok := newPooledRGBA(width, height)
-	defer putPixBuf(canvasTok)
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
 	var prevSnapshot *image.RGBA
-	var snapTok *[]byte
-	defer func() { putPixBuf(snapTok) }()
 
 	// Compose every source frame, because a kept frame depends on the disposal before it; copy out only the kept ones.
 	for i := 0; i < walk; i++ {
@@ -998,7 +918,7 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 
 		if disposal == gif.DisposalPrevious {
 			if prevSnapshot == nil {
-				prevSnapshot, snapTok = newPooledRGBA(width, height)
+				prevSnapshot = image.NewRGBA(image.Rect(0, 0, width, height))
 			}
 			copy(prevSnapshot.Pix, canvas.Pix)
 		}
@@ -1006,20 +926,13 @@ func decodeGIF(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
 
 		if folded, keepIt := dec.step(i, gifFrameDelay(g, i)); keepIt {
-			out, token := newPooledRGBA(width, height)
+			out := image.NewRGBA(image.Rect(0, 0, width, height))
 			copy(out.Pix, canvas.Pix)
 			if down {
-				small, smallTok := downscaleFrame(out, tw, th)
-				putPixBuf(token)
+				small := downscaleFrame(out, tw, th)
 				d.Frames = append(d.Frames, small)
-				if smallTok != nil {
-					d.pooledPix = append(d.pooledPix, smallTok)
-				}
 			} else {
 				d.Frames = append(d.Frames, out)
-				if token != nil {
-					d.pooledPix = append(d.pooledPix, token)
-				}
 			}
 			d.Delays = append(d.Delays, folded)
 		}
@@ -1062,27 +975,18 @@ func clearRect(canvas *image.RGBA, r image.Rectangle) {
 
 // decodeAPNG composes APNG frames onto a persistent canvas, as decodeGIF does.
 func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
-	a, err := apng.DecodeAll(bytes.NewReader(data))
+	file, err := parseAPNG(data)
 	if err != nil {
-		return nil, fmt.Errorf("assets: apng decode: %w", err)
+		return nil, err
 	}
-	if len(a.Frames) == 0 {
-		return nil, fmt.Errorf("assets: apng has no frames")
-	}
-
-	first := a.Frames[0].Image.Bounds()
-	width, height := first.Dx(), first.Dy()
-
-	// Frames flagged IsDefault are the static fallback image, not part of the animation.
-	animFrames := make([]apng.Frame, 0, len(a.Frames))
-	for _, f := range a.Frames {
-		if !f.IsDefault {
-			animFrames = append(animFrames, f)
-		}
+	animFrames := file.frames
+	if len(animFrames) == 0 && file.still != nil {
+		animFrames = []apngFrame{*file.still}
 	}
 	if len(animFrames) == 0 {
-		animFrames = a.Frames
+		return nil, fmt.Errorf("assets: apng has no frames")
 	}
+	width, height := file.width, file.height
 
 	total := len(animFrames)
 	animated := total > 1
@@ -1095,7 +999,7 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	dec := newFrameDecimator(walk, keep)
 	sourceDelays := make([]time.Duration, walk)
 	for i := 0; i < walk; i++ {
-		sourceDelays[i] = apngFrameDelay(animFrames[i])
+		sourceDelays[i] = animFrames[i].delay()
 	}
 
 	d := &Decoded{
@@ -1107,58 +1011,47 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 		Delays:       make([]time.Duration, 0, keep),
 	}
 
-	canvas, canvasTok := newPooledRGBA(width, height)
-	defer putPixBuf(canvasTok)
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
 	var prevSnapshot *image.RGBA
-	var snapTok *[]byte
-	defer func() { putPixBuf(snapTok) }()
 
 	// Compose every source frame, because a kept frame depends on the dispose and blend before it.
 	for i := 0; i < walk; i++ {
-		frame := animFrames[i]
-		target := image.Rect(
-			frame.XOffset,
-			frame.YOffset,
-			frame.XOffset+frame.Image.Bounds().Dx(),
-			frame.YOffset+frame.Image.Bounds().Dy(),
-		)
+		frame := &animFrames[i]
+		target := frame.rect
+		img, err := file.decode(frame)
+		if err != nil {
+			return nil, fmt.Errorf("assets: apng frame %d: %w", i, err)
+		}
 
-		if frame.DisposeOp == apng.DISPOSE_OP_PREVIOUS {
+		if frame.dispose == apngDisposePrevious {
 			if prevSnapshot == nil {
-				prevSnapshot, snapTok = newPooledRGBA(width, height)
+				prevSnapshot = image.NewRGBA(image.Rect(0, 0, width, height))
 			}
 			copy(prevSnapshot.Pix, canvas.Pix)
 		}
 
 		op := draw.Over
-		if frame.BlendOp == apng.BLEND_OP_SOURCE {
+		if frame.blend == apngBlendSource {
 			op = draw.Src
 		}
-		draw.Draw(canvas, target, frame.Image, frame.Image.Bounds().Min, op)
+		draw.Draw(canvas, target, img, img.Bounds().Min, op)
 
-		if folded, keepIt := dec.step(i, apngFrameDelay(frame)); keepIt {
-			out, token := newPooledRGBA(width, height)
+		if folded, keepIt := dec.step(i, frame.delay()); keepIt {
+			out := image.NewRGBA(image.Rect(0, 0, width, height))
 			copy(out.Pix, canvas.Pix)
 			if down {
-				small, smallTok := downscaleFrame(out, tw, th)
-				putPixBuf(token)
+				small := downscaleFrame(out, tw, th)
 				d.Frames = append(d.Frames, small)
-				if smallTok != nil {
-					d.pooledPix = append(d.pooledPix, smallTok)
-				}
 			} else {
 				d.Frames = append(d.Frames, out)
-				if token != nil {
-					d.pooledPix = append(d.pooledPix, token)
-				}
 			}
 			d.Delays = append(d.Delays, folded)
 		}
 
-		switch frame.DisposeOp {
-		case apng.DISPOSE_OP_BACKGROUND:
+		switch frame.dispose {
+		case apngDisposeBackground:
 			clearRect(canvas, target)
-		case apng.DISPOSE_OP_PREVIOUS:
+		case apngDisposePrevious:
 			if prevSnapshot != nil {
 				copy(canvas.Pix, prevSnapshot.Pix)
 			}
@@ -1166,17 +1059,4 @@ func decodeAPNG(data []byte, playAnimations bool, maxH int) (*Decoded, error) {
 	}
 	spreadLoopDelays(d, sourceDelays)
 	return d, nil
-}
-
-func apngFrameDelay(f apng.Frame) time.Duration {
-	num := f.DelayNumerator
-	den := f.DelayDenominator
-	if den == 0 {
-		den = 100 // APNG spec: zero denominator means 1/100 s units
-	}
-	delay := time.Duration(num) * time.Second / time.Duration(den)
-	if delay <= 0 {
-		return defaultZeroFrameDelay
-	}
-	return delay
 }

@@ -108,27 +108,6 @@ func (s *Settings) Clone() *Settings {
 	} else {
 		c.ClassicRotations = nil
 	}
-	if s.AssetTypes != nil {
-		c.AssetTypes = make(map[string]AssetTypePrefs, len(s.AssetTypes))
-		for k20, v21 := range s.AssetTypes {
-			c.AssetTypes[k20] = snapCloneAssetTypePrefs(v21)
-		}
-	} else {
-		c.AssetTypes = nil
-	}
-	if s.LearnedFormats != nil {
-		c.LearnedFormats = make(map[string][]string, len(s.LearnedFormats))
-		for k22, v23 := range s.LearnedFormats {
-			if v23 != nil {
-				c.LearnedFormats[k22] = make([]string, len(v23))
-				copy(c.LearnedFormats[k22], v23)
-			} else {
-				c.LearnedFormats[k22] = nil
-			}
-		}
-	} else {
-		c.LearnedFormats = nil
-	}
 	if s.ShownamePresets != nil {
 		c.ShownamePresets = make([]string, len(s.ShownamePresets))
 		copy(c.ShownamePresets, s.ShownamePresets)
@@ -137,16 +116,16 @@ func (s *Settings) Clone() *Settings {
 	}
 	if s.ShownameKeys != nil {
 		c.ShownameKeys = make(map[string]string, len(s.ShownameKeys))
-		for k24, v25 := range s.ShownameKeys {
-			c.ShownameKeys[k24] = v25
+		for k20, v21 := range s.ShownameKeys {
+			c.ShownameKeys[k20] = v21
 		}
 	} else {
 		c.ShownameKeys = nil
 	}
 	if s.ICPhraseKeys != nil {
 		c.ICPhraseKeys = make(map[string]string, len(s.ICPhraseKeys))
-		for k26, v27 := range s.ICPhraseKeys {
-			c.ICPhraseKeys[k26] = v27
+		for k22, v23 := range s.ICPhraseKeys {
+			c.ICPhraseKeys[k22] = v23
 		}
 	} else {
 		c.ICPhraseKeys = nil
@@ -177,32 +156,24 @@ func (s *Settings) Clone() *Settings {
 	}
 	if s.BlipVols != nil {
 		c.BlipVols = make(map[string]int, len(s.BlipVols))
-		for k28, v29 := range s.BlipVols {
-			c.BlipVols[k28] = v29
+		for k24, v25 := range s.BlipVols {
+			c.BlipVols[k24] = v25
 		}
 	} else {
 		c.BlipVols = nil
 	}
 	if s.EmoteFavs != nil {
 		c.EmoteFavs = make(map[string][]int, len(s.EmoteFavs))
-		for k30, v31 := range s.EmoteFavs {
-			if v31 != nil {
-				c.EmoteFavs[k30] = make([]int, len(v31))
-				copy(c.EmoteFavs[k30], v31)
+		for k26, v27 := range s.EmoteFavs {
+			if v27 != nil {
+				c.EmoteFavs[k26] = make([]int, len(v27))
+				copy(c.EmoteFavs[k26], v27)
 			} else {
-				c.EmoteFavs[k30] = nil
+				c.EmoteFavs[k26] = nil
 			}
 		}
 	} else {
 		c.EmoteFavs = nil
-	}
-	if s.ExtProfiles != nil {
-		c.ExtProfiles = make(map[string]string, len(s.ExtProfiles))
-		for k32, v33 := range s.ExtProfiles {
-			c.ExtProfiles[k32] = v33
-		}
-	} else {
-		c.ExtProfiles = nil
 	}
 	if s.LocalAssetsPaths != nil {
 		c.LocalAssetsPaths = make([]string, len(s.LocalAssetsPaths))
@@ -230,8 +201,8 @@ func (s *Settings) Clone() *Settings {
 	}
 	if s.ServerWarm != nil {
 		c.ServerWarm = make(map[string]ServerWarmInfo, len(s.ServerWarm))
-		for k34, v35 := range s.ServerWarm {
-			c.ServerWarm[k34] = snapCloneServerWarmInfo(v35)
+		for k28, v29 := range s.ServerWarm {
+			c.ServerWarm[k28] = snapCloneServerWarmInfo(v29)
 		}
 	} else {
 		c.ServerWarm = nil
@@ -244,8 +215,8 @@ func (s *Settings) Clone() *Settings {
 	}
 	if s.HotkeyMap != nil {
 		c.HotkeyMap = make(map[string]string, len(s.HotkeyMap))
-		for k36, v37 := range s.HotkeyMap {
-			c.HotkeyMap[k36] = v37
+		for k30, v31 := range s.HotkeyMap {
+			c.HotkeyMap[k30] = v31
 		}
 	} else {
 		c.HotkeyMap = nil
@@ -267,9 +238,6 @@ func (s *Settings) equal(o *Settings) bool {
 		return true
 	}
 	if s == nil || o == nil {
-		return false
-	}
-	if s.GlobalFallbacksEnabled != o.GlobalFallbacksEnabled {
 		return false
 	}
 	if s.PreferAnimated != o.PreferAnimated {
@@ -428,8 +396,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.SavedStyles) != len(o.SavedStyles) {
 		return false
 	}
-	for i38 := range s.SavedStyles {
-		if s.SavedStyles[i38] != o.SavedStyles[i38] {
+	for i32 := range s.SavedStyles {
+		if s.SavedStyles[i32] != o.SavedStyles[i32] {
 			return false
 		}
 	}
@@ -466,8 +434,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.PanelFontsVal) != len(o.PanelFontsVal) {
 		return false
 	}
-	for k39, v40 := range s.PanelFontsVal {
-		if o.PanelFontsVal[k39] != v40 {
+	for k33, v34 := range s.PanelFontsVal {
+		if o.PanelFontsVal[k33] != v34 {
 			return false
 		}
 	}
@@ -477,8 +445,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.FontWarnThemes) != len(o.FontWarnThemes) {
 		return false
 	}
-	for i41 := range s.FontWarnThemes {
-		if s.FontWarnThemes[i41] != o.FontWarnThemes[i41] {
+	for i35 := range s.FontWarnThemes {
+		if s.FontWarnThemes[i35] != o.FontWarnThemes[i35] {
 			return false
 		}
 	}
@@ -629,9 +597,6 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.DebugOverlay != o.DebugOverlay {
 		return false
 	}
-	if s.AutoDetectFormats != o.AutoDetectFormats {
-		return false
-	}
 	if s.ThemeLayoutOn != o.ThemeLayoutOn {
 		return false
 	}
@@ -779,8 +744,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.OpenTabs) != len(o.OpenTabs) {
 		return false
 	}
-	for i42 := range s.OpenTabs {
-		if s.OpenTabs[i42] != o.OpenTabs[i42] {
+	for i36 := range s.OpenTabs {
+		if s.OpenTabs[i36] != o.OpenTabs[i36] {
 			return false
 		}
 	}
@@ -832,8 +797,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.UserMacros) != len(o.UserMacros) {
 		return false
 	}
-	for i43 := range s.UserMacros {
-		if !snapEqualMacroSpec(s.UserMacros[i43], o.UserMacros[i43]) {
+	for i37 := range s.UserMacros {
+		if !snapEqualMacroSpec(s.UserMacros[i37], o.UserMacros[i37]) {
 			return false
 		}
 	}
@@ -843,8 +808,31 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ThemeRectOv) != len(o.ThemeRectOv) {
 		return false
 	}
-	for k44, v45 := range s.ThemeRectOv {
-		ov46, ok47 := o.ThemeRectOv[k44]
+	for k38, v39 := range s.ThemeRectOv {
+		ov40, ok41 := o.ThemeRectOv[k38]
+		if !ok41 {
+			return false
+		}
+		if (v39 == nil) != (ov40 == nil) {
+			return false
+		}
+		if len(v39) != len(ov40) {
+			return false
+		}
+		for k42, v43 := range v39 {
+			if ov40[k42] != v43 {
+				return false
+			}
+		}
+	}
+	if (s.ThemeRectRotations == nil) != (o.ThemeRectRotations == nil) {
+		return false
+	}
+	if len(s.ThemeRectRotations) != len(o.ThemeRectRotations) {
+		return false
+	}
+	for k44, v45 := range s.ThemeRectRotations {
+		ov46, ok47 := o.ThemeRectRotations[k44]
 		if !ok47 {
 			return false
 		}
@@ -860,37 +848,14 @@ func (s *Settings) equal(o *Settings) bool {
 			}
 		}
 	}
-	if (s.ThemeRectRotations == nil) != (o.ThemeRectRotations == nil) {
-		return false
-	}
-	if len(s.ThemeRectRotations) != len(o.ThemeRectRotations) {
-		return false
-	}
-	for k50, v51 := range s.ThemeRectRotations {
-		ov52, ok53 := o.ThemeRectRotations[k50]
-		if !ok53 {
-			return false
-		}
-		if (v51 == nil) != (ov52 == nil) {
-			return false
-		}
-		if len(v51) != len(ov52) {
-			return false
-		}
-		for k54, v55 := range v51 {
-			if ov52[k54] != v55 {
-				return false
-			}
-		}
-	}
 	if (s.ClassicLayout == nil) != (o.ClassicLayout == nil) {
 		return false
 	}
 	if len(s.ClassicLayout) != len(o.ClassicLayout) {
 		return false
 	}
-	for k56, v57 := range s.ClassicLayout {
-		if o.ClassicLayout[k56] != v57 {
+	for k50, v51 := range s.ClassicLayout {
+		if o.ClassicLayout[k50] != v51 {
 			return false
 		}
 	}
@@ -900,12 +865,12 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.LayoutProfiles) != len(o.LayoutProfiles) {
 		return false
 	}
-	for k58, v59 := range s.LayoutProfiles {
-		ov60, ok61 := o.LayoutProfiles[k58]
-		if !ok61 {
+	for k52, v53 := range s.LayoutProfiles {
+		ov54, ok55 := o.LayoutProfiles[k52]
+		if !ok55 {
 			return false
 		}
-		if !snapEqualLayoutProfile(v59, ov60) {
+		if !snapEqualLayoutProfile(v53, ov54) {
 			return false
 		}
 	}
@@ -918,8 +883,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ClassicAnchors) != len(o.ClassicAnchors) {
 		return false
 	}
-	for k62, v63 := range s.ClassicAnchors {
-		if o.ClassicAnchors[k62] != v63 {
+	for k56, v57 := range s.ClassicAnchors {
+		if o.ClassicAnchors[k56] != v57 {
 			return false
 		}
 	}
@@ -929,8 +894,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ClassicRotations) != len(o.ClassicRotations) {
 		return false
 	}
-	for k64, v65 := range s.ClassicRotations {
-		if o.ClassicRotations[k64] != v65 {
+	for k58, v59 := range s.ClassicRotations {
+		if o.ClassicRotations[k58] != v59 {
 			return false
 		}
 	}
@@ -1045,44 +1010,6 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.MasterListURL != o.MasterListURL {
 		return false
 	}
-	if (s.AssetTypes == nil) != (o.AssetTypes == nil) {
-		return false
-	}
-	if len(s.AssetTypes) != len(o.AssetTypes) {
-		return false
-	}
-	for k66, v67 := range s.AssetTypes {
-		ov68, ok69 := o.AssetTypes[k66]
-		if !ok69 {
-			return false
-		}
-		if !snapEqualAssetTypePrefs(v67, ov68) {
-			return false
-		}
-	}
-	if (s.LearnedFormats == nil) != (o.LearnedFormats == nil) {
-		return false
-	}
-	if len(s.LearnedFormats) != len(o.LearnedFormats) {
-		return false
-	}
-	for k70, v71 := range s.LearnedFormats {
-		ov72, ok73 := o.LearnedFormats[k70]
-		if !ok73 {
-			return false
-		}
-		if (v71 == nil) != (ov72 == nil) {
-			return false
-		}
-		if len(v71) != len(ov72) {
-			return false
-		}
-		for i74 := range v71 {
-			if v71[i74] != ov72[i74] {
-				return false
-			}
-		}
-	}
 	if s.Showname != o.Showname {
 		return false
 	}
@@ -1092,8 +1019,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ShownamePresets) != len(o.ShownamePresets) {
 		return false
 	}
-	for i75 := range s.ShownamePresets {
-		if s.ShownamePresets[i75] != o.ShownamePresets[i75] {
+	for i60 := range s.ShownamePresets {
+		if s.ShownamePresets[i60] != o.ShownamePresets[i60] {
 			return false
 		}
 	}
@@ -1103,8 +1030,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ShownameKeys) != len(o.ShownameKeys) {
 		return false
 	}
-	for k76, v77 := range s.ShownameKeys {
-		if o.ShownameKeys[k76] != v77 {
+	for k61, v62 := range s.ShownameKeys {
+		if o.ShownameKeys[k61] != v62 {
 			return false
 		}
 	}
@@ -1114,8 +1041,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ICPhraseKeys) != len(o.ICPhraseKeys) {
 		return false
 	}
-	for k78, v79 := range s.ICPhraseKeys {
-		if o.ICPhraseKeys[k78] != v79 {
+	for k63, v64 := range s.ICPhraseKeys {
+		if o.ICPhraseKeys[k63] != v64 {
 			return false
 		}
 	}
@@ -1125,8 +1052,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.MutedSFX) != len(o.MutedSFX) {
 		return false
 	}
-	for i80 := range s.MutedSFX {
-		if s.MutedSFX[i80] != o.MutedSFX[i80] {
+	for i65 := range s.MutedSFX {
+		if s.MutedSFX[i65] != o.MutedSFX[i65] {
 			return false
 		}
 	}
@@ -1136,8 +1063,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.SfxFavorites) != len(o.SfxFavorites) {
 		return false
 	}
-	for i81 := range s.SfxFavorites {
-		if s.SfxFavorites[i81] != o.SfxFavorites[i81] {
+	for i66 := range s.SfxFavorites {
+		if s.SfxFavorites[i66] != o.SfxFavorites[i66] {
 			return false
 		}
 	}
@@ -1147,8 +1074,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ModReasonTemplates) != len(o.ModReasonTemplates) {
 		return false
 	}
-	for i82 := range s.ModReasonTemplates {
-		if s.ModReasonTemplates[i82] != o.ModReasonTemplates[i82] {
+	for i67 := range s.ModReasonTemplates {
+		if s.ModReasonTemplates[i67] != o.ModReasonTemplates[i67] {
 			return false
 		}
 	}
@@ -1158,8 +1085,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ModDurations) != len(o.ModDurations) {
 		return false
 	}
-	for i83 := range s.ModDurations {
-		if s.ModDurations[i83] != o.ModDurations[i83] {
+	for i68 := range s.ModDurations {
+		if s.ModDurations[i68] != o.ModDurations[i68] {
 			return false
 		}
 	}
@@ -1169,8 +1096,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.BlipVols) != len(o.BlipVols) {
 		return false
 	}
-	for k84, v85 := range s.BlipVols {
-		if o.BlipVols[k84] != v85 {
+	for k69, v70 := range s.BlipVols {
+		if o.BlipVols[k69] != v70 {
 			return false
 		}
 	}
@@ -1180,19 +1107,19 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.EmoteFavs) != len(o.EmoteFavs) {
 		return false
 	}
-	for k86, v87 := range s.EmoteFavs {
-		ov88, ok89 := o.EmoteFavs[k86]
-		if !ok89 {
+	for k71, v72 := range s.EmoteFavs {
+		ov73, ok74 := o.EmoteFavs[k71]
+		if !ok74 {
 			return false
 		}
-		if (v87 == nil) != (ov88 == nil) {
+		if (v72 == nil) != (ov73 == nil) {
 			return false
 		}
-		if len(v87) != len(ov88) {
+		if len(v72) != len(ov73) {
 			return false
 		}
-		for i90 := range v87 {
-			if v87[i90] != ov88[i90] {
+		for i75 := range v72 {
+			if v72[i75] != ov73[i75] {
 				return false
 			}
 		}
@@ -1230,6 +1157,9 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.WardrobeNameAbove != o.WardrobeNameAbove {
 		return false
 	}
+	if s.WardrobeSingleClick != o.WardrobeSingleClick {
+		return false
+	}
 	if s.WardrobeAccentVal != o.WardrobeAccentVal {
 		return false
 	}
@@ -1251,25 +1181,14 @@ func (s *Settings) equal(o *Settings) bool {
 	if s.CallwordsOOC != o.CallwordsOOC {
 		return false
 	}
-	if (s.ExtProfiles == nil) != (o.ExtProfiles == nil) {
-		return false
-	}
-	if len(s.ExtProfiles) != len(o.ExtProfiles) {
-		return false
-	}
-	for k91, v92 := range s.ExtProfiles {
-		if o.ExtProfiles[k91] != v92 {
-			return false
-		}
-	}
 	if (s.LocalAssetsPaths == nil) != (o.LocalAssetsPaths == nil) {
 		return false
 	}
 	if len(s.LocalAssetsPaths) != len(o.LocalAssetsPaths) {
 		return false
 	}
-	for i93 := range s.LocalAssetsPaths {
-		if s.LocalAssetsPaths[i93] != o.LocalAssetsPaths[i93] {
+	for i76 := range s.LocalAssetsPaths {
+		if s.LocalAssetsPaths[i76] != o.LocalAssetsPaths[i76] {
 			return false
 		}
 	}
@@ -1279,8 +1198,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.Favorites) != len(o.Favorites) {
 		return false
 	}
-	for i94 := range s.Favorites {
-		if s.Favorites[i94] != o.Favorites[i94] {
+	for i77 := range s.Favorites {
+		if s.Favorites[i77] != o.Favorites[i77] {
 			return false
 		}
 	}
@@ -1290,8 +1209,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.Wardrobe) != len(o.Wardrobe) {
 		return false
 	}
-	for i95 := range s.Wardrobe {
-		if s.Wardrobe[i95] != o.Wardrobe[i95] {
+	for i78 := range s.Wardrobe {
+		if s.Wardrobe[i78] != o.Wardrobe[i78] {
 			return false
 		}
 	}
@@ -1307,8 +1226,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.HiddenPanelIDs) != len(o.HiddenPanelIDs) {
 		return false
 	}
-	for i96 := range s.HiddenPanelIDs {
-		if s.HiddenPanelIDs[i96] != o.HiddenPanelIDs[i96] {
+	for i79 := range s.HiddenPanelIDs {
+		if s.HiddenPanelIDs[i79] != o.HiddenPanelIDs[i79] {
 			return false
 		}
 	}
@@ -1318,12 +1237,12 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.ServerWarm) != len(o.ServerWarm) {
 		return false
 	}
-	for k97, v98 := range s.ServerWarm {
-		ov99, ok100 := o.ServerWarm[k97]
-		if !ok100 {
+	for k80, v81 := range s.ServerWarm {
+		ov82, ok83 := o.ServerWarm[k80]
+		if !ok83 {
 			return false
 		}
-		if !snapEqualServerWarmInfo(v98, ov99) {
+		if !snapEqualServerWarmInfo(v81, ov82) {
 			return false
 		}
 	}
@@ -1333,8 +1252,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.CallWordList) != len(o.CallWordList) {
 		return false
 	}
-	for i101 := range s.CallWordList {
-		if s.CallWordList[i101] != o.CallWordList[i101] {
+	for i84 := range s.CallWordList {
+		if s.CallWordList[i84] != o.CallWordList[i84] {
 			return false
 		}
 	}
@@ -1344,8 +1263,8 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.HotkeyMap) != len(o.HotkeyMap) {
 		return false
 	}
-	for k102, v103 := range s.HotkeyMap {
-		if o.HotkeyMap[k102] != v103 {
+	for k85, v86 := range s.HotkeyMap {
+		if o.HotkeyMap[k85] != v86 {
 			return false
 		}
 	}
@@ -1496,24 +1415,12 @@ func (s *Settings) equal(o *Settings) bool {
 	if len(s.MusicHosts) != len(o.MusicHosts) {
 		return false
 	}
-	for i104 := range s.MusicHosts {
-		if s.MusicHosts[i104] != o.MusicHosts[i104] {
+	for i87 := range s.MusicHosts {
+		if s.MusicHosts[i87] != o.MusicHosts[i87] {
 			return false
 		}
 	}
 	return true
-}
-
-func snapCloneAssetTypePrefs(src AssetTypePrefs) AssetTypePrefs {
-	var dst AssetTypePrefs
-	dst = src
-	if src.FormatOrder != nil {
-		dst.FormatOrder = make([]string, len(src.FormatOrder))
-		copy(dst.FormatOrder, src.FormatOrder)
-	} else {
-		dst.FormatOrder = nil
-	}
-	return dst
 }
 
 func snapCloneLayoutProfile(src LayoutProfile) LayoutProfile {
@@ -1521,16 +1428,16 @@ func snapCloneLayoutProfile(src LayoutProfile) LayoutProfile {
 	dst = src
 	if src.Classic != nil {
 		dst.Classic = make(map[string][4]float64, len(src.Classic))
-		for k105, v106 := range src.Classic {
-			dst.Classic[k105] = v106
+		for k88, v89 := range src.Classic {
+			dst.Classic[k88] = v89
 		}
 	} else {
 		dst.Classic = nil
 	}
 	if src.Anchors != nil {
 		dst.Anchors = make(map[string]ClassicAnchor, len(src.Anchors))
-		for k107, v108 := range src.Anchors {
-			dst.Anchors[k107] = v108
+		for k90, v91 := range src.Anchors {
+			dst.Anchors[k90] = v91
 		}
 	} else {
 		dst.Anchors = nil
@@ -1543,8 +1450,8 @@ func snapCloneLayoutProfile(src LayoutProfile) LayoutProfile {
 	}
 	if src.Rotations != nil {
 		dst.Rotations = make(map[string]uint8, len(src.Rotations))
-		for k109, v110 := range src.Rotations {
-			dst.Rotations[k109] = v110
+		for k92, v93 := range src.Rotations {
+			dst.Rotations[k92] = v93
 		}
 	} else {
 		dst.Rotations = nil
@@ -1581,24 +1488,24 @@ func snapCloneServerWarmInfo(src ServerWarmInfo) ServerWarmInfo {
 	}
 	if src.FavBackgroundFolder != nil {
 		dst.FavBackgroundFolder = make(map[string]string, len(src.FavBackgroundFolder))
-		for k111, v112 := range src.FavBackgroundFolder {
-			dst.FavBackgroundFolder[k111] = v112
+		for k94, v95 := range src.FavBackgroundFolder {
+			dst.FavBackgroundFolder[k94] = v95
 		}
 	} else {
 		dst.FavBackgroundFolder = nil
 	}
 	if src.CharKeys != nil {
 		dst.CharKeys = make(map[string]string, len(src.CharKeys))
-		for k113, v114 := range src.CharKeys {
-			dst.CharKeys[k113] = v114
+		for k96, v97 := range src.CharKeys {
+			dst.CharKeys[k96] = v97
 		}
 	} else {
 		dst.CharKeys = nil
 	}
 	if src.WardrobeFolder != nil {
 		dst.WardrobeFolder = make(map[string]string, len(src.WardrobeFolder))
-		for k115, v116 := range src.WardrobeFolder {
-			dst.WardrobeFolder[k115] = v116
+		for k98, v99 := range src.WardrobeFolder {
+			dst.WardrobeFolder[k98] = v99
 		}
 	} else {
 		dst.WardrobeFolder = nil
@@ -1660,24 +1567,6 @@ func snapCloneServerWarmInfo(src ServerWarmInfo) ServerWarmInfo {
 	return dst
 }
 
-func snapEqualAssetTypePrefs(a, b AssetTypePrefs) bool {
-	if (a.FormatOrder == nil) != (b.FormatOrder == nil) {
-		return false
-	}
-	if len(a.FormatOrder) != len(b.FormatOrder) {
-		return false
-	}
-	for i117 := range a.FormatOrder {
-		if a.FormatOrder[i117] != b.FormatOrder[i117] {
-			return false
-		}
-	}
-	if a.FallbacksEnabled != b.FallbacksEnabled {
-		return false
-	}
-	return true
-}
-
 func snapEqualLayoutProfile(a, b LayoutProfile) bool {
 	if (a.Classic == nil) != (b.Classic == nil) {
 		return false
@@ -1685,8 +1574,8 @@ func snapEqualLayoutProfile(a, b LayoutProfile) bool {
 	if len(a.Classic) != len(b.Classic) {
 		return false
 	}
-	for k118, v119 := range a.Classic {
-		if b.Classic[k118] != v119 {
+	for k100, v101 := range a.Classic {
+		if b.Classic[k100] != v101 {
 			return false
 		}
 	}
@@ -1696,8 +1585,8 @@ func snapEqualLayoutProfile(a, b LayoutProfile) bool {
 	if len(a.Anchors) != len(b.Anchors) {
 		return false
 	}
-	for k120, v121 := range a.Anchors {
-		if b.Anchors[k120] != v121 {
+	for k102, v103 := range a.Anchors {
+		if b.Anchors[k102] != v103 {
 			return false
 		}
 	}
@@ -1707,8 +1596,8 @@ func snapEqualLayoutProfile(a, b LayoutProfile) bool {
 	if len(a.Hidden) != len(b.Hidden) {
 		return false
 	}
-	for i122 := range a.Hidden {
-		if a.Hidden[i122] != b.Hidden[i122] {
+	for i104 := range a.Hidden {
+		if a.Hidden[i104] != b.Hidden[i104] {
 			return false
 		}
 	}
@@ -1721,8 +1610,8 @@ func snapEqualLayoutProfile(a, b LayoutProfile) bool {
 	if len(a.Rotations) != len(b.Rotations) {
 		return false
 	}
-	for k123, v124 := range a.Rotations {
-		if b.Rotations[k123] != v124 {
+	for k105, v106 := range a.Rotations {
+		if b.Rotations[k105] != v106 {
 			return false
 		}
 	}
@@ -1742,8 +1631,8 @@ func snapEqualMacroSpec(a, b MacroSpec) bool {
 	if len(a.Lines) != len(b.Lines) {
 		return false
 	}
-	for i125 := range a.Lines {
-		if a.Lines[i125] != b.Lines[i125] {
+	for i107 := range a.Lines {
+		if a.Lines[i107] != b.Lines[i107] {
 			return false
 		}
 	}
@@ -1763,8 +1652,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Wardrobe) != len(b.Wardrobe) {
 		return false
 	}
-	for i126 := range a.Wardrobe {
-		if a.Wardrobe[i126] != b.Wardrobe[i126] {
+	for i108 := range a.Wardrobe {
+		if a.Wardrobe[i108] != b.Wardrobe[i108] {
 			return false
 		}
 	}
@@ -1774,8 +1663,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.FavBackgrounds) != len(b.FavBackgrounds) {
 		return false
 	}
-	for i127 := range a.FavBackgrounds {
-		if a.FavBackgrounds[i127] != b.FavBackgrounds[i127] {
+	for i109 := range a.FavBackgrounds {
+		if a.FavBackgrounds[i109] != b.FavBackgrounds[i109] {
 			return false
 		}
 	}
@@ -1785,8 +1674,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.FavBackgroundFolder) != len(b.FavBackgroundFolder) {
 		return false
 	}
-	for k128, v129 := range a.FavBackgroundFolder {
-		if b.FavBackgroundFolder[k128] != v129 {
+	for k110, v111 := range a.FavBackgroundFolder {
+		if b.FavBackgroundFolder[k110] != v111 {
 			return false
 		}
 	}
@@ -1796,8 +1685,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.CharKeys) != len(b.CharKeys) {
 		return false
 	}
-	for k130, v131 := range a.CharKeys {
-		if b.CharKeys[k130] != v131 {
+	for k112, v113 := range a.CharKeys {
+		if b.CharKeys[k112] != v113 {
 			return false
 		}
 	}
@@ -1807,8 +1696,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.WardrobeFolder) != len(b.WardrobeFolder) {
 		return false
 	}
-	for k132, v133 := range a.WardrobeFolder {
-		if b.WardrobeFolder[k132] != v133 {
+	for k114, v115 := range a.WardrobeFolder {
+		if b.WardrobeFolder[k114] != v115 {
 			return false
 		}
 	}
@@ -1821,8 +1710,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.AssetHosts) != len(b.AssetHosts) {
 		return false
 	}
-	for i134 := range a.AssetHosts {
-		if a.AssetHosts[i134] != b.AssetHosts[i134] {
+	for i116 := range a.AssetHosts {
+		if a.AssetHosts[i116] != b.AssetHosts[i116] {
 			return false
 		}
 	}
@@ -1867,8 +1756,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Chars) != len(b.Chars) {
 		return false
 	}
-	for i135 := range a.Chars {
-		if a.Chars[i135] != b.Chars[i135] {
+	for i117 := range a.Chars {
+		if a.Chars[i117] != b.Chars[i117] {
 			return false
 		}
 	}
@@ -1878,8 +1767,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Backgrounds) != len(b.Backgrounds) {
 		return false
 	}
-	for i136 := range a.Backgrounds {
-		if a.Backgrounds[i136] != b.Backgrounds[i136] {
+	for i118 := range a.Backgrounds {
+		if a.Backgrounds[i118] != b.Backgrounds[i118] {
 			return false
 		}
 	}
@@ -1889,8 +1778,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Friends) != len(b.Friends) {
 		return false
 	}
-	for i137 := range a.Friends {
-		if a.Friends[i137] != b.Friends[i137] {
+	for i119 := range a.Friends {
+		if a.Friends[i119] != b.Friends[i119] {
 			return false
 		}
 	}
@@ -1900,8 +1789,8 @@ func snapEqualServerWarmInfo(a, b ServerWarmInfo) bool {
 	if len(a.Ignored) != len(b.Ignored) {
 		return false
 	}
-	for i138 := range a.Ignored {
-		if a.Ignored[i138] != b.Ignored[i138] {
+	for i120 := range a.Ignored {
+		if a.Ignored[i120] != b.Ignored[i120] {
 			return false
 		}
 	}

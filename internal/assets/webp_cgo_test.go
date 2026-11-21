@@ -3,6 +3,7 @@
 package assets
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -85,8 +86,7 @@ func TestDecodeWebPAnimatedFirstFrameOnly(t *testing.T) {
 // frame-by-frame instead of being replaced by a full set. Statics deliver
 // exactly once.
 func TestProgressiveAnimatedDecode(t *testing.T) {
-	pool := NewDecoderPool(1)
-	defer pool.Close()
+	pool := NewDecoder()
 
 	type result struct {
 		frames  int
@@ -96,29 +96,18 @@ func TestProgressiveAnimatedDecode(t *testing.T) {
 		source  int
 	}
 	deliver := func(data []byte) []result {
-		out := make(chan result, 8)
-		done := make(chan struct{})
-		pool.Submit(DecodeRequest{
+		var rs []result
+		pool.Decode(DecodeRequest{
 			URL: "x", Data: data, Type: AssetTypeCharSprite, PlayAnimations: true,
 			OnDone: func(_ string, d *Decoded, err error) {
 				if err != nil {
 					t.Errorf("decode: %v", err)
-					close(done)
 					return
 				}
-				out <- result{frames: len(d.Frames), partial: d.Partial, stream: d.Stream, offset: d.FrameOffset, source: d.SourceFrames}
-				if !d.Partial {
-					close(done) // the finalize is always the last delivery
-				}
+				rs = append(rs, result{frames: len(d.Frames), partial: d.Partial, stream: d.Stream, offset: d.FrameOffset, source: d.SourceFrames})
 				d.Release()
 			},
 		})
-		<-done
-		close(out)
-		var rs []result
-		for r := range out {
-			rs = append(rs, r)
-		}
 		return rs
 	}
 
@@ -211,5 +200,62 @@ func BenchmarkDecodeWebPAnim_256x192_3f(b *testing.B) {
 			b.Fatal(err)
 		}
 		d.Release()
+	}
+}
+
+// oneFrameAnimatedWebP wraps a still lossy WebP in the animation chunks, as encoders that keep the ANIM flag for a single
+// frame write it; webpmux and img2webp both collapse one frame to a still, so the fixture is built here.
+func oneFrameAnimatedWebP(t *testing.T, still []byte, w, h int) []byte {
+	t.Helper()
+	const (
+		riffHeader   = 12
+		vp8xAnimFlag = 0x02
+		frameMs      = 150
+	)
+	if string(still[riffHeader:riffHeader+4]) != "VP8 " {
+		t.Fatalf("fixture chunk %q, want a lossy VP8 still", still[riffHeader:riffHeader+4])
+	}
+	frame := still[riffHeader:] // the VP8 chunk, header and padding included
+	u24 := func(b []byte, v int) []byte { return append(b, byte(v), byte(v>>8), byte(v>>16)) }
+	chunk := func(b []byte, kind string, body []byte) []byte {
+		b = append(b, kind...)
+		b = binary.LittleEndian.AppendUint32(b, uint32(len(body)))
+		b = append(b, body...)
+		if len(body)%2 == 1 {
+			b = append(b, 0)
+		}
+		return b
+	}
+	vp8x := u24(u24([]byte{vp8xAnimFlag, 0, 0, 0}, w-1), h-1)
+	anim := []byte{0, 0, 0, 0, 0, 0} // background colour, loop forever
+	anmf := u24(u24(u24(u24(u24(nil, 0), 0), w-1), h-1), frameMs)
+	anmf = append(append(anmf, 0), frame...)
+	body := chunk(chunk(chunk([]byte("WEBP"), "VP8X", vp8x), "ANIM", anim), "ANMF", anmf)
+	out := binary.LittleEndian.AppendUint32([]byte("RIFF"), uint32(len(body)))
+	return append(out, body...)
+}
+
+func TestAOneFrameAnimationDecodesToItsFrame(t *testing.T) {
+	const w, h = 256, 192
+	data := oneFrameAnimatedWebP(t, fixture(t, "sprite_256x192.webp"), w, h)
+	if Sniff(data) != FormatWebPAnim {
+		t.Fatalf("built %v, want an animated webp", Sniff(data))
+	}
+	var frames int
+	var final *Decoded
+	NewDecoder().Decode(DecodeRequest{
+		URL: "x", Data: data, Type: AssetTypeCharSprite, PlayAnimations: true,
+		OnDone: func(_ string, d *Decoded, err error) {
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			frames += len(d.Frames)
+			if !d.Partial {
+				final = d
+			}
+		},
+	})
+	if final == nil || frames != 1 || final.Width != w || final.Height != h {
+		t.Fatalf("delivered %d frames, final %+v; want one %dx%d frame and a final page", frames, final, w, h)
 	}
 }

@@ -1,6 +1,8 @@
 package assets
 
 import (
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
+
 	"context"
 	"image/color"
 	"net/http"
@@ -100,9 +102,9 @@ func TestFolderServesCharINI(t *testing.T) {
 		map[string]string{"characters/witch/char.ini": ini},
 	)
 
-	data, err := pr.rig.manager.FetchRaw(context.Background(), pr.base("characters/witch/char.ini"))
+	data, err := Raw(context.Background(), pr.rig.manager.Media(), pr.base("characters/witch/char.ini"))
 	if err != nil {
-		t.Fatalf("FetchRaw: %v", err)
+		t.Fatalf("Raw: %v", err)
 	}
 	if string(data) != ini {
 		t.Errorf("got %q, want the folder's ini", data)
@@ -122,14 +124,14 @@ func TestCachedServerCopyBeatsTheFolders(t *testing.T) {
 		map[string]string{},
 	)
 	url := pr.base("characters/witch/char.ini")
-	if _, err := pr.rig.manager.FetchRaw(context.Background(), url); err != nil {
+	if _, err := Raw(context.Background(), pr.rig.manager.Media(), url); err != nil {
 		t.Fatalf("seeding the server copy: %v", err)
 	}
 	writePack(t, pr.dir, map[string]string{"characters/witch/char.ini": "FOLDER INI"})
 
-	data, err := pr.rig.manager.FetchRaw(context.Background(), url)
+	data, err := Raw(context.Background(), pr.rig.manager.Media(), url)
 	if err != nil {
-		t.Fatalf("FetchRaw: %v", err)
+		t.Fatalf("Raw: %v", err)
 	}
 	if string(data) != "SERVER INI" {
 		t.Errorf("got %q, want the cached server copy", data)
@@ -142,9 +144,9 @@ func TestFolderMissFallsThroughToServer(t *testing.T) {
 		map[string]string{"characters/witch/char.ini": "PACK INI"},
 	)
 
-	data, err := pr.rig.manager.FetchRaw(context.Background(), pr.base("characters/other/char.ini"))
+	data, err := Raw(context.Background(), pr.rig.manager.Media(), pr.base("characters/other/char.ini"))
 	if err != nil {
-		t.Fatalf("FetchRaw: %v", err)
+		t.Fatalf("Raw: %v", err)
 	}
 	if string(data) != "SERVER INI" {
 		t.Errorf("got %q, want the server's copy", data)
@@ -163,8 +165,8 @@ func TestFolderTextWritesNoServerKeyedCache(t *testing.T) {
 	)
 	url := pr.base("characters/witch/char.ini")
 
-	if _, err := pr.rig.manager.FetchRaw(context.Background(), url); err != nil {
-		t.Fatalf("FetchRaw: %v", err)
+	if _, err := Raw(context.Background(), pr.rig.manager.Media(), url); err != nil {
+		t.Fatalf("Raw: %v", err)
 	}
 	if _, ok := pr.rig.manager.t2.Get(url); ok {
 		t.Error("folder bytes were cached in memory under the server's URL")
@@ -179,14 +181,11 @@ func TestFolderTextNeverTeachesLearnedFormats(t *testing.T) {
 		map[string]string{},
 		map[string]string{"characters/witch/char.ini": "PACK INI"},
 	)
-	host := HostOf(pr.origin)
-	before := pr.rig.manager.resolver.LearnedList(host, AssetTypeCharSprite)
-
-	if _, err := pr.rig.manager.FetchRaw(context.Background(), pr.base("characters/witch/char.ini")); err != nil {
-		t.Fatalf("FetchRaw: %v", err)
+	if _, err := Raw(context.Background(), pr.rig.manager.Media(), pr.base("characters/witch/char.ini")); err != nil {
+		t.Fatalf("Raw: %v", err)
 	}
-	if after := pr.rig.manager.resolver.LearnedList(host, AssetTypeCharSprite); len(after) != len(before) {
-		t.Errorf("the folder taught the server host a format: %v -> %v", before, after)
+	if n := pr.rig.manager.LearnedHosts(); n != 0 {
+		t.Errorf("the folder taught %d hosts a format", n)
 	}
 }
 
@@ -194,13 +193,13 @@ func TestFolderTextNeverTeachesLearnedFormats(t *testing.T) {
 // current host's format order from the folder author's conventions.
 func TestFolderNeverAnswersTheServerFormatList(t *testing.T) {
 	pr := newPackRig(t,
-		map[string]string{"/base/" + ManifestFileName: "SERVER MANIFEST"},
-		map[string]string{ManifestFileName: "PACK MANIFEST"},
+		map[string]string{"/base/" + media.ManifestFile: "SERVER MANIFEST"},
+		map[string]string{media.ManifestFile: "PACK MANIFEST"},
 	)
 
-	data, err := pr.rig.manager.FetchRaw(context.Background(), pr.base(ManifestFileName))
+	data, err := Raw(context.Background(), pr.rig.manager.Media(), pr.base(media.ManifestFile))
 	if err != nil {
-		t.Fatalf("FetchRaw(%s): %v", ManifestFileName, err)
+		t.Fatalf("Raw(%s): %v", media.ManifestFile, err)
 	}
 	if string(data) != "SERVER MANIFEST" {
 		t.Errorf("got %q — the folder answered for the server's own format list", data)
@@ -214,7 +213,7 @@ func TestPrefetchRawSkipsWhatTheFolderHolds(t *testing.T) {
 		map[string]string{"characters/witch/char.ini": "PACK INI"},
 	)
 
-	pr.rig.manager.PrefetchRaw(pr.base("characters/witch/char.ini"), network.PriorityLow)
+	pr.rig.manager.Media().Get(RawKey(pr.base("characters/witch/char.ini")), media.Later, media.Quiet)
 
 	if awaitNetFetches(t, pr.rig.manager, 1) {
 		t.Error("the warm asked the server for a file the folder holds")
@@ -227,7 +226,7 @@ func TestPrefetchRawStillWarmsWhatTheFolderLacks(t *testing.T) {
 		map[string]string{"characters/witch/char.ini": "PACK INI"},
 	)
 
-	pr.rig.manager.PrefetchRaw(pr.base("characters/other/char.ini"), network.PriorityLow)
+	pr.rig.manager.Media().Get(RawKey(pr.base("characters/other/char.ini")), media.Later, media.Quiet)
 
 	if !awaitNetFetches(t, pr.rig.manager, 1) {
 		t.Error("the server was never asked — mounting a folder disarmed the warm for everything else")
@@ -242,7 +241,7 @@ func TestFileDroppedInAfterAMissIsFoundOnRecheck(t *testing.T) {
 		map[string]string{"characters/witch/(a)normal.png": "x"},
 	)
 	url := pr.base("characters/witch/char.ini")
-	if _, err := pr.rig.manager.FetchRaw(context.Background(), url); err == nil {
+	if _, err := Raw(context.Background(), pr.rig.manager.Media(), url); err == nil {
 		t.Fatal("found a char.ini that is not there yet")
 	}
 	asked := pr.hitsFor("/base/characters/witch/char.ini")
@@ -254,7 +253,7 @@ func TestFileDroppedInAfterAMissIsFoundOnRecheck(t *testing.T) {
 	}
 	pr.rig.manager.RecheckFolders()
 
-	data, err := pr.rig.manager.FetchRaw(context.Background(), url)
+	data, err := Raw(context.Background(), pr.rig.manager.Media(), url)
 	if err != nil || string(data) != "DROPPED IN" {
 		t.Fatalf("after RecheckFolders: %q, %v", data, err)
 	}
@@ -268,15 +267,15 @@ func TestFileDroppedInAfterAMissIsFoundOnRecheck(t *testing.T) {
 func TestFolderSpriteIsFoundInAFormatTheServerDoesNotList(t *testing.T) {
 	const spritePx = 4
 	pr := newPackRig(t,
-		map[string]string{"/base/" + ManifestFileName: `{"emote_extensions": [".webp"]}`},
+		map[string]string{"/base/" + media.ManifestFile: `{"emote_extensions": [".webp"]}`},
 		map[string]string{"characters/witch/normal.png": string(encodePNG(t, spritePx, spritePx, color.White))},
 	)
 	if _, err := pr.rig.manager.FetchManifest(context.Background(), pr.origin); err != nil {
 		t.Fatal(err)
 	}
 	base := pr.base("characters/witch/normal")
-	pr.rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	if d := nextDecoded(t, pr.rig.manager, base); d.Err != nil {
+	pr.rig.manager.Media().Get(ChainKey(base, AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
+	if d := nextDecoded(t, pr.rig, base); d.Err != nil {
 		t.Fatalf("the folder's .png was not used: %v", d.Err)
 	}
 	for _, ext := range []string{".webp", ".png"} {
@@ -286,20 +285,25 @@ func TestFolderSpriteIsFoundInAFormatTheServerDoesNotList(t *testing.T) {
 	}
 }
 
-func TestFetchRawWithoutFoldersAllocatesNoMore(t *testing.T) {
+// TestRawAnswersFromMemoryBeforeTheFolders: a server copy already in memory answers before the player's folders are
+// read, as memory comes first in the lookup order.
+func TestRawAnswersFromMemoryBeforeTheFolders(t *testing.T) {
 	pr := newPackRig(t,
 		map[string]string{"/base/characters/witch/char.ini": "SERVER INI"},
-		map[string]string{},
+		map[string]string{"characters/witch/char.ini": "FOLDER INI"},
 	)
 	url := pr.base("characters/witch/char.ini")
 	ctx := context.Background()
-	if _, err := pr.rig.manager.FetchRaw(ctx, url); err != nil {
-		t.Fatalf("priming: %v", err)
-	}
-	withFolders := testing.AllocsPerRun(100, func() { _, _ = pr.rig.manager.FetchRaw(ctx, url) })
 	pr.rig.manager.SetFolders(nil, nil)
-	without := testing.AllocsPerRun(100, func() { _, _ = pr.rig.manager.FetchRaw(ctx, url) })
-	if withFolders > without {
-		t.Errorf("a memory hit allocates %v with folders vs %v without: the cache is answered first", withFolders, without)
+	if data, err := Raw(ctx, pr.rig.manager.Media(), url); err != nil || string(data) != "SERVER INI" {
+		t.Fatalf("priming from the server: %q, %v", data, err)
+	}
+	pr.rig.manager.SetFolders([]string{pr.dir}, []string{pr.origin})
+	data, err := Raw(ctx, pr.rig.manager.Media(), url)
+	if err != nil || string(data) != "SERVER INI" {
+		t.Fatalf("got %q, %v; want the copy already in memory", data, err)
+	}
+	if n := pr.rig.manager.Stats().MountFetches; n != 0 {
+		t.Fatalf("the folders were read %d time(s) for a file memory held", n)
 	}
 }

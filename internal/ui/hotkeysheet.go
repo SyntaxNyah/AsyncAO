@@ -57,7 +57,7 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 		{"F1", "show / hide this list"},
 		{"F3", "performance HUD"},
 		{"F8", "Debug panel (diagnostics)"},
-		{"Esc", "close menus / exit theater"},
+		{"Esc", "close menus"},
 		{"Ctrl+wheel", "resize text · zoom the stage"},
 	} {
 		out = append(out, hkEntry{key: fx.key, label: fx.label})

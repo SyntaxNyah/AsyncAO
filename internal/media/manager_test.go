@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -106,7 +107,7 @@ type fakeFormat struct {
 	measured int64
 }
 
-func (f *fakeFormat) Decode(_ Key, _ Hit, b []byte) (any, error) {
+func (f *fakeFormat) Decode(_ Key, _ Hit, b []byte, _ func(any)) (any, error) {
 	f.started.Add(1)
 	if f.hold != nil {
 		<-f.hold
@@ -385,7 +386,7 @@ func TestMainThreadResultsWaitForFinish(t *testing.T) {
 	var got any
 	deadline := time.Now().Add(testTimeout)
 	for got == nil && time.Now().Before(deadline) {
-		m.TakeResults(func(_ *Asset, r any) { got = r })
+		m.TakeResults(func(_ *Asset, r any, _ bool) { got = r })
 		time.Sleep(time.Millisecond)
 	}
 	if got != "pixels" {
@@ -464,9 +465,9 @@ func TestLoadWaitsOffMainAndRefusesOnMain(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
-	got, err := m.Load(ctx, image("a"), Now)
-	if err != nil || got != "x" {
-		t.Fatalf("got %v err %v", got, err)
+	a, err := m.Load(ctx, image("a"), Now, 0)
+	if err != nil || a.Result() != "x" {
+		t.Fatalf("got %v err %v", a.Result(), err)
 	}
 	onMain.Store(true)
 	defer func() {
@@ -474,7 +475,7 @@ func TestLoadWaitsOffMainAndRefusesOnMain(t *testing.T) {
 			t.Fatal("Load on the main thread did not panic")
 		}
 	}()
-	_, _ = m.Load(ctx, image("a"), Now)
+	_, _ = m.Load(ctx, image("a"), Now, 0)
 }
 
 // Every request ends in one final state, whatever mix of paths it takes; a hang here would freeze the wait gate.
@@ -514,5 +515,59 @@ func TestEveryRequestEnds(t *testing.T) {
 		if s := a.State(); s == Searching || s == Decoding {
 			t.Fatalf("%q ended in state %d", k.Path, s)
 		}
+	}
+}
+
+// pagingFormat hands two early pages to the main thread, then returns the last one.
+type pagingFormat struct{}
+
+func (pagingFormat) Decode(_ Key, _ Hit, b []byte, page func(any)) (any, error) {
+	page("first")
+	page("second")
+	return string(b), nil
+}
+
+func (pagingFormat) OnMainThread() bool { return true }
+
+// A result can arrive in pages: early ones in order, then the final one, each waking the main thread.
+func TestResultPagesArriveInOrderBeforeTheFinal(t *testing.T) {
+	src := newFakeSource("memory")
+	src.put("a", []byte("last"))
+	compute := NewPool("compute", testWorkers, 1)
+	t.Cleanup(compute.Close)
+	var woken atomic.Int64
+	m := NewManager(Config{
+		Chains:     map[Place]*Chain{PlaceServer: NewChain(Entry{Source: src})},
+		Formats:    map[Kind]Format{KindImage: pagingFormat{}},
+		Candidates: oneFile,
+		Compute:    compute,
+		Delivered:  func() { woken.Add(1) },
+	})
+	t.Cleanup(m.Close)
+
+	a := m.Get(image("a"), Now, 0)
+	type got struct {
+		result any
+		final  bool
+	}
+	var all []got
+	deadline := time.Now().Add(testTimeout)
+	for (len(all) == 0 || !all[len(all)-1].final) && time.Now().Before(deadline) {
+		m.TakeResults(func(_ *Asset, r any, final bool) { all = append(all, got{r, final}) })
+		time.Sleep(time.Millisecond)
+	}
+	want := []got{{"first", false}, {"second", false}, {"last", true}}
+	if !slices.Equal(all, want) {
+		t.Fatalf("results %v, want %v", all, want)
+	}
+	if n := woken.Load(); n != int64(len(want)) {
+		t.Errorf("the main thread was woken %d times, want %d", n, len(want))
+	}
+	if a.Ready() {
+		t.Fatal("a page finished the Asset")
+	}
+	m.Finish(a, "texture")
+	if !a.Ready() {
+		t.Fatal("Finish after the final page didn't finish the Asset")
 	}
 }

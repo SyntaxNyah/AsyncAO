@@ -12,7 +12,8 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -174,7 +175,7 @@ func (a *App) overlayRosterFetchOne(key, folder string) {
 		if manifestURL != "" && mgr != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), overlayFetchTimeout)
 			// Layered: a pack in the user's own folders ships its effects.ini beside its art.
-			if data, ferr := mgr.FetchRaw(ctx, manifestURL); ferr == nil {
+			if data, ferr := assets.Raw(ctx, mgr.Media(), manifestURL); ferr == nil {
 				if remote, perr := theme.ParseOverlayFX(bytes.NewReader(data)); perr == nil {
 					remoteNames = theme.OverlayFXNames(remote)
 					// Last in the property pass: a manifest beside the art is the most specific file in the ladder.
@@ -353,7 +354,7 @@ func (a *App) overlayResolve(name, folder string) (courtroom.OverlayResolved, bo
 	}
 	out.Base = cands[0]
 	// AssetType: Effect (the one network rung of the effect ladder)
-	a.d.Manager.PrefetchChain(cands[0], cands[1:], assets.AssetTypeEffect, network.PriorityHigh)
+	a.d.Manager.Media().Get(assets.ChainKey(cands[0], assets.AssetTypeEffect), media.Now, 0, cands[1:]...)
 	return out, true
 }
 
@@ -522,8 +523,9 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 		a.overlayDemandTheme(path, base)
 	}
 	if page, ok := a.cachedPage(&a.overlayIconPages, &a.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
-		// Through the shared cgo scratch, never &tr: a parameter's address heap-escapes on every cgo call.
-		c.cgoRect = tr
+		// Kept to its aspect like AO2's QIcon. Through the shared cgo scratch, never &tr: a parameter's address
+		// heap-escapes on every cgo call.
+		c.cgoRect = render.FitRect(tr, page.W, page.H)
 		c.copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
 		c.Fill(tr, overlayIconChipColor)

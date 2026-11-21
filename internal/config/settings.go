@@ -12,7 +12,6 @@ import (
 
 // Settings is the plain data snapshot of AssetPreferences.
 type Settings struct {
-	GlobalFallbacksEnabled bool                 `json:"globalFallbacksEnabled"`
 	PreferAnimated         bool                 `json:"preferAnimated"`
 	EmoteButtonImages      bool                 `json:"emoteButtonImages"`
 	SmoothScaling          bool                 `json:"smoothScaling"`
@@ -124,7 +123,6 @@ type Settings struct {
 	ModcallToast           bool                 `json:"modcallToast"`
 	CallwordSoundFile      string               `json:"callwordSoundFile"`
 	DebugOverlay           bool                 `json:"debugOverlay"`
-	AutoDetectFormats      bool                 `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                 `json:"themeLayout"`
 	ThemeFit               int                  `json:"themeFit"`
 	ThemeFitZoom           int                  `json:"themeFitZoom"`
@@ -233,8 +231,6 @@ type Settings struct {
 	TextStayMs               int                          `json:"textStayMs"`
 	ChatRateLimitMs          int                          `json:"chatRateLimitMs"`
 	MasterListURL            string                       `json:"masterListUrl"`
-	AssetTypes               map[string]AssetTypePrefs    `json:"assetTypes"`
-	LearnedFormats           map[string][]string          `json:"learnedFormats"`
 	Showname                 string                       `json:"showname"`
 	ShownamePresets          []string                     `json:"shownamePresets,omitempty"`
 	ShownameKeys             map[string]string            `json:"shownameKeys,omitempty"`
@@ -261,6 +257,8 @@ type Settings struct {
 	WardrobeIconPxVal int  `json:"wardrobeIconPx,omitempty"`
 	// WardrobeNameAbove puts a grid card's name above its icon instead of below.
 	WardrobeNameAbove bool `json:"wardrobeNameAbove,omitempty"`
+	// WardrobeSingleClick makes one click on a character wear it, as double-click does.
+	WardrobeSingleClick bool `json:"wardrobeSingleClick,omitempty"`
 	// WardrobeAccentVal is the Wardrobe's highlight colour, packed 0xRRGGBB; 0 is the default blue.
 	WardrobeAccentVal            int                       `json:"wardrobeAccent,omitempty"`
 	CustomChromeHex              [7]string                 `json:"customChrome"`
@@ -269,7 +267,6 @@ type Settings struct {
 	BlipRate                     int                       `json:"blipRate"`
 	BlipOnSpaces                 bool                      `json:"blipOnSpaces"`
 	CallwordsOOC                 bool                      `json:"callwordsOOC"`
-	ExtProfiles                  map[string]string         `json:"extProfiles,omitempty"`
 	LocalAssetsPaths             []string                  `json:"localAssetsPaths"`
 	Favorites                    []FavoriteServer          `json:"favorites"`
 	Wardrobe                     []string                  `json:"wardrobe"`

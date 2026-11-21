@@ -79,26 +79,22 @@ func TestParseMarkdownBlocks(t *testing.T) {
 	}
 }
 
-// TestShippedChangelog pins what the What's New screen shows: v2.1.0 is the first entry, no pre-release entry is left,
-// and no heading keeps markdown markup.
+// TestShippedChangelog pins what the What's New screen shows: the newest release is the first entry, and no heading
+// keeps markdown markup.
 func TestShippedChangelog(t *testing.T) {
+	const newest = "v2.1.1-rc.1 "
 	blocks := parseMarkdownBlocks(changelogMD)
 	first := ""
 	for _, b := range blocks {
-		if b.level == markdownSection {
-			if first == "" {
-				first = b.text
-			}
-			if strings.Contains(b.text, "-rc.") {
-				t.Errorf("pre-release entry %q is still in the changelog", b.text)
-			}
+		if b.level == markdownSection && first == "" {
+			first = b.text
 		}
 		if b.level > 0 && strings.ContainsAny(b.text, "*`") {
 			t.Errorf("heading %q keeps markup", b.text)
 		}
 	}
-	if !strings.HasPrefix(first, "v2.1.0 ") {
-		t.Errorf("first entry %q, want v2.1.0", first)
+	if !strings.HasPrefix(first, newest) {
+		t.Errorf("first entry %q, want %s", first, newest)
 	}
 }
 

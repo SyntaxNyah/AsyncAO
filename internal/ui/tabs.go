@@ -426,12 +426,14 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			// One name for both the entry's speaker and capLogLine's head marker, so the two can't drift.
 			speaker := icSpeakerName(ev.Message, force, nil)
 			line, _, bodyRuneStart, styles := icLogEntry(ev.Message, force, "", nil)
-			s.icLog = append(s.icLog, icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, pos: icPos(ev.Message), stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
-			if cap := a.icLogCapFor(); cap > 0 && len(s.icLog) > cap {
-				copy(s.icLog, s.icLog[len(s.icLog)-cap:])
-				s.icLog = s.icLog[:cap]
+			entry := icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, pos: icPos(ev.Message), stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart}
+			if appendICEntry(&s.icLog, entry) {
+				if cap := a.icLogCapFor(); cap > 0 && len(s.icLog) > cap {
+					copy(s.icLog, s.icLog[len(s.icLog)-cap:])
+					s.icLog = s.icLog[:cap]
+				}
+				s.icLogSeq++
 			}
-			s.icLogSeq++
 			t.unread++
 			if fr {
 				a.signalFriend(s.serverName, ev.Message) // alert even from a backgrounded server
@@ -449,6 +451,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		}
 		s.oocLog = appendCapped(s.oocLog, line, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
+		s.oocFromServer = appendCapped(s.oocFromServer, ev.FromServer, icLogCap)
 		s.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, line) // detailed transcript (opt-in), the PARKED tab's own file
 		// OOC doesn't bump unread by default because servers post auto-messages there. Opt in through Settings.
@@ -464,6 +467,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		modcallLine := "[MOD CALL] " + ev.Text
 		s.oocLog = appendCapped(s.oocLog, modcallLine, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line — no name tint
+		s.oocFromServer = appendCapped(s.oocFromServer, false, icLogCap)
 		s.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, modcallLine) // detailed transcript (opt-in), the PARKED tab's own file
 		t.unread++
@@ -492,6 +496,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		disconnectLine := "SERVER: disconnected: " + ev.Text
 		s.oocLog = appendCapped(s.oocLog, disconnectLine, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line
+		s.oocFromServer = appendCapped(s.oocFromServer, false, icLogCap)
 		s.oocSeq++
 		a.logDetailedOOC(s.serverName, s.logSession, disconnectLine) // detailed transcript (opt-in), the PARKED tab's own file
 	}
@@ -699,7 +704,7 @@ func (a *App) tabStripOrigin(def sdl.Rect, w, h int32) sdl.Rect {
 // Excludes gif export, replay and scene maker: they keep a.screen == Courtroom but rebuild the shared layout cache at
 // the export's own dimensions.
 func (a *App) tabStripThemeRect() (sdl.Rect, bool) {
-	if a.screen != ScreenCourtroom || a.room == nil || a.theaterOn || a.screenDispatchPreempted() {
+	if a.screen != ScreenCourtroom || a.room == nil || a.screenDispatchPreempted() {
 		return sdl.Rect{}, false
 	}
 	if !a.themeLay.valid || !a.d.Prefs.Load().ThemeLayoutOn {

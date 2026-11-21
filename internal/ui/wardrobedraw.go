@@ -70,7 +70,7 @@ const (
 	wardOutline    int32 = 2
 	wardGhostOffX  int32 = 12
 	wardGhostOffY  int32 = 8
-	// Corner radii.
+	// Corner radii, applied through wardRad; badges use a.wardRad(wardRadBadge) directly and stay round.
 	wardRadPanel int32 = 8
 	wardRadCard  int32 = 8
 	wardRadRow   int32 = 6
@@ -219,7 +219,7 @@ func (a *App) wardButton(r sdl.Rect, label string, look int) bool {
 	if hover {
 		fill = mixColor(fill, wcText, wardHoverMix)
 	}
-	c.RoundRect(r, wardRadRow, 1, fill, edge)
+	c.RoundRect(r, a.wardRad(wardRadRow), 1, fill, edge)
 	if label != "" {
 		c.LabelClipped(r.X+(r.W-min(c.TextWidth(label), r.W))/2, r.Y+(r.H-a.wardLineH())/2, r.W, label, ink)
 	}
@@ -248,10 +248,10 @@ func (a *App) wardSegment(r sdl.Rect, label string, on, enabled bool) bool {
 	case !enabled:
 		ink = wcFaint
 	case on:
-		c.FillRound(r, wardRadSeg, a.ward.accent)
+		c.FillRound(r, a.wardRad(wardRadSeg), a.ward.accent)
 		ink = wcAccentInk
 	case c.hovering(r):
-		c.FillRound(r, wardRadSeg, wcLine)
+		c.FillRound(r, a.wardRad(wardRadSeg), wcLine)
 	}
 	if label != "" {
 		c.Label(r.X+(r.W-c.TextWidth(label))/2, r.Y+(r.H-a.wardLineH())/2, label, ink)
@@ -261,7 +261,7 @@ func (a *App) wardSegment(r sdl.Rect, label string, on, enabled bool) bool {
 
 // wardPillGroup draws the inset track a run of segments sits in; inner is the segments' area.
 func (a *App) wardPillGroup(outer sdl.Rect) {
-	a.ctx.RoundRect(outer, wardRadPanel, 1, wcInset, wcLine)
+	a.ctx.RoundRect(outer, a.wardRad(wardRadPanel), 1, wcInset, wcLine)
 }
 
 // wardField is a rounded text field: the kit's field without its frame, inside a box that turns blue while focused.
@@ -271,7 +271,7 @@ func (a *App) wardField(id string, r sdl.Rect, value, placeholder string) (strin
 	if c.focusID == id {
 		edge = a.ward.accent
 	}
-	c.RoundRect(r, wardRadRow, 1, wcInset, edge)
+	c.RoundRect(r, a.wardRad(wardRadRow), 1, wcInset, edge)
 	return c.TextFieldBare(id, sdl.Rect{X: r.X + wardRowGap, Y: r.Y + (r.H-fieldH)/2, W: r.W - 2*wardRowGap, H: fieldH}, value, placeholder)
 }
 
@@ -289,7 +289,7 @@ func (a *App) drawWardrobePanel(w, h int32) {
 	a.updateWardrobeDrag()
 	chromeH := a.topChromeH()
 	panel := sdl.Rect{X: pad * 3, Y: chromeH + pad*3, W: w - pad*6, H: h - chromeH - pad*6}
-	c.RoundRect(panel, wardRadPanel, 1, wcPanel, a.ward.accent)
+	c.RoundRect(panel, a.wardRad(wardRadPanel), 1, wcPanel, a.ward.accent)
 	if ward.store == nil {
 		c.Heading(panel.X+pad, panel.Y+pad, "Wardrobe", wcText)
 		c.Label(panel.X+pad, panel.Y+wardBannerH, "Loading your Wardrobe…", wcDim)
@@ -331,7 +331,7 @@ func (a *App) drawWardrobePanel(w, h int32) {
 			label = a.wardrobeFolderName(ward.dragID)
 		}
 		g := sdl.Rect{X: c.mouseX + wardGhostOffX, Y: c.mouseY + wardGhostOffY, W: c.TextWidth(label) + 2*wardPanelPad + wardPanelPad, H: wardMenuRowH}
-		c.RoundRect(g, wardRadRow, 1, wcInset, a.ward.accent)
+		c.RoundRect(g, a.wardRad(wardRadRow), 1, wcInset, a.ward.accent)
 		c.Label(g.X+wardPanelPad, g.Y+(g.H-a.wardLineH())/2, label, a.ward.accent)
 	}
 }
@@ -403,7 +403,7 @@ func (a *App) wardIconSegment(r sdl.Rect, icon int, on bool) bool {
 	ink := wcDim
 	if on {
 		ink = wcText
-		c.FillRound(r, wardRadSeg, wcLine)
+		c.FillRound(r, a.wardRad(wardRadSeg), wcLine)
 	}
 	c.Icon(icon, sdl.Rect{X: r.X + (r.W-wardIconPx)/2, Y: r.Y + (r.H-wardIconPx)/2, W: wardIconPx, H: wardIconPx}, ink)
 	return hit
@@ -543,14 +543,14 @@ func (a *App) drawWardrobeDrawerRow(row wardrobeDrawerRow, r sdl.Rect) int32 {
 	dropping := canDrop && a.offerWardrobeDrop(r, wardDragFolder, f.ID)
 	switch {
 	case dropping:
-		c.RoundRect(r, wardRadRow, wardOutline, mixColor(wcDrawer, col, wardSelectedTint), col)
+		c.RoundRect(r, a.wardRad(wardRadRow), wardOutline, mixColor(wcDrawer, col, wardSelectedTint), col)
 	case active:
-		c.RoundRect(r, wardRadRow, 1, mixColor(wcDrawer, col, wardSelectedTint), mixColor(wcDrawer, col, wardSelectedEdge))
+		c.RoundRect(r, a.wardRad(wardRadRow), 1, mixColor(wcDrawer, col, wardSelectedTint), mixColor(wcDrawer, col, wardSelectedEdge))
 	case hover && !(ward.dragging && ward.dragKind == wardDragFolder && ward.dragID == f.ID):
-		c.FillRound(r, wardRadRow, wcHover)
+		c.FillRound(r, a.wardRad(wardRadRow), wcHover)
 	}
 	if ward.dragging && ward.dragKind == wardDragFolder && ward.dragID == f.ID {
-		c.FillRound(r, wardRadRow, sdl.Color{R: wcDrawer.R, G: wcDrawer.G, B: wcDrawer.B, A: wardDimAlpha})
+		c.FillRound(r, a.wardRad(wardRadRow), sdl.Color{R: wcDrawer.R, G: wcDrawer.G, B: wcDrawer.B, A: wardDimAlpha})
 	}
 	if !row.builtin && hover && c.dropped != "" {
 		a.importWardrobeImage(f.ID, c.dropped)
@@ -627,10 +627,10 @@ func (a *App) drawWardrobeRowTools(f config.WardrobeFolder, r sdl.Rect) bool {
 	if c.hovering(del) {
 		delFill = wcDangerLine
 	}
-	c.RoundRect(edit, wardRadSeg, 1, editFill, wcLineHi)
+	c.RoundRect(edit, a.wardRad(wardRadSeg), 1, editFill, wcLineHi)
 	c.Icon(iconShapePencil, iconIn(edit), wcSoft)
 	c.Tooltip(edit, "Name, icon and colour")
-	c.RoundRect(del, wardRadSeg, 1, delFill, wcDangerLine)
+	c.RoundRect(del, a.wardRad(wardRadSeg), 1, delFill, wcDangerLine)
 	c.Icon(iconShapeCross, iconIn(del), wcDangerSoft)
 	c.Tooltip(del, "Delete folder")
 	switch {
@@ -673,7 +673,7 @@ func (a *App) wardNameField(id string, r sdl.Rect, text *string, exceptID, okLab
 func (a *App) drawWardrobeRename(f config.WardrobeFolder, r sdl.Rect) int32 {
 	ward := &a.ward
 	box := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: wardFieldH + wardBtnH + 3*wardPanelPad}
-	a.ctx.RoundRect(box, wardRadRow, 1, wcCard, wcLineHi)
+	a.ctx.RoundRect(box, a.wardRad(wardRadRow), 1, wcCard, wcLineHi)
 	bottom, ok, cancel := a.wardNameField("wardrename", sdl.Rect{X: r.X + wardPanelPad, Y: r.Y + wardPanelPad, W: r.W - 2*wardPanelPad}, &ward.renameText, f.ID, "Save")
 	switch {
 	case ok:
@@ -692,7 +692,7 @@ func (a *App) drawWardrobeDeleteConfirm(f config.WardrobeFolder, count int, r sd
 	btnH := wardBtnH - wardPanelPad/2
 	h := a.wardLineH() + 3*btnH + 5*wardPanelPad
 	box := sdl.Rect{X: r.X + wardRowGap, Y: r.Y, W: r.W - 2*wardRowGap, H: h}
-	c.RoundRect(box, wardRadRow, 1, wcDangerBg, wcDangerLine)
+	c.RoundRect(box, a.wardRad(wardRadRow), 1, wcDangerBg, wcDangerLine)
 	in := sdl.Rect{X: box.X + wardPanelPad + wardRowGap, Y: box.Y + wardPanelPad + wardRowGap, W: box.W - 2*wardPanelPad - 2*wardRowGap}
 	c.LabelClipped(in.X, in.Y, in.W, "Delete "+f.Name+"?", wcText)
 	y := in.Y + a.wardLineH() + wardPanelPad
@@ -724,7 +724,7 @@ func (a *App) drawWardrobeLookPanel(f config.WardrobeFolder, r sdl.Rect) int32 {
 	btnH := wardBtnH - wardPanelPad/2
 	h := 3*lh + wardFieldH + wardChoice + wardSwatch + 2*btnH + 9*wardPanelPad
 	box := sdl.Rect{X: r.X + wardRowGap, Y: r.Y, W: r.W - 2*wardRowGap, H: h}
-	c.RoundRect(box, wardRadRow, 1, wcCard, wcLineHi)
+	c.RoundRect(box, a.wardRad(wardRadRow), 1, wcCard, wcLineHi)
 	in := sdl.Rect{X: box.X + wardPanelPad + wardRowGap, Y: box.Y + wardPanelPad + wardRowGap, W: box.W - 2*wardPanelPad - 2*wardRowGap}
 	y := in.Y
 	c.Label(in.X, y, "NAME", wcDim)
@@ -746,11 +746,11 @@ func (a *App) drawWardrobeLookPanel(f config.WardrobeFolder, r sdl.Rect) int32 {
 		on := f.Image == "" && (f.Icon == ic.id || (f.Icon == "" && ic.id == wardrobeIcons[0].id))
 		switch {
 		case on:
-			c.RoundRect(b, wardRadSeg, wardOutline, mixColor(wcCard, fcol, wardSelectedTint), fcol)
+			c.RoundRect(b, a.wardRad(wardRadSeg), wardOutline, mixColor(wcCard, fcol, wardSelectedTint), fcol)
 		case c.hovering(b):
-			c.RoundRect(b, wardRadSeg, 1, wcHover, wcLineHi)
+			c.RoundRect(b, a.wardRad(wardRadSeg), 1, wcHover, wcLineHi)
 		default:
-			c.RoundRect(b, wardRadSeg, 1, wcDrawer, wcLineHi)
+			c.RoundRect(b, a.wardRad(wardRadSeg), 1, wcDrawer, wcLineHi)
 		}
 		ink := wcSoft
 		if on {
@@ -814,7 +814,7 @@ func (a *App) drawWardrobeNewFolder(r sdl.Rect) {
 		if c.hovering(b) {
 			fill = wcHover
 		}
-		c.RoundRect(b, wardRadRow, 1, fill, wcLineHi)
+		c.RoundRect(b, a.wardRad(wardRadRow), 1, fill, wcLineHi)
 		label := "New folder"
 		lw := c.TextWidth(label)
 		ix := b.X + (b.W-lw-wardIconPx-wardPanelPad)/2
@@ -888,7 +888,7 @@ func (a *App) drawWardrobeToolbar(r sdl.Rect) {
 	if c.focusID == "wardsearch" {
 		edge = a.ward.accent
 	}
-	c.RoundRect(box, wardRadRow, 1, wcInset, edge)
+	c.RoundRect(box, a.wardRad(wardRadRow), 1, wcInset, edge)
 	c.Icon(iconShapeSearch, sdl.Rect{X: box.X + wardPanelPad + wardRowGap, Y: box.Y + (box.H-wardCheckIcon-wardOutline*2)/2, W: wardCheckIcon + wardOutline*2, H: wardCheckIcon + wardOutline*2}, wcDim)
 	fieldX := box.X + wardPanelPad*3 + wardOutline
 	ward.search, _ = c.TextFieldBare("wardsearch", sdl.Rect{X: fieldX, Y: box.Y + (box.H-fieldH)/2, W: box.X + box.W - fieldX - wardPanelPad/2, H: fieldH}, ward.search, "Search characters")
@@ -898,7 +898,7 @@ func (a *App) drawWardrobeToolbar(r sdl.Rect) {
 	if c.hovering(addR) {
 		fill = wcLineHi
 	}
-	c.RoundRect(addR, wardRadRow, 1, fill, wcLineHi)
+	c.RoundRect(addR, a.wardRad(wardRadRow), 1, fill, wcLineHi)
 	c.Icon(iconShapePlus, sdl.Rect{X: addR.X + wardSegPad - wardRowGap, Y: addR.Y + (addR.H-wardCheckIcon-wardOutline)/2, W: wardCheckIcon + wardOutline, H: wardCheckIcon + wardOutline}, wcText)
 	c.LabelClippedFontWeight(c.chromeFace(), addR.X+wardSegPad+wardIconPx-wardRowGap, addR.Y+(addR.H-a.wardLineH())/2, addR.W, label, wcText, true)
 	if c.ClickedIn(addR) {
@@ -1078,17 +1078,17 @@ func (a *App) drawWardrobeItem(idx int, it wardrobe.Item, r sdl.Rect) {
 	hover := c.hovering(r) && !ward.dragging
 	dropping := a.wardrobeReorderable() && ward.dragKind == wardDragChar && ward.dragID != it.Char && a.offerWardrobeDrop(r, wardDragChar, it.Char)
 	if dropping {
-		c.FillRound(sdl.Rect{X: r.X - wardOutline*2, Y: r.Y - wardOutline*2, W: r.W + 4*wardOutline, H: r.H + 4*wardOutline}, wardRadCard+wardOutline, a.ward.accent)
-		c.FillRound(sdl.Rect{X: r.X - wardOutline, Y: r.Y - wardOutline, W: r.W + 2*wardOutline, H: r.H + 2*wardOutline}, wardRadCard, wcPanel)
+		c.FillRound(sdl.Rect{X: r.X - wardOutline*2, Y: r.Y - wardOutline*2, W: r.W + 4*wardOutline, H: r.H + 4*wardOutline}, a.wardRad(wardRadCard)+wardOutline, a.ward.accent)
+		c.FillRound(sdl.Rect{X: r.X - wardOutline, Y: r.Y - wardOutline, W: r.W + 2*wardOutline, H: r.H + 2*wardOutline}, a.wardRad(wardRadCard), wcPanel)
 	}
 	var icon sdl.Rect
 	lh := a.wardLineH()
 	if ward.listView {
 		switch {
 		case selected:
-			c.RoundRect(r, wardRadRow, 1, a.ward.selected, a.ward.accent)
+			c.RoundRect(r, a.wardRad(wardRadRow), 1, a.ward.selected, a.ward.accent)
 		case hover:
-			c.FillRound(r, wardRadRow, wcHover)
+			c.FillRound(r, a.wardRad(wardRadRow), wcHover)
 		}
 		icon = sdl.Rect{X: r.X + wardPanelPad + wardOutline, Y: r.Y + (r.H-wardListIcon)/2, W: wardListIcon, H: wardListIcon}
 	} else {
@@ -1099,7 +1099,7 @@ func (a *App) drawWardrobeItem(idx int, it wardrobe.Item, r sdl.Rect) {
 		case hover:
 			fill = wcHover
 		}
-		c.RoundRect(r, wardRadCard, wardOutline, fill, edge)
+		c.RoundRect(r, a.wardRad(wardRadCard), wardOutline, fill, edge)
 		iconY := r.Y + wardPanelPad + wardOutline
 		if ward.nameAbove {
 			iconY = r.Y + r.H - wardPanelPad - wardOutline - ward.iconPx
@@ -1141,16 +1141,16 @@ func (a *App) drawWardrobeItem(idx int, it wardrobe.Item, r sdl.Rect) {
 		}
 	}
 	if ward.dragging && ward.dragKind == wardDragChar && ward.dragID == it.Char {
-		rad := wardRadCard
+		rad := a.wardRad(wardRadCard)
 		if ward.listView {
-			rad = wardRadRow
+			rad = a.wardRad(wardRadRow)
 		}
 		c.FillRound(r, rad, sdl.Color{R: wcPanel.R, G: wcPanel.G, B: wcPanel.B, A: wardDimAlpha})
 	}
 	a.wardrobeItemInput(it, r)
 }
 
-// wardrobeItemInput selects on click, uses on double-click, and arms a drag on press.
+// wardrobeItemInput selects on click, uses on double-click (or on click with single click on), and arms a drag on press.
 func (a *App) wardrobeItemInput(it wardrobe.Item, r sdl.Rect) {
 	c := a.ctx
 	ward := &a.ward
@@ -1173,14 +1173,20 @@ func (a *App) wardrobeItemInput(it wardrobe.Item, r sdl.Rect) {
 	if c.mouseDown && !c.prevMouseDown && ward.source == wardrobe.SourceUser {
 		a.startWardrobeDrag(wardDragChar, it.Char)
 	}
+	single := a.d.Prefs.Load().WardrobeSingleClick
 	switch {
-	case c.dblClick:
+	case c.dblClick && !single:
 		c.dblClick = false
 		a.wardrobeUse(it.Char)
 	case c.ClickedIn(r):
 		if ward.sel != it.Char {
 			ward.sel, ward.confirmRemove, ward.nickOpen, ward.moveMenu = it.Char, false, false, false
 		}
+		// Only a streak's first click wears: the second click of a double-click would wear it again, or as an iniswap.
+		if single && c.clickStreak == 1 {
+			a.wardrobeUse(it.Char)
+		}
+		c.dblClick = false
 	}
 }
 
@@ -1188,7 +1194,7 @@ func (a *App) wardrobeItemInput(it wardrobe.Item, r sdl.Rect) {
 func (a *App) drawWardrobeCharIcon(idx int, it wardrobe.Item, r sdl.Rect) {
 	c := a.ctx
 	ward := &a.ward
-	rad := wardRadBadge
+	rad := a.wardRad(wardRadBadge)
 	c.FillRound(r, rad, wcInset)
 	base := a.urls.CharIcon(it.Char)
 	if page, ok := a.cachedPage(&ward.pages, &ward.pagesGen, len(ward.flat), idx, base); ok && len(page.Frames) > 0 {
@@ -1309,7 +1315,11 @@ func (a *App) drawWardrobeBar(r sdl.Rect) {
 	right := r.X + r.W - 2*wardPanelPad
 	ward.moreN = 0
 	if !ok {
-		c.LabelClipped(x, r.Y+(r.H-lh)/2, r.W-4*wardPanelPad, "Select a character to see what you can do with it. Double-click wears it.", wcDim)
+		hint := "Select a character to see what you can do with it. Double-click wears it."
+		if a.d.Prefs.Load().WardrobeSingleClick {
+			hint = "Click a character to wear it; what else you can do with it shows here."
+		}
+		c.LabelClipped(x, r.Y+(r.H-lh)/2, r.W-4*wardPanelPad, hint, wcDim)
 		return
 	}
 	switch {
@@ -1384,11 +1394,11 @@ func (a *App) drawWardrobeMoreMenu() {
 	}
 	h := int32(ward.moreN)*wardMenuRowH + wardPanelPad
 	menu := sdl.Rect{X: max(ward.moreAt.X+ward.moreAt.W-wardMenuW, 0), Y: ward.moreAt.Y - h - wardRowGap*2, W: wardMenuW, H: h}
-	c.RoundRect(menu, wardRadRow, 1, wcCard, wcLineHi)
+	c.RoundRect(menu, a.wardRad(wardRadRow), 1, wcCard, wcLineHi)
 	for i := range ward.moreN {
 		row := sdl.Rect{X: menu.X + wardPanelPad/2, Y: menu.Y + wardPanelPad/2 + int32(i)*wardMenuRowH, W: menu.W - wardPanelPad, H: wardMenuRowH}
 		if c.hovering(row) {
-			c.FillRound(row, wardRadSeg, wcLine)
+			c.FillRound(row, a.wardRad(wardRadSeg), wcLine)
 		}
 		ink := wcText
 		if ward.moreIDs[i] == wardActRemove {
@@ -1495,20 +1505,20 @@ func (a *App) drawWardrobeMoveMenu(content sdl.Rect) {
 	h := int32(len(rows))*wardMenuRowH + wardPanelPad
 	menu := sdl.Rect{X: content.X + 2*wardPanelPad + wardFolderColW + 2*wardPanelPad, Y: content.Y + content.H - wardBarH - h - wardRowGap*2, W: wardMenuW, H: h}
 	menu.Y = max(menu.Y, content.Y)
-	c.RoundRect(menu, wardRadRow, 1, wcCard, wcLineHi)
+	c.RoundRect(menu, a.wardRad(wardRadRow), 1, wcCard, wcLineHi)
 	for i, mr := range rows {
 		row := sdl.Rect{X: menu.X + wardPanelPad/2, Y: menu.Y + wardPanelPad/2 + int32(i)*wardMenuRowH, W: menu.W - wardPanelPad, H: wardMenuRowH}
 		if c.hovering(row) {
-			c.FillRound(row, wardRadSeg, wcLine)
+			c.FillRound(row, a.wardRad(wardRadSeg), wcLine)
 		}
 		x := row.X + wardPanelPad
 		if checklist {
 			box := sdl.Rect{X: x, Y: row.Y + (row.H-wardCheckPx)/2, W: wardCheckPx, H: wardCheckPx}
 			if mr.ticked {
-				c.FillRound(box, wardRadBadge, a.ward.accent)
+				c.FillRound(box, a.wardRad(wardRadBadge), a.ward.accent)
 				c.Icon(iconShapeCheck, sdl.Rect{X: box.X + (box.W-wardCheckIcon)/2, Y: box.Y + (box.H-wardCheckIcon)/2, W: wardCheckIcon, H: wardCheckIcon}, wcAccentInk)
 			} else {
-				c.RoundRect(box, wardRadBadge, 1, wcInset, wcLineHi)
+				c.RoundRect(box, a.wardRad(wardRadBadge), 1, wcInset, wcLineHi)
 			}
 			x += wardCheckPx + wardPanelPad
 		}
@@ -1534,4 +1544,12 @@ func (a *App) drawWardrobeMoveMenu(content sdl.Rect) {
 	if c.clicked && !c.hovering(menu) {
 		ward.moveMenu = false
 	}
+}
+
+// wardRad is a Wardrobe corner radius under the chrome shape: square corners under Sharp.
+func (a *App) wardRad(r int32) int32 {
+	if a.ctx.sharp() {
+		return 0
+	}
+	return r
 }

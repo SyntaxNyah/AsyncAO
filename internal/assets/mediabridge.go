@@ -1,8 +1,11 @@
 package assets
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +16,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/saver"
 )
 
 const (
@@ -22,7 +26,15 @@ const (
 	mediaDiskKept       = 2
 	mediaNetworkWorkers = 32
 	mediaComputeKept    = 1
+	// learnedSaveDelay is how long after a find learned.json is written, so a busy room writes it once.
+	learnedSaveDelay = 10 * time.Second
 )
+
+// errLearnedNotRecalled refuses a write before the saved file was read, which would replace it with this session alone.
+var errLearnedNotRecalled = errors.New("assets: learned.json not read yet")
+
+// errMediaStopped refuses a write after the media system stopped.
+var errMediaStopped = errors.New("assets: media system stopped")
 
 // mediaBridge runs the Manager's requests on internal/media, so every caller moves at once; it goes when callers use media directly.
 type mediaBridge struct {
@@ -42,6 +54,13 @@ type mediaBridge struct {
 	hostLists    sync.Map
 	hostListsGen atomic.Uint64
 	pin          *sceneryPin
+	// learned keeps learned.json. recalled and foundEarly are the Manager's goroutine's: whether the saved file was
+	// read, and whether something was found before it was.
+	learned    *saver.Saver
+	recalled   bool
+	foundEarly bool
+	// learnedHosts mirrors builder.LearnedOrigins for other threads.
+	learnedHosts atomic.Int64
 }
 
 func newMediaBridge(m *Manager) *mediaBridge {
@@ -54,8 +73,10 @@ func newMediaBridge(m *Manager) *mediaBridge {
 		pin:     newSceneryPin(),
 	}
 	b.folders = newBridgeFolders(m)
-	cfg := media.Config{Candidates: b.builder.Build, AllFormats: media.EveryFormat, Found: b.builder.Found,
-		Finished: b.finished, Compute: b.compute}
+	b.learned = saver.New(m.learnedPath, learnedSaveDelay, b.encodeLearned)
+	cfg := media.Config{Candidates: b.builder.Build, AllFormats: media.EveryFormat, Found: b.found,
+		Finished: b.finished, Delivered: m.NotifyDelivery, Skip: b.skip, Asked: b.asked, MissingAgain: b.missingAgain,
+		Compute: b.compute, ClaimLimit: imageClaimLimit}
 	b.remote = media.NewRemoteSource(ctx, bridgeFetcher{m}, media.DefaultMissingTTL, time.Now)
 	cfg.Chains = map[media.Place]*media.Chain{media.PlaceServer: media.NewChain(
 		media.Entry{Source: bridgeMemory{m.t2, b.pin, m}},
@@ -66,7 +87,99 @@ func newMediaBridge(m *Manager) *mediaBridge {
 	cfg.Formats = map[media.Kind]media.Format{media.KindImage: bridgeImage{b}, media.KindSound: bridgeSound{b}}
 	b.media = media.NewManager(cfg)
 	b.scanDisk()
+	b.recallLearned()
 	return b
+}
+
+// found learns the format a key turned up in, and schedules a save.
+func (b *mediaBridge) found(k media.Key, f media.File) {
+	b.builder.Found(k, f)
+	if !b.recalled {
+		b.foundEarly = true
+	}
+	b.learnedHosts.Store(int64(b.builder.LearnedOrigins()))
+	b.learned.Changed()
+}
+
+// learn is found for a raw walk on a worker: url turned up for base.
+// AllowFormats gives origin a format list per asset type, as its extensions.json would, such as a replay archive's
+// recorded formats.
+func (m *Manager) AllowFormats(origin string, byType map[AssetType]string) {
+	allowed := map[media.Class][]string{}
+	for t, ext := range byType {
+		if c := classOf(t); c != media.ClassExact && !slices.Contains(allowed[c], ext) {
+			allowed[c] = append(allowed[c], ext)
+		}
+	}
+	m.bridge.media.Do(func() { m.bridge.builder.Allow(origin, allowed) })
+}
+
+// AllowManifest gives origin the formats an extensions.json lists, for a host known to publish none; false when it
+// doesn't parse.
+func (m *Manager) AllowManifest(origin string, data []byte) bool {
+	allowed, err := media.ParseManifest(data)
+	if err != nil {
+		return false
+	}
+	m.bridge.media.Do(func() { m.bridge.builder.Allow(origin, allowed) })
+	return true
+}
+
+// ForgetLearned drops every learned format and remembered file, here and in learned.json.
+func (m *Manager) ForgetLearned() {
+	b := m.bridge
+	b.media.Do(func() {
+		b.builder.ForgetLearned()
+		b.media.ForgetWinners(func(media.Key, media.File) bool { return true })
+		b.learnedHosts.Store(0)
+		b.learned.Changed()
+	})
+}
+
+// LearnedHosts counts the hosts a format was learned for; safe from any thread.
+func (m *Manager) LearnedHosts() int {
+	return int(m.bridge.learnedHosts.Load())
+}
+
+// recallLearned reads learned.json on a disk worker and adds it to what this session knows.
+func (b *mediaBridge) recallLearned() {
+	path := b.m.learnedPath
+	b.media.Run(b.diskP, media.Later, func() any {
+		var l media.Learned
+		if path != "" {
+			if data, err := os.ReadFile(path); err == nil {
+				l, _ = media.DecodeLearned(data) // a damaged file is a fresh start
+			}
+		}
+		return l.Memory()
+	}, func(v any) {
+		media.Recall(b.media, b.builder, b.remote, v.(media.Memory))
+		b.recalled = true
+		b.learnedHosts.Store(int64(b.builder.LearnedOrigins()))
+		if b.foundEarly {
+			b.learned.Changed()
+		}
+	})
+}
+
+// encodeLearned snapshots the learned formats and winners on the Manager's goroutine for the saver.
+func (b *mediaBridge) encodeLearned() ([]byte, error) {
+	var mem media.Memory
+	var err error
+	ran := b.media.Call(func() {
+		if !b.recalled {
+			err = errLearnedNotRecalled
+			return
+		}
+		mem = media.Remember(b.media, b.builder, b.remote)
+	})
+	if !ran {
+		return nil, errMediaStopped
+	}
+	if err != nil {
+		return nil, err
+	}
+	return media.EncodeLearned(mem.Learned())
 }
 
 // scanDisk fills the disk index; until it lands, a cached file is fetched again, which is only slower.
@@ -82,13 +195,6 @@ func (m *Manager) RescanDisk() {
 	if m != nil {
 		m.bridge.scanDisk()
 	}
-}
-
-func urgencyOf(p network.Priority) media.Urgency {
-	if p == network.PriorityHigh {
-		return media.Now
-	}
-	return media.Later
 }
 
 func classOf(t AssetType) media.Class {
@@ -113,62 +219,66 @@ func classOf(t AssetType) media.Class {
 }
 
 func kindOf(t AssetType) media.Kind {
+	if t == AssetTypeMusic {
+		return media.KindStream
+	}
 	if t.IsAudio() {
 		return media.KindSound
 	}
 	return media.KindImage
 }
 
-func chainKey(base string, t AssetType) media.Key {
+// ChainKey is the key a base is asked under; its formats and spellings are the media system's to find.
+func ChainKey(base string, t AssetType) media.Key {
 	return media.Key{Place: media.PlaceServer, Path: base, Kind: kindOf(t), Class: classOf(t), Tag: uint8(t)}
 }
 
-func flagsOf(quiet, sticky bool) media.Flags {
-	var f media.Flags
-	if quiet {
-		f |= media.Quiet
-	}
-	if sticky {
-		f |= media.Sticky
-	}
-	return f
-}
-
-func (b *mediaBridge) askChain(base string, alts []string, t AssetType, p network.Priority, sticky bool) {
-	if b.m.t1Contains != nil && b.m.t1Contains(base) {
-		b.m.t1Hits.Add(1)
-		return
-	}
-	b.ask(chainKey(base, t), flagsOf(false, sticky), p, alts...)
-}
-
-func (b *mediaBridge) askExact(url string, t AssetType, p network.Priority) {
-	if b.m.t1Contains != nil && b.m.t1Contains(url) {
-		b.m.t1Hits.Add(1)
-		return
-	}
-	k := chainKey(url, t)
+// ExactKey is the key for a complete URL, such as a music track: one file, no formats to try.
+func ExactKey(url string, t AssetType) media.Key {
+	k := ChainKey(url, t)
 	k.Class = media.ClassExact
-	b.ask(k, 0, p)
+	return k
 }
 
-func (b *mediaBridge) askRaw(url string, p network.Priority) {
-	b.media.Get(media.Key{Place: media.PlaceServer, Path: url, Kind: media.KindRaw, Class: media.ClassExact}, urgencyOf(p), media.Quiet)
+// RawKey is the key for a complete URL kept as bytes, such as a char.ini, never decoded.
+func RawKey(url string) media.Key {
+	return media.Key{Place: media.PlaceServer, Path: url, Kind: media.KindRaw, Class: media.ClassExact}
 }
 
-func (b *mediaBridge) ask(k media.Key, f media.Flags, p network.Priority, alts ...string) {
-	a := b.media.Get(k, urgencyOf(p), f, alts...)
-	switch a.State() {
-	case media.Missing:
-		// Asked again inside the file's missing time: no request, and the warning still fires.
-		b.m.skipExhausted(k.Path, AssetType(k.Tag), f&media.Quiet != 0)
-	case media.Refused:
-		b.m.refused.Add(1)
+// skip is Config.Skip: an uploaded texture is held already, and one that failed to decode lately is left alone.
+func (b *mediaBridge) skip(k media.Key) bool {
+	if k.Kind == media.KindRaw {
+		return false
+	}
+	if b.m.t1Contains != nil && b.m.t1Contains(k.Path) {
+		b.m.t1Hits.Add(1)
+		return true
+	}
+	return b.m.t1Failed != nil && b.m.t1Failed(k.Path)
+}
+
+// asked is Config.Asked: a character's first sprite or emote button maps its folder, so everyone who appears is mapped
+// and a roster of icons is not.
+func (b *mediaBridge) asked(k media.Key) {
+	t := AssetType(k.Tag)
+	if k.Kind == media.KindRaw || t != AssetTypeCharSprite && t != AssetTypeEmoteButton || !strings.HasPrefix(k.Path, "http") {
+		return
+	}
+	if root := media.CharacterRoot(k.Path); root != "" {
+		media.MapCharacter(b.media, b.network, b.remote, b.builder, root)
+	}
+}
+
+// missingAgain is Config.MissingAgain: asked again inside its missing time costs no request, and the warning still
+// fires.
+func (b *mediaBridge) missingAgain(a *media.Asset) {
+	if k := a.Key(); k.Kind != media.KindRaw {
+		b.m.skipExhausted(k.Path, AssetType(k.Tag), a.Quiet())
 	}
 }
 
 func (b *mediaBridge) isMissing(base string, t AssetType) bool {
-	a := b.media.Peek(chainKey(base, t))
+	a := b.media.Peek(ChainKey(base, t))
 	return a != nil && a.State() == media.Missing
 }
 
@@ -218,21 +328,30 @@ func (b *mediaBridge) finished(a *media.Asset) {
 		if t == AssetTypeMusic {
 			b.m.reportMusicFailure(k.Path, err)
 		}
-		// Tagged transient so it never enters the decode negative cache.
-		b.media.Run(b.compute, media.Later, func() any {
-			b.m.decodedCh <- DecodedAsset{URL: k.Path, Base: k.Path, Type: t, Err: err, Transient: true}
-			b.m.NotifyDelivery()
-			return nil
-		}, func(any) {})
+		// Counted, never shown as a broken asset: the bytes were never seen, so the next ask tries again.
+		b.m.failed.Add(1)
 	default:
 		// Delivered: from here T1 answers, and an evicted texture has to be able to ask again.
 		b.media.ForgetAsset(a)
+		if st, ok := a.Result().(media.Stream); ok {
+			b.sendStream(k, t, st)
+		}
+	}
+}
+
+// sendStream hands a music track to the audio side; with the hand-off full, the track is closed and dropped.
+func (b *mediaBridge) sendStream(k media.Key, t AssetType, st media.Stream) {
+	select {
+	case b.m.audioCh <- AudioAsset{URL: k.Path, Base: k.Path, Type: t, Stream: st}:
+		b.m.NotifyDelivery()
+	default:
+		st.Close()
 	}
 }
 
 // FetchManifest reads a server's extensions.json straight from its host, so a change is seen and the answer proves it is alive.
 func (m *Manager) FetchManifest(ctx context.Context, origin string) ([]byte, error) {
-	file := origin + ManifestFileName
+	file := origin + media.ManifestFile
 	data, err := m.netFetch(ctx, file)
 	m.bridge.noteManifest(origin, file, data, err)
 	return data, err
@@ -325,6 +444,7 @@ func (m *Manager) CloseMedia() {
 	b := m.bridge
 	b.closing.Do(func() {
 		b.cancel()
+		_ = b.learned.Close() // before the media system stops, as the snapshot is taken on its goroutine
 		b.media.Close()
 		// A worker blocked delivering to a channel nobody drains at exit must not hold the process open.
 		go func() {
@@ -336,6 +456,54 @@ func (m *Manager) CloseMedia() {
 }
 
 type bridgeFetcher struct{ m *Manager }
+
+var _ media.Downloader = bridgeFetcher{}
+
+// streamer is an HTTP client that hands a body over as it arrives, as *network.Client does.
+type streamer interface {
+	Open(ctx context.Context, url string) (*network.Body, error)
+	ReadRange(ctx context.Context, url string, from, n int64) ([]byte, error)
+}
+
+// Open is netFetch for a body read as it arrives; a replay archive or a client that can't stream answers whole.
+func (f bridgeFetcher) Open(ctx context.Context, url string) (io.ReadCloser, int64, error) {
+	s, ok := f.m.client.(streamer)
+	if !ok || f.m.archiveServes(url) || f.m.offline.Load() || strings.HasPrefix(url, LocalScheme) {
+		data, err := f.Fetch(ctx, url)
+		if err != nil {
+			return nil, 0, err
+		}
+		return io.NopCloser(bytes.NewReader(data)), int64(len(data)), nil
+	}
+	body, err := s.Open(ctx, url)
+	if err != nil {
+		return nil, 0, err
+	}
+	f.m.netFetches.Add(1)
+	return body, body.Size, nil
+}
+
+// ReadRange fetches one span when the client can; without it, reads of a track's end wait for its download.
+func (f bridgeFetcher) ReadRange(ctx context.Context, url string, from, n int64) ([]byte, error) {
+	if s, ok := f.m.client.(streamer); ok && !f.m.offline.Load() {
+		return s.ReadRange(ctx, url, from, n)
+	}
+	return nil, network.ErrNoRanges
+}
+
+// PartialFile is where a download arrives.
+func (f bridgeFetcher) PartialFile() (*os.File, error) { return f.m.disk.PartialFile() }
+
+// Adopt gives a finished download to the disk cache.
+func (f bridgeFetcher) Adopt(url, path string) {
+	if skipDisk(url) {
+		_ = os.Remove(path)
+		return
+	}
+	f.m.disk.Adopt(url, path)
+	b := f.m.bridge
+	b.media.Call(func() { b.disk.Index(media.File(url)) })
+}
 
 func (f bridgeFetcher) Fetch(ctx context.Context, url string) ([]byte, error) {
 	data, err := f.m.netFetch(ctx, url)
@@ -394,6 +562,8 @@ func (s bridgeDisk) Observe(f media.File, data []byte, err error) {
 	s.DiskSource.Observe(f, data, err)
 	if err == nil {
 		s.m.diskHits.Add(1)
+	}
+	if err == nil && len(data) > 0 { // a track opened as a stream brings no bytes
 		s.t2.Add(string(f), data, int64(len(data)))
 		s.pin.keep(string(f), data)
 	}
@@ -418,7 +588,7 @@ func (s bridgeRemote) Observe(f media.File, data []byte, err error) {
 		return
 	}
 	s.RemoteSource.Observe(f, data, err)
-	if err == nil {
+	if err == nil && len(data) > 0 { // a download keeps itself, through Adopt
 		s.b.m.t2.Add(string(f), data, int64(len(data)))
 		s.b.pin.keep(string(f), data)
 		if !skipDisk(string(f)) {
@@ -432,32 +602,39 @@ func (b *mediaBridge) hitOf(hit media.Hit) (string, bool) {
 	return string(hit.File), hit.Source == media.Source(b.folders)
 }
 
-// bridgeImage decodes through DecoderPool, holding a Compute worker until the last frame, so Now work keeps its place.
+// bridgeImage decodes on the Compute worker that holds the request; an animation's opening frames go to the render
+// thread as early pages, and the last page is the result.
 type bridgeImage struct{ b *mediaBridge }
 
-func (f bridgeImage) OnMainThread() bool { return false }
+var _ media.Measurer = bridgeImage{}
 
-func (f bridgeImage) Decode(k media.Key, hit media.Hit, data []byte) (any, error) {
+func (f bridgeImage) OnMainThread() bool { return true }
+
+// Measure claims the decoded size, so background decodes wait while the render thread is behind on uploads.
+func (f bridgeImage) Measure(data []byte) int64 {
+	return decodeClaim(data, f.b.m.prefs.Load().PreferAnimated)
+}
+
+func (f bridgeImage) Decode(k media.Key, hit media.Hit, data []byte, page func(any)) (any, error) {
 	url, fromPack := f.b.hitOf(hit)
 	t := AssetType(k.Tag)
 	m := f.b.m
-	finished := make(chan struct{})
-	accepted := m.decoder.Submit(DecodeRequest{
+	var last DecodedAsset
+	m.decoder.Decode(DecodeRequest{
 		URL:            url,
 		Data:           data,
 		Type:           t,
 		PlayAnimations: m.prefs.Load().PreferAnimated,
 		OnDone: func(doneURL string, d *Decoded, err error) {
-			m.onDecoded(doneURL, k.Path, t, fromPack, d, err)
-			if d == nil || !d.Partial {
-				close(finished)
+			decoded := DecodedAsset{URL: doneURL, Base: k.Path, Type: t, Asset: d, Err: err, FromPack: fromPack}
+			if d != nil && d.Partial {
+				page(decoded)
+				return
 			}
+			last = decoded
 		},
 	})
-	if accepted {
-		<-finished
-	}
-	return nil, nil
+	return last, nil
 }
 
 // bridgeSound hands the bytes to the audio side, which decodes them itself.
@@ -465,7 +642,7 @@ type bridgeSound struct{ b *mediaBridge }
 
 func (f bridgeSound) OnMainThread() bool { return false }
 
-func (f bridgeSound) Decode(k media.Key, hit media.Hit, data []byte) (any, error) {
+func (f bridgeSound) Decode(k media.Key, hit media.Hit, data []byte, _ func(any)) (any, error) {
 	url, fromPack := f.b.hitOf(hit)
 	f.b.m.audioCh <- AudioAsset{URL: url, Base: k.Path, Type: AssetType(k.Tag), Data: data, FromPack: fromPack}
 	f.b.m.NotifyDelivery()

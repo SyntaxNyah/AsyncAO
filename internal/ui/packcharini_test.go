@@ -2,7 +2,7 @@ package ui
 
 // The UI half of "a mounted base answers char.ini too" (issue #72).
 //
-// internal/assets proves FetchRaw reads the pack. These prove the two
+// internal/assets proves assets.Raw reads the pack. These prove the two
 // things only this package can answer: that the ini readers actually CALL it —
 // the whole defect was a working pack layer nothing on this side reached — and
 // that a source change drops the PARSED copies, which no texture invalidation
@@ -40,16 +40,14 @@ func packApp(t *testing.T, files map[string]string) *App {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(a.d.Prefs),
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   network.NewClientNotFoundTTL(0, netproxy.Direct()),
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  network.NewClientNotFoundTTL(0, netproxy.Direct()),
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 

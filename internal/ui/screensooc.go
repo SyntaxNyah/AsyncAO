@@ -94,7 +94,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	// the same icPct or wrap and draw disagree.
 	icPct := a.elemPct(elemICChatlog, a.logPct)
 	font := a.elemFont(elemICChatlog, a.logPct)
-	lineH := int32(font.Height()) + 2
+	lineH := int32(font.Height()) + logRowGapPx
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
 	rows := a.icWrapped(wrapW-logWrapIndentPx, a.d.Prefs.Load().ICTimestamps) // per-frame pref read, like the IC counter
@@ -143,13 +143,8 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	pinChord := c.hotkey != 0 && strings.EqualFold(sdl.GetKeyName(c.hotkey), a.hotkeyFor(hotkeyPinNote))
 	friendsOn := a.d.Prefs.Load().FriendHighlight // gates the per-line friend glow (read once)
 	// Per-speaker name colours, read once: tint the name prefix on an entry's first wrapped row.
-	nameColorsOn := a.d.Prefs.Load().NameColors
+	nameInk := a.logNameInkPref()
 	boldNames := a.logRowBoldPref(logSelIC) // read once per frame, passed per line (#39: ic_chatlog_bold)
-	var nameSat, nameVal float64
-	if nameColorsOn {
-		nameSat = float64(a.d.Prefs.Load().NameSat) / 100
-		nameVal = float64(a.d.Prefs.Load().NameVal) / 100
-	}
 	// Glow alpha, computed once per frame: static, or a slow breathe with FriendGlowPulse (off under reduce-motion).
 	friendAlpha := friendTintColor.A
 	pulseOn := friendsOn && a.d.Prefs.Load().FriendGlowPulse && !a.d.Prefs.Load().ReduceMotionOn
@@ -185,7 +180,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 	clipPrev, clipHad := c.pushClip(list)
 	y := list.Y - visScroll
 	for ri := range rows {
-		if y > list.Y+list.H-lineH {
+		if y >= list.Y+list.H {
 			break
 		}
 		if y >= list.Y-lineH {
@@ -225,7 +220,7 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			// Per-speaker name colour on an entry's first wrapped row (the helper falls back to a plain draw for
 			// system/evidence lines or when a long name wrapped off this row).
 			lineSpeaker := ""
-			if nameColorsOn && a.icRowIsEntryStart(ri) {
+			if nameInk.perSpeaker && a.icRowIsEntryStart(ri) {
 				lineSpeaker = a.icLog[row.entry].speaker
 			}
 			// Not said yet -> faint. After the link-hover override so a hovered unspoken link stays faint;
@@ -238,12 +233,12 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			indent := a.logRowIndent(logSelIC, ri) // continuation rows hang right of their first row
 			// Inline-colour body: a styled entry draws in its authored colours; ghosted or link-hovered rows use the
 			// single-colour path.
-			if styles := a.icLog[row.entry].styles; len(styles) > 0 && row.entry != hoverLinkEntry && !ghostedRow {
+			if len(row.styles) > 0 && row.entry != hoverLinkEntry && !ghostedRow {
 				bodyLen := utf8.RuneCountInString(row.text) - row.headRunes
-				spans := inlineSpanAt(styles, row.headRunes, row.bodyOff, bodyLen, col)
+				spans := inlineSpanAt(row.styles, row.headRunes, row.bodyOff, bodyLen, col)
 				a.drawColoredLogRow(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, spans)
 			} else {
-				a.drawLogLineNamed(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
+				a.drawLogLineNamed(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameInk, boldNames)
 			}
 			if u := a.icLog[row.entry].url; u != "" {
 				if c.hovering(rowRect) {
@@ -309,17 +304,11 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	oocInk := a.elemInkOr(elemServerChatlog, canvasInk, ColText)
 	// The theme's server_chatlog size/family/bold (AO2 folds ms_chatlog in), folded with the OOC zoom.
 	font := a.elemFont(elemServerChatlog, a.oocPct)
-	lineH := int32(font.Height()) + 2
+	lineH := int32(font.Height()) + logRowGapPx
 	wrapW := list.W - scrollBarW - scrollBarGap
-	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
-	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.Load().NameColors    // per-speaker OOC name colours (read once)
-	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
-	var nameSat, nameVal float64
-	if nameColorsOn {
-		nameSat = float64(a.d.Prefs.Load().NameSat) / 100
-		nameVal = float64(a.d.Prefs.Load().NameVal) / 100
-	}
+	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
+	nameInk := a.logNameInkPref()            // per-speaker OOC name colours (read once)
+	boldNames := a.logRowBoldPref(logSelOOC) // read once per frame, passed per line
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the OOC text (independent of the IC log).
@@ -349,7 +338,7 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 	clipPrev, clipHad := c.pushClip(list) // top/bottom row clipped to the rect, not the tabs
 	y := list.Y - a.oocScroll
 	for li, line := range lines {
-		if y > list.Y+list.H-lineH {
+		if y >= list.Y+list.H {
 			break
 		}
 		if y >= list.Y-lineH {
@@ -364,7 +353,7 @@ func (a *App) drawOOCLogList(list sdl.Rect, canvasInk bool) {
 			// OOC links open on click and copy on right-click; the URL is resolved at wrap time.
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			a.oocRowLinkActions(hoverSpan, li, rowRect, list.X+indent, y, lineH)
-			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames, oocInk)
+			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, a.oocRowNameInk(li, nameInk, canvasInk), boldNames, oocInk)
 		}
 		y += lineH
 	}
@@ -409,16 +398,38 @@ func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, l
 	a.oocLinkActions(rowRect, sdl.Rect{X: textX + s.x0, Y: y, W: s.x1 - s.x0, H: lineH}, s.url)
 }
 
+// oocRowNameInk is display row li's name ink: the server's on a line CT marked as the server's, else the theme's player
+// ink while per-speaker colours are off. canvasInk is elemInk's.
+func (a *App) oocRowNameInk(li int, base logNameInk, canvasInk bool) logNameInk {
+	sender := oocFromPlayer
+	if li < len(a.oocWrapSrc) {
+		if e := a.oocWrapSrc[li]; e < len(a.oocFromServer) && a.oocFromServer[e] {
+			sender = oocFromServer
+		}
+	}
+	ink, set := a.themeFonts.senderInk[sender], a.themeFonts.senderInkSet[sender] && canvasInk
+	switch {
+	case sender == oocFromServer:
+		base.fixed, base.fixedSet = ColAccent, true
+		if set {
+			base.fixed = ink
+		}
+	case !base.perSpeaker && set:
+		base.fixed, base.fixedSet = ink, true
+	}
+	return base
+}
+
 // drawOOCLogRow draws one wrapped OOC row, tinting only the hovered link (hoverID < 0 = none).
 // The row is drawn whole per pass and the clip picks the slice, so tinted and plain parts share one glyph layout.
 // The clip keeps the list's vertical bounds so a partly scrolled row still cuts at the rect edge.
 // base is the plain-text colour: server_chatlog_color on the canvas panel, ColText in the chrome OOC box.
-func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, nameOn bool, sat, val float64, bold bool, base sdl.Color) {
+func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, ink logNameInk, bold bool, base sdl.Color) {
 	c := a.ctx
 	ef := a.elemEmoji(elemServerChatlog, a.oocPct) // #39: baseline must match the row's resolved text scale
 	spans := a.oocRowLinks(li)
 	if hoverID < 0 || len(spans) == 0 {
-		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, base, nameOn, sat, val, bold)
+		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, base, ink, bold)
 		return
 	}
 	seg := func(lo, hi int32, col sdl.Color) {
@@ -426,7 +437,7 @@ func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW i
 			return
 		}
 		prev, had := c.pushClip(sdl.Rect{X: x + lo, Y: list.Y, W: hi - lo, H: list.H})
-		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, col, nameOn, sat, val, bold)
+		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, col, ink, bold)
 		c.popClip(prev, had)
 	}
 	drawn := int32(0)
@@ -439,7 +450,7 @@ func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW i
 		drawn = spans[k].x1
 	}
 	if drawn == 0 { // the hovered link isn't on this row after all
-		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, base, nameOn, sat, val, bold)
+		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, base, ink, bold)
 		return
 	}
 	seg(drawn, textW, base) // the remainder of the row
@@ -497,17 +508,11 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 
 	// Same server_chatlog resolution as drawOOCLogList (this is the other copy of the OOC scrollback).
 	font := a.elemFont(elemServerChatlog, a.oocPct)
-	lineH := int32(font.Height()) + 2
+	lineH := int32(font.Height()) + logRowGapPx
 	wrapW := list.W - scrollBarW - scrollBarGap
-	// Wrap against the indented width so continuation rows (drawn at +logWrapIndentPx) cannot overflow.
-	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.Load().NameColors    // per-speaker OOC name colours (read once)
-	boldNames := a.logRowBoldPref(logSelOOC)       // read once per frame, passed per line
-	var nameSat, nameVal float64
-	if nameColorsOn {
-		nameSat = float64(a.d.Prefs.Load().NameSat) / 100
-		nameVal = float64(a.d.Prefs.Load().NameVal) / 100
-	}
+	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
+	nameInk := a.logNameInkPref()            // per-speaker OOC name colours (read once)
+	boldNames := a.logRowBoldPref(logSelOOC) // read once per frame, passed per line
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	// Ctrl+wheel / wheel-button zooms the OOC text, independent of the IC log. As a docked tab the right-column
@@ -538,7 +543,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the fields below
 	y := list.Y - a.oocScroll
 	for li, line := range lines {
-		if y > list.Y+list.H-lineH {
+		if y >= list.Y+list.H {
 			break
 		}
 		if y >= list.Y-lineH {
@@ -552,7 +557,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			a.oocRowLinkActions(hoverSpan, li, rowRect, list.X+indent, y, lineH)
 			// ColText, not server_chatlog_color: this box is chrome outside any theme canvas, on its own ColPanel.
-			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames, ColText)
+			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, a.oocRowNameInk(li, nameInk, false), boldNames, ColText)
 		}
 		y += lineH
 	}

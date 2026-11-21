@@ -131,14 +131,8 @@ func (a *App) extrasWidgets() []extrasWidget {
 	return a.extrasWidgetCache
 }
 
-// toggleExtrasBox shows or hides the box (hotkeyExtras, or Esc in the bare courtroom);
-// from theater it exits theater instead of drawing over the stage-only view.
+// toggleExtrasBox shows or hides the box (hotkeyExtras, or Esc in the bare courtroom).
 func (a *App) toggleExtrasBox() {
-	if a.theaterOn {
-		a.setTheater(false)
-		a.showWidgets = true
-		return
-	}
 	a.showWidgets = !a.showWidgets
 }
 
@@ -179,9 +173,9 @@ func (a *App) extrasPalette() extrasPalette {
 func (a *App) blockingCourtPopup() bool {
 	// Floating panels (pair, mod, CM, evidence, ban box, timer, login, pair popup, pinned pieces) stay out: they fence
 	// by footprint, and adding one would make extrasSurfaceLive false and disable its own fence.
-	// Not courtroomModalUp's set: this adds classicEdit and omits showSfxBrowser, which would hide the panels too.
-	// Ask courtroomModalUp whether drawCourtroomModals will take the screen.
-	return a.ward.show || a.showJukebox || a.bgPick.show ||
+	// Not courtroomModalUp's set: this adds classicEdit. Ask courtroomModalUp whether drawCourtroomModals will take the
+	// screen.
+	return a.ward.show || a.showJukebox || a.bgPick.show || a.showSfxBrowser ||
 		a.classicEdit
 }
 
@@ -297,8 +291,6 @@ func (a *App) closeTopOverlay() bool {
 	// A pinned sprite preview paints inside the courtroom pass, under the panels above; unpinned boxes close on leave.
 	case a.previewBase != "" && a.previewIsPinned():
 		a.closeSpritePreview()
-	case a.theaterOn: // theater mode's "Esc exits" — handled here so it beats the leave-server shortcut
-		a.setTheater(false)
 	default:
 		return false
 	}

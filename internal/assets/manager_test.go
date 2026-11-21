@@ -14,6 +14,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
@@ -22,19 +23,35 @@ const managerWait = 5 * time.Second
 
 // testRig wires a full pipeline against an httptest server.
 type testRig struct {
-	prefs    *config.AssetPreferences
-	resolver *Resolver
-	manager  *Manager
-	decoder  *DecoderPool
-	disk     *cache.DiskCache
-	t2       *cache.ByteBudgetLRU[string, []byte]
+	prefs   *config.AssetPreferences
+	manager *Manager
+	decoder *Decoder
+	disk    *cache.DiskCache
+	t2      *cache.ByteBudgetLRU[string, []byte]
+	// pending holds pages taken from the media system but not yet read, as TakeDeliveries hands over all at once.
+	pending []DecodedAsset
 }
 
 // newRig builds a Manager on source; localMode mounts a LocalFetcher source's folders, as "only use my folders" does.
+func newTestPrefs(tb testing.TB) *config.AssetPreferences {
+	tb.Helper()
+	p, err := config.New(filepath.Join(tb.TempDir(), config.PrefsFileName))
+	if err != nil {
+		tb.Fatalf("config.New: %v", err)
+	}
+	tb.Cleanup(func() { _ = p.Close() })
+	return p
+}
+
 func newRig(tb testing.TB, source Fetcher, localMode bool) *testRig {
 	tb.Helper()
+	return newRigAt(tb, source, localMode, "")
+}
+
+// newRigAt is newRig keeping learned formats and winners in learnedPath.
+func newRigAt(tb testing.TB, source Fetcher, localMode bool, learnedPath string) *testRig {
+	tb.Helper()
 	prefs := newTestPrefs(tb)
-	resolver := NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		tb.Fatal(err)
@@ -44,31 +61,30 @@ func newRig(tb testing.TB, source Fetcher, localMode bool) *testRig {
 		tb.Fatal(err)
 	}
 	tb.Cleanup(disk.Close)
-	decoder := NewDecoderPool(2)
-	tb.Cleanup(decoder.Close)
+	decoder := NewDecoder()
 
 	m := NewManager(ManagerDeps{
-		Resolver: resolver,
-		Prefs:    prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   source,
-		Decoder:  decoder,
+		Prefs:       prefs,
+		T2:          t2,
+		Disk:        disk,
+		Source:      source,
+		Decoder:     decoder,
+		LearnedPath: learnedPath,
 	})
 	tb.Cleanup(m.CloseMedia)
 	if lf, ok := source.(*LocalFetcher); ok && localMode {
 		m.SetFolders(lf.Mounts(), nil)
 	}
-	return &testRig{prefs: prefs, resolver: resolver, manager: m, decoder: decoder, disk: disk, t2: t2}
+	return &testRig{prefs: prefs, manager: m, decoder: decoder, disk: disk, t2: t2}
 }
 
-// TestResolveRawFromLocalArchive is the load-bearing round-trip proof for the
+// TestResolveFromLocalArchive is the load-bearing round-trip proof for the
 // self-contained scene archive: an asset written into a local folder at the
 // webAO relative path is resolved back by the SAME candidate chain replay uses,
 // and the resolved URL minus the origin is exactly that relative path. If this
 // holds, export (write at relpath) and replay (resolve to relpath) are
 // symmetric — a bundled .aorec replays with the CDN gone.
-func TestResolveRawFromLocalArchive(t *testing.T) {
+func TestResolveFromLocalArchive(t *testing.T) {
 	dir := t.TempDir()
 	write := func(rel string, data []byte) {
 		full := filepath.Join(dir, filepath.FromSlash(rel))
@@ -88,7 +104,8 @@ func TestResolveRawFromLocalArchive(t *testing.T) {
 	// to (export/replay symmetry).
 	write("characters/Phoenix/(a)normal.webp", []byte("WEBP"))
 	base := local.BaseURL() + "characters/Phoenix/(a)normal"
-	url, data, ok := rig.manager.ResolveRaw(base, AssetTypeCharSprite)
+	found, ok := Resolve(context.Background(), rig.manager.Media(), base, AssetTypeCharSprite, false)
+	url, data := found.URL, found.Data
 	if !ok || url != base+config.ExtWebP || string(data) != "WEBP" {
 		t.Fatalf("webp archive asset not resolved: ok=%v url=%q", ok, url)
 	}
@@ -96,17 +113,15 @@ func TestResolveRawFromLocalArchive(t *testing.T) {
 		t.Errorf("relpath = %q, want characters/Phoenix/(a)normal.webp", rel)
 	}
 
-	// Robustness: a NON-default format (.png, e.g. an older server) MISSES until
-	// the archive's recorded format is seeded for the archive host — which is
-	// exactly what replaying a bundled archive does from its format manifest.
+	// The player's folders are searched in every format, whatever the host's list says, and a hit there teaches the
+	// host nothing.
 	write("characters/Edgeworth/(a)normal.png", []byte("PNG"))
 	pbase := local.BaseURL() + "characters/Edgeworth/(a)normal"
-	if _, _, ok := rig.manager.ResolveRaw(pbase, AssetTypeCharSprite); ok {
-		t.Fatal("expected .png to MISS before seeding (default probe list is webp-only)")
+	if f, ok := Resolve(context.Background(), rig.manager.Media(), pbase, AssetTypeCharSprite, false); !ok || string(f.Data) != "PNG" {
+		t.Fatalf("folder .png not resolved: ok=%v url=%q", ok, f.URL)
 	}
-	rig.resolver.RecordSuccess(hostOf(pbase), AssetTypeCharSprite, config.ExtPNG)
-	if url, data, ok := rig.manager.ResolveRaw(pbase, AssetTypeCharSprite); !ok || string(data) != "PNG" {
-		t.Fatalf("seeded .png archive asset not resolved: ok=%v url=%q", ok, url)
+	if n := rig.manager.LearnedHosts(); n != 0 {
+		t.Errorf("folder hits taught %d hosts a format", n)
 	}
 }
 
@@ -135,25 +150,48 @@ func newCountingServer(t *testing.T, payloads map[string][]byte) *countingServer
 	return cs
 }
 
+// total counts requests for files; a character folder's listing is mapping's, not a probe for an asset.
 func (cs *countingServer) total() int {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	n := 0
-	for _, c := range cs.requests {
-		n += c
+	for path, c := range cs.requests {
+		if !strings.HasSuffix(path, "/") {
+			n += c
+		}
 	}
 	return n
 }
 
-func waitDecoded(t *testing.T, m *Manager) DecodedAsset {
-	t.Helper()
-	select {
-	case d := <-m.Decoded():
-		return d
-	case <-time.After(managerWait):
-		t.Fatal("no decoded asset delivered")
-		return DecodedAsset{}
+// takeDecoded returns the next page delivered within wait, finishing it as the upload pump does.
+func (r *testRig) takeDecoded(wait time.Duration) (DecodedAsset, bool) {
+	deadline := time.Now().Add(wait)
+	for {
+		if len(r.pending) > 0 {
+			d := r.pending[0]
+			r.pending = r.pending[1:]
+			return d, true
+		}
+		r.manager.TakeDeliveries(func(d Delivery) {
+			r.pending = append(r.pending, d.DecodedAsset)
+			r.manager.Done(d)
+		})
+		if len(r.pending) == 0 {
+			if !time.Now().Before(deadline) {
+				return DecodedAsset{}, false
+			}
+			time.Sleep(time.Millisecond)
+		}
 	}
+}
+
+func waitDecoded(t *testing.T, r *testRig) DecodedAsset {
+	t.Helper()
+	d, ok := r.takeDecoded(managerWait)
+	if !ok {
+		t.Fatal("no decoded asset delivered")
+	}
+	return d
 }
 
 func waitWarning(t *testing.T, m *Manager) Warning {
@@ -189,10 +227,10 @@ func TestManagerWebPOnlyServerOneProbePerAsset(t *testing.T) {
 		{cs.srv.URL + "/background/court/defenseempty", AssetTypeBackground},
 	}
 	for _, b := range bases {
-		rig.manager.Prefetch(b.base, b.typ, network.PriorityHigh) // AssetType: mixed (test)
+		rig.manager.Media().Get(ChainKey(b.base, b.typ), media.Now, 0) // AssetType: mixed (test)
 	}
 	for range bases {
-		d := waitDecoded(t, rig.manager)
+		d := waitDecoded(t, rig)
 		if d.Err != nil {
 			t.Fatalf("decode error: %v", d.Err)
 		}
@@ -223,8 +261,8 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 	resident := map[string]bool{}
 	rig.manager.t1Contains = func(key string) bool { return resident[key] }
 
-	rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
-	d := waitDecoded(t, rig.manager)
+	rig.manager.Media().Get(ChainKey(base, AssetTypeCharIcon), media.Now, 0) // AssetType: CharIcon
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
 	}
@@ -244,16 +282,14 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("T1 short-circuit never hit for a resident base")
 		}
-		rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
+		rig.manager.Media().Get(ChainKey(base, AssetTypeCharIcon), media.Now, 0) // AssetType: CharIcon
 		time.Sleep(5 * time.Millisecond)
 	}
 	if got := cs.total(); got != firstLoad {
 		t.Errorf("requests after the T1 hit = %d, want still %d (no re-fetch)", got, firstLoad)
 	}
-	select {
-	case d := <-rig.manager.Decoded():
+	if d, ok := rig.takeDecoded(0); ok {
 		t.Errorf("unexpected re-decode of resident asset: %+v", d)
-	default:
 	}
 }
 
@@ -275,8 +311,8 @@ func TestManagerUnprefixedSpriteFallback(t *testing.T) {
 	resident := map[string]bool{}
 	rig.manager.t1Contains = func(key string) bool { return resident[key] }
 
-	rig.manager.PrefetchChain(primary, []string{bare}, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d := waitDecoded(t, rig.manager)
+	rig.manager.Media().Get(ChainKey(primary, AssetTypeCharSprite), media.Now, 0, []string{bare}...) // AssetType: CharSprite
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
 	}
@@ -296,7 +332,7 @@ func TestManagerUnprefixedSpriteFallback(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("T1 short-circuit never hit for the resident primary base")
 		}
-		rig.manager.PrefetchChain(primary, []string{bare}, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+		rig.manager.Media().Get(ChainKey(primary, AssetTypeCharSprite), media.Now, 0, []string{bare}...) // AssetType: CharSprite
 		time.Sleep(5 * time.Millisecond)
 	}
 	if got := cs.total(); got != firstLoad {
@@ -322,8 +358,8 @@ func TestManagerPrefetchChain(t *testing.T) {
 		cs.srv.URL + "/misc/yttd/chatbox", // duplicate: skipped, no re-probe
 	}
 
-	rig.manager.PrefetchChain(identity, alts, AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (test chain)
-	d := waitDecoded(t, rig.manager)
+	rig.manager.Media().Get(ChainKey(identity, AssetTypeMisc), media.Now, 0, alts...) // AssetType: Misc (test chain)
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("decode error: %v", d.Err)
 	}
@@ -342,7 +378,7 @@ func TestManagerAudioBypassesDecode(t *testing.T) {
 	})
 	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 
-	rig.manager.Prefetch(cs.srv.URL+"/sounds/blips/male", AssetTypeBlip, network.PriorityHigh) // AssetType: Blip
+	rig.manager.Media().Get(ChainKey(cs.srv.URL+"/sounds/blips/male", AssetTypeBlip), media.Now, 0) // AssetType: Blip
 	select {
 	case a := <-rig.manager.Audio():
 		if string(a.Data) != string(opus) {
@@ -392,8 +428,8 @@ func TestManagerLocalMounts(t *testing.T) {
 	rig := newRig(t, local, true)
 	origin := local.BaseURL()
 
-	rig.manager.Prefetch(origin+"characters/phoenix/(a)normal", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d := waitDecoded(t, rig.manager)
+	rig.manager.Media().Get(ChainKey(origin+"characters/phoenix/(a)normal", AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("local decode error: %v", d.Err)
 	}
@@ -402,8 +438,8 @@ func TestManagerLocalMounts(t *testing.T) {
 	}
 	d.Asset.Release()
 
-	rig.manager.Prefetch(origin+"characters/phoenix/(b)normal", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d = waitDecoded(t, rig.manager)
+	rig.manager.Media().Get(ChainKey(origin+"characters/phoenix/(b)normal", AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
+	d = waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatalf("local decode error: %v", d.Err)
 	}
@@ -413,7 +449,7 @@ func TestManagerLocalMounts(t *testing.T) {
 	d.Asset.Release()
 
 	// Missing asset → the same §4 warning machinery.
-	rig.manager.Prefetch(origin+"characters/phoenix/(a)void", AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	rig.manager.Media().Get(ChainKey(origin+"characters/phoenix/(a)void", AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	w := waitWarning(t, rig.manager)
 	if !strings.HasSuffix(w.Base, "(a)void") {
 		t.Errorf("warning base = %q", w.Base)
@@ -439,23 +475,19 @@ func TestManagerInflightDedup(t *testing.T) {
 	base := cs.srv.URL + "/characters/godot/(a)normal"
 
 	for i := 0; i < 4; i++ {
-		rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+		rig.manager.Media().Get(ChainKey(base, AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
 	}
-	d := waitDecoded(t, rig.manager)
+	d := waitDecoded(t, rig)
 	if d.Err != nil {
 		t.Fatal(d.Err)
 	}
 	d.Asset.Release()
 
 	// No further deliveries expected; give stragglers a moment to misbehave.
-	select {
-	case extra := <-rig.manager.Decoded():
-		// A second delivery is acceptable only if it was a T2 hit decode
-		// (same bytes); more than one upstream probe is not.
-		if extra.Err == nil && extra.Asset != nil {
-			extra.Asset.Release()
-		}
-	case <-time.After(200 * time.Millisecond):
+	// A second delivery is acceptable only if it was a T2 hit decode (same bytes); more than one upstream probe is not.
+	const stragglerWait = 200 * time.Millisecond
+	if extra, ok := rig.takeDecoded(stragglerWait); ok && extra.Err == nil && extra.Asset != nil {
+		extra.Asset.Release()
 	}
 	if got := cs.total(); got != 1 {
 		t.Errorf("upstream probes = %d, want 1 (inflight dedup + singleflight)", got)
@@ -464,7 +496,7 @@ func TestManagerInflightDedup(t *testing.T) {
 
 // TestManagerPrefetchRawWarmsTiers pins the decode-free raw lane: one
 // network probe lands the payload in T2 + disk, and a later synchronous
-// FetchRaw is a pure memory hit (hover-warm → instant character pick).
+// Raw is a pure memory hit (hover-warm → instant character pick).
 func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
 	ini := []byte("[Options]\nside = def\n")
 	cs := newCountingServer(t, map[string][]byte{
@@ -473,7 +505,7 @@ func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
 	rig := newRig(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	url := cs.srv.URL + "/characters/tung/char.ini"
 
-	rig.manager.PrefetchRaw(url, network.PriorityLow) // raw text: char.ini
+	rig.manager.Media().Get(RawKey(url), media.Later, media.Quiet) // raw text: char.ini
 	deadline := time.Now().Add(managerWait)
 	for {
 		if _, ok := rig.t2.Get(url); ok {
@@ -488,12 +520,12 @@ func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
 		t.Fatalf("probes = %d, want 1", got)
 	}
 
-	data, err := rig.manager.FetchRaw(context.Background(), url)
+	data, err := Raw(context.Background(), rig.manager.Media(), url)
 	if err != nil || string(data) != string(ini) {
-		t.Fatalf("FetchRaw after warm: %v / %q", err, data)
+		t.Fatalf("Raw after warm: %v / %q", err, data)
 	}
 	if got := cs.total(); got != 1 {
-		t.Fatalf("probes after warmed FetchRaw = %d, want still 1 (memory hit)", got)
+		t.Fatalf("probes after a warmed Raw = %d, want still 1 (memory hit)", got)
 	}
 }
 
@@ -511,13 +543,10 @@ func TestPurgeCorruptEvictsTiers(t *testing.T) {
 	base := cs.srv.URL + "/characters/torn/(a)normal"
 	wantURL := base + ".webp" // the format probed first — the T2/T3 key
 
-	rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d := waitDecoded(t, rig.manager)
+	rig.manager.Media().Get(ChainKey(base, AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite
+	d := waitDecoded(t, rig)
 	if d.Err == nil {
 		t.Fatal("corrupt payload decoded without error")
-	}
-	if d.Transient {
-		t.Fatal("corrupt-decode failure tagged transient — it would never be purged")
 	}
 	if d.URL != wantURL {
 		t.Fatalf("delivered URL = %q, want the fetched %q (the T2/T3 key)", d.URL, wantURL)
@@ -565,7 +594,13 @@ func TestPurgeCorruptEvictsTiers(t *testing.T) {
 // waitUntil polls done until it holds, failing the test after managerWait.
 func waitUntil(t *testing.T, what string, done func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(managerWait)
+	waitWithin(t, what, managerWait, done)
+}
+
+// waitWithin polls done until it holds, failing the test after wait.
+func waitWithin(t *testing.T, what string, wait time.Duration, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(wait)
 	for !done() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)

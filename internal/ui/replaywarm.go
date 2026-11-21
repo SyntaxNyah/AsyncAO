@@ -6,7 +6,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 )
 
 // Replay pre-warm for flat (non-bundled) recordings. A bundled .aorec reads local files, but a flat one streams from
@@ -82,16 +82,15 @@ func (a *App) startReplayWarm(rec *sceneRecording) {
 		musicRefs:   musicRefs,
 		created:     now, // anchors gifWarmHardCap so a never-settling ref can't hang the phase
 	}
-	// Seed formats before submitting, under the same auto-detect and per-origin dedupe as the session and export paths.
-	if a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(rec.Origin) {
+	// Read the origin's formats before submitting, under the same per-origin dedupe as the session and export paths.
+	if strings.HasPrefix(rec.Origin, "http") && !a.originSeeded(rec.Origin) {
 		a.markOriginSeeded(rec.Origin)
 		w.seeding = true
 		w.seedOrigin = rec.Origin
 		w.seedDone = make(chan seedResult, gifSeedBuf) // 1-buffered: leak-free like the export seed
 		done := w.seedDone
 		mgr := a.d.Manager
-		prefs := a.d.Prefs
-		go func() { done <- seedOriginFormats(mgr, prefs, rec.Origin) }()
+		go func() { done <- seedOriginFormats(mgr, rec.Origin) }()
 	}
 	a.replayWarm = w
 }
@@ -111,14 +110,10 @@ func (a *App) tickReplayWarm() {
 	}
 	now := time.Now()
 
-	// Hold submission until the format seed lands so the first probe sees the manifest format; republish the resolver
-	// then.
+	// Hold submission until the format seed lands so the first probe sees the manifest format.
 	if w.seeding {
 		select {
-		case res := <-w.seedDone:
-			if res.status == seedApplied {
-				a.d.Resolver.WarmFromPrefs()
-			}
+		case <-w.seedDone:
 			w.seeding = false
 		default:
 			// Still seeding. The hard cap still applies: a dead origin's seed is bounded only by seedOriginFormats'
@@ -152,7 +147,7 @@ func (a *App) tickReplayWarm() {
 			if r.Base == "" {
 				continue
 			}
-			a.d.Manager.PrefetchChain(r.Base, r.Alts, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
+			a.d.Manager.Media().Get(assets.ChainKey(r.Base, r.Type), media.Now, 0, r.Alts...) // AssetType: from SceneAssets
 			if w.warmInFlight == nil {
 				w.warmInFlight = make(map[string]struct{})
 			}
@@ -166,7 +161,7 @@ func (a *App) tickReplayWarm() {
 	// Exact URLs (music carries its extension) use PrefetchExact, not the format-probing path.
 	if !w.musicDone {
 		for _, m := range w.musicRefs {
-			a.d.Manager.PrefetchExact(m.Base, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music (Exact)
+			a.d.Manager.Media().Get(assets.ExactKey(m.Base, assets.AssetTypeMusic), media.Now, 0) // AssetType: Music (Exact)
 		}
 		w.musicDone = true
 	}

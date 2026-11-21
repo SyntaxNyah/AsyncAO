@@ -7,7 +7,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -59,9 +59,6 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	dir := t.TempDir() // empty pack: background/gs4/defensedesk exists in no format
 	local, cleanup := wireLocalManager(t, a, dir)
 	defer cleanup()
-	// The resolver walks the configured formats; point the desk type at
-	// .png so the probe list is a real (and short) chain over the on-disk root.
-	a.d.Prefs.SetFormatOrder(assets.AssetTypeDeskOverlay.Name(), []string{config.ExtPNG})
 
 	// A real room with a live DeskShow message, so the relay has something to
 	// re-derive (NotifyDeskMissing only touches the scene of the room whose CURRENT
@@ -69,7 +66,7 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "gs4"
 	urls := courtroom.NewURLBuilder(local.BaseURL())
-	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, nil)
+	room := courtroom.NewCourtroom(urls, a.d.Manager.Media(), a.d.Manager, sess, nil)
 	a.room = room
 	// The def background loaded as its legacy file, so the desk follows to defensedesk.
 	room.Assets = loadedAs{spriteProbe(func(string) bool { return false }), urls.Background("gs4", "defenseempty") + config.ExtPNG}
@@ -90,14 +87,8 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 			t.Fatalf("desk miss never relayed: ShowDesk=%v IsMissing=%v", room.Scene.ShowDesk, a.d.Store.IsMissing(deskBase))
 		}
 		a.drainWarnings()
-		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
-		default:
-			time.Sleep(2 * time.Millisecond)
-		}
+		releaseDeliveries(a)
+		time.Sleep(2 * time.Millisecond)
 	}
 
 	// Positive control on the type gate: a BACKGROUND miss must not be relayed as a
@@ -106,18 +97,12 @@ func TestDrainWarningsRelaysDeskMissing(t *testing.T) {
 	if bgBase == deskBase {
 		t.Fatal("test setup: the bg and desk bases must differ for the type-gate control")
 	}
-	a.d.Manager.Prefetch(bgBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+	a.d.Manager.Media().Get(assets.ChainKey(bgBase, assets.AssetTypeBackground), media.Now, 0) // AssetType: Background
 	ctrl := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(ctrl) {
 		a.drainWarnings()
-		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
-		default:
-			time.Sleep(2 * time.Millisecond)
-		}
+		releaseDeliveries(a)
+		time.Sleep(2 * time.Millisecond)
 	}
 	if a.d.Store.IsMissing(bgBase) {
 		t.Error("a missing BACKGROUND must not be marked missing — the background arm of set_scene has a fallback, the desk arm does not")
@@ -136,14 +121,13 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 	dir := t.TempDir() // empty pack: background/gs4/<pos> exists in no format
 	local, cleanup := wireLocalManager(t, a, dir)
 	defer cleanup()
-	a.d.Prefs.SetFormatOrder(assets.AssetTypeBackground.Name(), []string{config.ExtPNG})
 
 	urls := courtroom.NewURLBuilder(local.BaseURL())
 	bgBase := urls.PositionScenery("gs4", "wit", nil).Background
 
 	sess := courtroom.NewSession(func(protocol.Packet) error { return nil }, "test-hdid")
 	sess.Background = "gs4"
-	room := courtroom.NewCourtroom(urls, a.d.Manager, sess, nil)
+	room := courtroom.NewCourtroom(urls, a.d.Manager.Media(), a.d.Manager, sess, nil)
 	a.room = room
 	room.SequentialWait = true
 	// Everything but the position background resolves as "settled", so the gate
@@ -166,14 +150,8 @@ func TestDrainWarningsRelaysBackgroundMissToGate(t *testing.T) {
 		}
 		a.drainWarnings()
 		room.Update(16 * time.Millisecond)
-		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
-		default:
-			time.Sleep(2 * time.Millisecond)
-		}
+		releaseDeliveries(a)
+		time.Sleep(2 * time.Millisecond)
 	}
 
 	// The split stays honest: the background was relayed to the courtroom gate but

@@ -12,6 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -296,19 +297,14 @@ func (a *App) drawLobby(w, h int32) {
 		}
 		y += rowH
 		if i == a.selServer && len(a.descLines) > 0 {
-			boxH := int32(len(a.descLines)+len(a.descLinks))*lineH + btnH + 16
+			boxH := int32(len(a.descLines))*lineH + btnH + 16
 			if y > listTop-boxH && y < h {
 				box := sdl.Rect{X: pad + 16, Y: y, W: w - 2*pad - 16, H: boxH - 4}
 				c.Fill(box, ColPanelHi)
 				c.Border(box, ColAccent)
 				ly := y + 3
-				for _, line := range a.descLines {
-					c.LabelClipped(box.X+6, ly, box.W-12, line, ColText)
-					ly += lineH
-				}
-				// URLs from the description: clickable, opens the browser.
-				for _, link := range a.descLinks {
-					a.linkLabel(box.X+6, ly, box.W-12, link)
+				for row, line := range a.descLines {
+					a.drawDescRow(box.X+6, ly, box.W-12, lineH, row, line)
 					ly += lineH
 				}
 				// Rehearse: offline browse of the cached roster. Read the snapshot: a ★ removal this frame may have
@@ -477,9 +473,6 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	}
 }
 
-// maxDescLinks bounds the clickable-link rows under a description.
-const maxDescLinks = 4
-
 // lobbyWarnStripH is the strip behind a notice at the lobby's bottom; lobbyWarnTextDY places its text up from the edge.
 const (
 	lobbyWarnStripH int32 = 30
@@ -496,8 +489,51 @@ func (a *App) selectServerRow(idx int, w int32) {
 	if desc == "" {
 		desc = "(no description)"
 	}
-	a.descLines = a.ctx.WrapText(desc, w-2*pad-40, maxDescLines)
-	a.descLinks = extractURLs(desc, maxDescLinks)
+	c := a.ctx
+	a.descLines = c.WrapText(desc, w-2*pad-40, maxDescLines)
+	// Positions come from the rows joined, as the wrap may end the last row with an ellipsis desc doesn't have.
+	a.descLinks, _ = wrappedLinkSpans(a.descLinks[:0], a.descLines, 0, desc, strings.Join(a.descLines, " "), 0)
+	for k := range a.descLinks {
+		s := &a.descLinks[k]
+		row := a.descLines[s.row]
+		s.x0, s.x1 = c.TextWidth(row[:s.lo]), c.TextWidth(row[:s.hi])
+	}
+}
+
+// drawDescRow draws one description row with its links in the accent colour; hovering underlines one, a click opens it.
+func (a *App) drawDescRow(x, y, maxW, lineH int32, row int, line string) {
+	c := a.ctx
+	drawn := int32(0)
+	for _, s := range a.descLinks {
+		if int(s.row) != row || s.x0 >= maxW {
+			continue
+		}
+		x1 := min(s.x1, maxW)
+		a.drawDescSegment(x, y, maxW, lineH, drawn, s.x0, line, ColText)
+		a.drawDescSegment(x, y, maxW, lineH, s.x0, x1, line, ColAccent)
+		if c.hovering(sdl.Rect{X: x + s.x0, Y: y, W: x1 - s.x0, H: lineH}) {
+			c.Fill(sdl.Rect{X: x + s.x0, Y: y + lineH - descUnderlineRise, W: x1 - s.x0, H: 1}, ColAccent)
+			if c.clicked {
+				a.openBrowser(schemeForOpen(s.url))
+			}
+		}
+		drawn = x1
+	}
+	a.drawDescSegment(x, y, maxW, lineH, drawn, maxW, line, ColText)
+}
+
+// descUnderlineRise lifts a hovered link's underline from the row's bottom edge to just under the baseline.
+const descUnderlineRise = 3
+
+// drawDescSegment draws the pixels lo..hi of a description row in col; the row is laid out whole so segments line up.
+func (a *App) drawDescSegment(x, y, maxW, lineH, lo, hi int32, line string, col sdl.Color) {
+	if hi <= lo {
+		return
+	}
+	c := a.ctx
+	prev, had := c.pushClip(sdl.Rect{X: x + lo, Y: y, W: hi - lo, H: lineH})
+	c.LabelClipped(x, y, maxW, line, col)
+	c.popClip(prev, had)
 }
 
 // serverRowTooltip shows a row's connect URL and advertised description on hover.
@@ -931,6 +967,7 @@ func (a *App) drawSpritePreview(w, h int32, name string) {
 			if zh < 1 {
 				zh = 1
 			}
+			a.applyPreviewScaleMode(page, zh, dst.H)
 			relX := float64(c.mouseX-dst.X) / float64(dst.W)
 			relY := float64(c.mouseY-dst.Y) / float64(dst.H)
 			relX = value.Clamp(relX, 0, 1)
@@ -938,6 +975,7 @@ func (a *App) drawSpritePreview(w, h int32, name string) {
 			src := sdl.Rect{X: value.Clamp(int32(relX*float64(page.W))-zw/2, 0, page.W-zw), Y: value.Clamp(int32(relY*float64(page.H))-zh/2, 0, page.H-zh), W: zw, H: zh}
 			c.copy(tex, &src, &dst)
 		} else {
+			a.applyPreviewScaleMode(page, page.H, dst.H)
 			c.copy(tex, nil, &dst)
 		}
 		a.drawPreviewZoom(frame, page.W, page.H, dst.H)
@@ -978,6 +1016,36 @@ func (a *App) drawSpritePreview(w, h int32, name string) {
 	c.Fill(closeB, ColPanelHi)
 	c.Label(closeB.X+5, closeB.Y+1, "x", ColText)
 	c.Tooltip(closeB, "Close the preview")
+}
+
+// previewScaling is the char.ini filter of the character behind one preview base; settled once its char.ini answered.
+type previewScaling struct {
+	base, char string
+	mode       courtroom.ScalingMode
+	settled    bool
+}
+
+// notePreviewChar records whose sprite the preview now shows; idempotent, as the portrait preview is set every frame.
+func (a *App) notePreviewChar(char string) {
+	if a.previewScaling.base == a.previewBase && a.previewScaling.char == char {
+		return
+	}
+	a.previewScaling = previewScaling{base: a.previewBase, char: char}
+}
+
+// applyPreviewScaleMode gives a character preview the courtroom's filter, which the page otherwise only gets once the
+// sprite is on stage (#88). Other previews keep the filter they have.
+func (a *App) applyPreviewScaleMode(page *render.TexturePage, nativeH, targetH int32) {
+	ps := &a.previewScaling
+	if ps.base != a.previewBase {
+		return
+	}
+	if !ps.settled {
+		m := a.charMetaFor(ps.char)
+		ps.mode, ps.settled = m.scaling, m.done
+	}
+	user := courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode())
+	page.ApplyScaleMode(a.ctx.Ren, render.SpriteScaleMode(user, ps.mode, nativeH, targetH))
 }
 
 // previewGripRect is the resize grip's hit rect, shared by the draw and the input handler.

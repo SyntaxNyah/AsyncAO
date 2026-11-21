@@ -32,6 +32,16 @@ type Config struct {
 	Found func(Key, File)
 	// Finished runs on the Manager's goroutine when a request ends, and must not block.
 	Finished func(*Asset)
+	// Delivered runs after a result is waiting for TakeResults, on any goroutine, to wake the main thread's loop.
+	Delivered func()
+	// Skip runs in Get on the caller's thread: true means nothing is asked, as the caller already holds key, such as an
+	// uploaded texture. It must be cheap; Get then returns Skipped.
+	Skip func(Key) bool
+	// Asked runs on the Manager's goroutine when a new request starts, such as to map the folder it lives in.
+	Asked func(Key)
+	// MissingAgain runs in Get on the caller's thread when key is asked again while known missing, which costs no
+	// request, so the caller can still warn.
+	MissingAgain func(*Asset)
 	// ClaimLimit is the memory decodes may claim at once; Now work may pass it, so a message can't wait on memory.
 	ClaimLimit int64
 	MaxAssets  int
@@ -87,10 +97,12 @@ type request struct {
 	lastErr error
 	queued  bool
 	dead    bool
-	pool    *Pool
-	work    func() any
-	done    func(any)
-	next    *request
+	// page marks an early part of a result, which the main thread uses without finishing the Asset.
+	page bool
+	pool *Pool
+	work func() any
+	done func(any)
+	next *request
 }
 
 // pipe is a lock-free list many threads push to and one thread takes whole.
@@ -194,6 +206,12 @@ type Manager struct {
 	claimed  int64
 	// winners maps a key to the file it was last found as, tried first next time, as AO2's asset_lookup_cache is.
 	winners map[Key]File
+	// refused counts Gets turned away at MaxAssets.
+	refused atomic.Int64
+	// skipped is what Get returns when Config.Skip says the caller holds the key already.
+	skipped *Asset
+	// unnamed is what Get returns for a key with no path: Missing, as it names no file.
+	unnamed *Asset
 }
 
 // NewManager starts a Manager's goroutine.
@@ -209,6 +227,10 @@ func NewManager(cfg Config) *Manager {
 	}
 	m := &Manager{cfg: cfg, wake: make(chan struct{}, 1), stop: make(chan struct{}), stopped: make(chan struct{}),
 		active: map[Key]*request{}, queues: map[*Pool]*poolQueue{}, hostBusy: map[string]int{}, winners: map[Key]File{}}
+	m.skipped = newAsset(Key{}, Later, 0, nil, m.stopped)
+	m.skipped.finish(Ready, nil, nil, cfg.Clock())
+	m.unnamed = newAsset(Key{}, Later, 0, nil, m.stopped)
+	m.unnamed.finish(Missing, nil, nil, cfg.Clock())
 	go m.run()
 	return m
 }
@@ -219,9 +241,16 @@ func (m *Manager) Close() {
 	<-m.stopped
 }
 
-// Get returns the Asset for key from any thread and never blocks: a repeat ask takes no lock and posts nothing.
+// Get returns the Asset for key from any thread and never blocks: a repeat ask takes no lock and posts nothing. A key the
+// Skip hook says the caller holds already returns a shared finished Asset with no key, and so does a key with no path.
 // alts are the other names it may be found under, best first, each asked only once every earlier one is known absent.
 func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *Asset {
+	if key.Path == "" {
+		return m.unnamed
+	}
+	if m.cfg.Skip != nil && m.cfg.Skip(key) {
+		return m.skipped
+	}
 	if v, ok := m.assets.Load(key); ok {
 		a := v.(*Asset)
 		if !m.expired(a) && !a.lacks(alts) {
@@ -229,9 +258,12 @@ func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *As
 			if urgency == Now && !a.urgent.Load() && a.urgent.CompareAndSwap(false, true) {
 				m.post(&request{event: eventRaise, key: key})
 			}
+			if m.cfg.MissingAgain != nil && a.State() == Missing {
+				m.cfg.MissingAgain(a)
+			}
 			return a
 		}
-		fresh := newAsset(key, urgency, flags, alts)
+		fresh := newAsset(key, urgency, flags, alts, m.stopped)
 		if m.assets.CompareAndSwap(key, a, fresh) {
 			m.post(&request{event: eventNew, asset: fresh, urgency: urgency})
 			return fresh
@@ -240,11 +272,12 @@ func (m *Manager) Get(key Key, urgency Urgency, flags Flags, alts ...string) *As
 	}
 	// Later work is refused at the cap, unstored, so the caller's next ask tries again.
 	if urgency == Later && m.count.Load() >= int64(m.cfg.MaxAssets) {
-		a := newAsset(key, urgency, flags, alts)
+		a := newAsset(key, urgency, flags, alts, m.stopped)
 		a.finish(Refused, nil, ErrRefused, m.cfg.Clock())
+		m.refused.Add(1)
 		return a
 	}
-	a := newAsset(key, urgency, flags, alts)
+	a := newAsset(key, urgency, flags, alts, m.stopped)
 	if v, loaded := m.assets.LoadOrStore(key, a); loaded {
 		v.(*Asset).add(flags)
 		return v.(*Asset)
@@ -258,18 +291,14 @@ func (m *Manager) expired(a *Asset) bool {
 	return a.State() == Missing && m.cfg.Clock().Sub(time.Unix(0, a.finished.Load())) >= m.cfg.MissingTTL
 }
 
-// Load waits for key on a worker thread; it panics on the main thread, which must never wait.
-func (m *Manager) Load(ctx context.Context, key Key, urgency Urgency) (any, error) {
+// Load is Get that waits until the Asset finishes, ctx ends or the media system stops, for a caller off the main thread;
+// it panics on the main thread, which must never wait.
+func (m *Manager) Load(ctx context.Context, key Key, urgency Urgency, flags Flags, alts ...string) (*Asset, error) {
 	if m.cfg.IsMainThread != nil && m.cfg.IsMainThread() {
 		panic("media: Load called on the main thread")
 	}
-	a := m.Get(key, urgency, 0)
-	select {
-	case <-a.done:
-		return a.Result(), a.Err()
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	a := m.Get(key, urgency, flags, alts...)
+	return a, a.Wait(ctx)
 }
 
 // Forget drops a finished Asset, such as one whose texture was evicted, so the next Get asks again.
@@ -341,10 +370,22 @@ func (m *Manager) Run(pool *Pool, urgency Urgency, work func() any, done func(an
 	m.post(&request{event: eventWork, pool: pool, urgency: urgency, work: work, done: done, step: stepWork})
 }
 
-// TakeResults hands the main thread every result that needs it, once per frame, with one atomic swap.
-func (m *Manager) TakeResults(use func(*Asset, any)) {
+// Refused counts the Gets turned away because the request table was full; any thread.
+func (m *Manager) Refused() int64 { return m.refused.Load() }
+
+// TakeResults hands the main thread every result that needs it, in order, once per frame, with one atomic swap. final is
+// false for an early page; only the final result is Finished.
+func (m *Manager) TakeResults(use func(a *Asset, result any, final bool)) {
 	for r := m.results.take(); r != nil; r = r.next {
-		use(r.asset, r.result)
+		use(r.asset, r.result, !r.page)
+	}
+}
+
+// deliver queues a result for TakeResults and wakes the main thread; any goroutine.
+func (m *Manager) deliver(r *request) {
+	m.results.push(r)
+	if m.cfg.Delivered != nil {
+		m.cfg.Delivered()
 	}
 }
 
@@ -414,6 +455,9 @@ func (m *Manager) event(r *request) {
 	switch r.event {
 	case eventNew:
 		m.active[r.asset.key] = r
+		if m.cfg.Asked != nil {
+			m.cfg.Asked(r.asset.key)
+		}
 		m.search(r)
 	case eventRaise:
 		if a := m.active[r.key]; a != nil && a.urgency == Later {
@@ -457,6 +501,9 @@ func (m *Manager) end(r *request, state AssetState, result any, err error) {
 	}
 	if state == Failed && m.assets.CompareAndDelete(r.asset.key, r.asset) {
 		m.count.Add(-1)
+	}
+	if state == Ready && r.file != "" {
+		r.asset.hit.Store(&Hit{File: r.file, Source: m.cfg.Chains[r.asset.key.Place].entries[r.entry].Source})
 	}
 	r.asset.finish(state, result, err, m.cfg.Clock())
 	if m.cfg.Finished != nil {
@@ -518,6 +565,17 @@ func (m *Manager) namesOf(a *Asset) []nameFiles {
 		if m.cfg.AllFormats != nil {
 			files.all = m.cfg.AllFormats(a.key, name)
 		}
+		if a.every {
+			every := files.all
+			if m.cfg.AllFormats == nil {
+				every = EveryFormat(a.key, name)
+			}
+			for _, f := range every {
+				if !slices.Contains(files.server, f) {
+					files.server = append(files.server, f)
+				}
+			}
+		}
 		names = append(names, files)
 	}
 	if !won {
@@ -565,6 +623,9 @@ func (m *Manager) handle(r *request) {
 		m.observe(r)
 	}
 	if r.dead {
+		if s, ok := r.result.(Stream); ok {
+			s.Close()
+		}
 		m.end(r, Withdrawn, nil, ErrWithdrawn)
 		return
 	}
@@ -606,6 +667,10 @@ func (m *Manager) afterData(r *request) {
 		}
 		m.winners[r.asset.key] = r.file
 	}
+	if r.asset.key.Kind == KindStream {
+		m.end(r, Ready, r.result, nil)
+		return
+	}
 	format := m.cfg.Formats[r.asset.key.Kind]
 	if format == nil {
 		m.end(r, Ready, r.bytes, nil)
@@ -631,7 +696,7 @@ func (m *Manager) decodeDone(r *request) {
 	}
 	if m.cfg.Formats[r.asset.key.Kind].OnMainThread() {
 		delete(m.active, r.asset.key)
-		m.results.push(r)
+		m.deliver(r)
 		return
 	}
 	m.end(r, Ready, r.result, nil)
@@ -695,6 +760,13 @@ func (m *Manager) start(p *Pool, r *request) {
 		}
 		source := m.cfg.Chains[r.asset.key.Place].entries[r.entry].Source
 		file := r.file
+		if r.asset.key.Kind == KindStream {
+			p.jobs <- func() {
+				r.result, r.err = openStream(source, file)
+				m.report(r)
+			}
+			break
+		}
 		p.jobs <- func() {
 			r.bytes, r.err = source.Data(file)
 			m.report(r)
@@ -710,10 +782,11 @@ func (m *Manager) start(p *Pool, r *request) {
 		m.claimed += r.claim
 		r.asset.claim.Store(r.claim)
 		format := m.cfg.Formats[r.asset.key.Kind]
-		key, data := r.asset.key, r.bytes
+		key, data, asset := r.asset.key, r.bytes, r.asset
 		hit := Hit{File: r.file, Source: m.cfg.Chains[key.Place].entries[r.entry].Source}
+		page := func(v any) { m.deliver(&request{asset: asset, result: v, page: true}) }
 		p.jobs <- func() {
-			r.result, r.err = format.Decode(key, hit, data)
+			r.result, r.err = format.Decode(key, hit, data, page)
 			m.report(r)
 		}
 	}

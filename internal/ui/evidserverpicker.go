@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -63,18 +63,18 @@ func (a *App) fetchServerEvidenceIndex() {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), evidServerFetchTO)
 	defer cancel()
-	data, err := a.d.Manager.FetchRaw(ctx, a.urls.EvidenceRoot())
+	data, err := assets.Raw(ctx, a.d.Manager.Media(), a.urls.EvidenceRoot())
 	if err != nil {
 		a.evidServerRes <- nil
 		return
 	}
-	entries := parseAutoindexEntries(data, evidServerCap)
+	entries, _ := media.ParseListing(data, evidServerCap)
 	var out []string
 	for _, e := range entries {
-		if e.dir {
+		if e.Dir {
 			continue // only image files, not nested folders
 		}
-		out = append(out, e.name)
+		out = append(out, e.Name)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
 	a.evidServerRes <- out
@@ -188,7 +188,7 @@ func (a *App) drawServerEvidencePicker(w, h int32) {
 			c.copy(page.Frames[0], nil, &rc)
 		} else {
 			c.Fill(rc, ColPanelHi)
-			a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (server evidence picker thumbnail)
+			a.d.Manager.Media().Get(assets.ExactKey(url, assets.AssetTypeMisc), media.Later, 0) // AssetType: Misc (server evidence picker thumbnail)
 		}
 		c.Border(rc, ColPanelHi)
 		c.LabelClipped(cx, cy+evidServerCell+2, evidServerCell, name, ColTextDim)

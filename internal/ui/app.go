@@ -12,6 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/logbrowser"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -104,9 +105,8 @@ const (
 
 // Deps wires the app to the engine singletons built in main.
 type Deps struct {
-	Prefs    *config.AssetPreferences
-	Resolver *assets.Resolver
-	Manager  *assets.Manager
+	Prefs   *config.AssetPreferences
+	Manager *assets.Manager
 	// Disk is the disk cache tier, which Settings can move to another folder while the client runs.
 	Disk     *cache.DiskCache
 	Client   *network.Client
@@ -210,8 +210,8 @@ type App struct {
 	// First click opens the full description under the row; a second click on the same row joins.
 	selServer  int
 	descLines  []string
-	descLinks  []string // clickable URLs found in the description
-	helpScroll int32    // ScreenServerHelp scroll position
+	descLinks  []linkSpan // clickable URLs in descLines
+	helpScroll int32      // ScreenServerHelp scroll position
 
 	// --- the active server session (every per-server field) ---
 	// sessionState is embedded so the whole session parks and restores as one struct move on tab switch.
@@ -260,6 +260,8 @@ type App struct {
 	// previewBase, so every other previewBase setter invalidates the caption automatically.
 	previewName    string
 	previewNameFor string
+	// previewScaling is the char.ini filter of the character the preview shows, so it draws as the courtroom would.
+	previewScaling previewScaling
 	previewFor     string    // base the preview clock was started for
 	previewAt      time.Time // loop anchor — animated previews play, not freeze
 	previewZoom    int       // magnifier factor (1 = fit; >1 shows a cursor-panned window)
@@ -302,11 +304,10 @@ type App struct {
 	// OOC wrapped-lines cache, also keyed by logViewEpoch: rebuilt only when the log, width or font scale moved.
 	oocWrap     []string
 	oocWrapName []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
-	oocWrapCont []bool   // parallel to oocWrap: true = a wrap continuation row (hanging indent); a paragraph's own newline starts a fresh row, not a continuation
 	oocWrapSrc  []int    // parallel to oocWrap: the source oocLog entry index of each display line (mirrors icWrapLine.entry)
 	// Every URL in a paragraph is separately hoverable. oocWrapLink is the flat table in row order;
 	// oocWrapLinkAt has len(rows)+1 entries, so row r's spans are oocWrapLink[oocWrapLinkAt[r]:oocWrapLinkAt[r+1]].
-	oocWrapLink   []oocLinkSpan
+	oocWrapLink   []linkSpan
 	oocWrapLinkAt []int32
 	oocWrapSeq    uint64
 	oocWrapEpoch  uint64
@@ -1068,9 +1069,6 @@ type App struct {
 	// lastDPIDisplayIndex is the display last queried, so a move within one monitor costs no syscall or font rebuild.
 	// -1 = never queried.
 	lastDPIDisplayIndex int
-	// theaterOn is the borderless viewport-only mode. Session-only, so it can't persist someone into a chrome-less
-	// client.
-	theaterOn bool
 
 	// fontPick lists the fonts a family can name, for the font fields' suggestions.
 	fontPick fontPicker
@@ -1344,19 +1342,6 @@ func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 	}
 }
 
-// setTheater flips the borderless viewport-only mode; every caller is on the render thread, so the SDL call is legal.
-func (a *App) setTheater(on bool) {
-	a.theaterOn = on
-	if on {
-		// No toolbox draws in theater, so clear the pieces panel and pin: an invisible armed panel would swallow
-		// clicks.
-		a.toolboxPieces, a.toolboxPinned = false, false
-	}
-	if a.ctx.win != nil {
-		a.ctx.win.SetBordered(!on)
-	}
-}
-
 // setDND flips Do Not Disturb, saving it only when the user opted into persistence; the default clears every launch.
 func (a *App) setDND(on bool) {
 	a.dndOn = on
@@ -1586,7 +1571,7 @@ func (a *App) warmBase(base string, t assets.AssetType) {
 	}
 	a.activeWarmDemands[base]++
 	a.activeWarmLastDemand = time.Now()
-	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+	a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Now, 0)
 }
 
 // sceneWarmRedemandEvery throttles re-requests across the scene so the per-frame warm can't spam the pool during
@@ -1646,11 +1631,11 @@ func (a *App) keepSceneAssetsWarm() {
 		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
 			switch t {
 			case assets.AssetTypeCharSprite:
-				a.d.Manager.PrefetchChain(base, courtroom.SpriteHealAlts(base), t, network.PriorityHigh) // AssetType: CharSprite (folder + bare, so no spelling ever false-flags missing)
+				a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Now, 0, courtroom.SpriteHealAlts(base)...) // AssetType: CharSprite (folder + bare, so no spelling ever false-flags missing)
 			case assets.AssetTypeBackground:
-				a.d.Manager.PrefetchChain(base, sc.BackgroundAlts, t, network.PriorityHigh) // AssetType: Background (every name AO2 tries)
+				a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Now, 0, sc.BackgroundAlts...) // AssetType: Background (every name AO2 tries)
 			default:
-				a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+				a.d.Manager.Media().Get(assets.ChainKey(base, t), media.Now, 0)
 			}
 			demanded = true
 			a.sceneWarmLastDemand = now

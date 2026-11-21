@@ -7,10 +7,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -793,13 +795,13 @@ func (a *App) healScenery() {
 	// each heal would evict another live base forever.
 	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneHealAllowed(sc.BackgroundBase) {
 		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
-		a.d.Manager.PrefetchChain(sc.BackgroundBase, sc.BackgroundAlts, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+		a.d.Manager.Media().Get(assets.ChainKey(sc.BackgroundBase, assets.AssetTypeBackground), media.Now, 0, sc.BackgroundAlts...) // AssetType: Background
 	}
 	// A conclusively 404'd base never becomes Contains, so without IsMissing this re-demands a known-absent desk.
 	// The background arm skips the check: Background is never marked, to keep the viewport's hold-previous behaviour.
 	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && !a.d.Store.IsMissing(sc.DeskBase) && a.sceneHealAllowed(sc.DeskBase) {
 		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
-		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
+		a.d.Manager.Media().Get(assets.ChainKey(sc.DeskBase, assets.AssetTypeDeskOverlay), media.Now, 0) // AssetType: DeskOverlay
 	}
 	a.healSpriteLayer(&sc.Speaker, &a.spkAskBase, &a.spkAskAt, now)
 	a.healSpriteLayer(&sc.Pair, &a.pairAskBase, &a.pairAskAt, now)
@@ -821,7 +823,7 @@ func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, ask
 		return // per-scene futility budget spent (over-tier churn / permanent 404) — quiet until the scene changes
 	}
 	*askBase, *askAt = layer.Active, now
-	a.d.Manager.PrefetchChain(layer.Active, courtroom.SpriteHealAlts(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
+	a.d.Manager.Media().Get(assets.ChainKey(layer.Active, assets.AssetTypeCharSprite), media.Now, 0, courtroom.SpriteHealAlts(layer.Active)...) // AssetType: CharSprite (heal evicted live sprite: bare + folder)
 }
 
 // icEntry is one IC log line with its AO text color preserved.
@@ -837,6 +839,9 @@ type icEntry struct {
 	ref         uint32 // content-stable reaction ref (#2): MakeReactionRef(CharName, clean text); 0 = system line
 	// speech marks a line from an IC message, which has a counterpart in the play queue (see ghosttext.go).
 	speech bool
+	// speechExtra counts additional queued messages folded into this entry's repeated blankposts, so ghost
+	// text still pairs one log row with every message the log collapsed.
+	speechExtra int
 	// styles holds inline-colour runs over the body; bodyRuneStart is the rune offset of the body within text.
 	styles        []courtroom.StyleRun
 	bodyRuneStart int
@@ -1064,8 +1069,39 @@ func (a *App) pushIC(line string, color int, friend bool, friendColor int32, spe
 	a.pushICStyled(line, color, friend, friendColor, speaker, nil, 0)
 }
 
+// icBodyBlank reports whether the body at bodyRuneStart has no visible text. The head before it is the
+// speaker prefix; a blank body is a blankpost.
+func icBodyBlank(line string, bodyRuneStart int) bool {
+	if bodyRuneStart <= 0 {
+		return false
+	}
+	n := 0
+	for _, r := range line {
+		if n >= bodyRuneStart && !unicode.IsSpace(r) {
+			return false
+		}
+		n++
+	}
+	return n >= bodyRuneStart
+}
+
+// appendICEntry appends e, folding a repeated blankpost from the same speaker into the previous entry.
+// It returns false when folded; the previous entry then represents one more queued message.
+func appendICEntry(log *[]icEntry, e icEntry) bool {
+	if n := len(*log); n > 0 {
+		last := &(*log)[n-1]
+		if e.speaker == last.speaker && icBodyBlank(e.text, e.bodyRuneStart) && icBodyBlank(last.text, last.bodyRuneStart) {
+			last.speechExtra++
+			return false
+		}
+	}
+	*log = append(*log, e)
+	return true
+}
+
 // pushICStyled is pushIC plus the inline-colour runs and the body's rune offset within the line.
-func (a *App) pushICStyled(line string, color int, friend bool, friendColor int32, speaker string, styles []courtroom.StyleRun, bodyRuneStart int) {
+// It returns false when a repeated blankpost was folded into the previous entry.
+func (a *App) pushICStyled(line string, color int, friend bool, friendColor int32, speaker string, styles []courtroom.StyleRun, bodyRuneStart int) bool {
 	// Cap first: everything else describes the stored text. extractURLs splits on Fields and no codec rune is
 	// whitespace,
 	// so a trailing marker would fuse onto a link,
@@ -1075,12 +1111,15 @@ func (a *App) pushICStyled(line string, color int, friend bool, friendColor int3
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
+	if !appendICEntry(&a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart}) {
+		return false
+	}
 	if cap := a.icLogCapFor(); cap > 0 && len(a.icLog) > cap {
 		copy(a.icLog, a.icLog[len(a.icLog)-cap:])
 		a.icLog = a.icLog[:cap]
 	}
 	a.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
+	return true
 }
 
 // icLogCapFor returns the live IC scrollback cap, 0 for no cap;
@@ -1105,7 +1144,7 @@ const oocLineCap = 16384
 
 // pushOOC appends an OOC line; speaker is "" for system lines,
 // and the slices stay parallel so display needn't re-parse.
-func (a *App) pushOOC(line, speaker string) {
+func (a *App) pushOOC(line, speaker string, fromServer bool) {
 	// OOC carries AsyncAO's DMs raw, so markers arrive here; the control frame was already decoded by routeIncomingPM.
 	// The head is preserved, keeping the "speaker: " trim working and oocSpeakers a substring of oocLog.
 	line = stripDisplayTail(line, speaker)
@@ -1135,13 +1174,14 @@ func (a *App) pushOOC(line, speaker string) {
 	}
 	a.oocLog = appendCapped(a.oocLog, line, icLogCap)
 	a.oocSpeakers = appendCapped(a.oocSpeakers, speaker, icLogCap)
+	a.oocFromServer = appendCapped(a.oocFromServer, fromServer, icLogCap)
 	a.oocSeq++ // invalidate the wrapped-lines cache
 	// Every active-tab OOC event funnels through here, like AO2's append_server_chatmessage,
 	// so the transcript logs what's shown.
 	a.logDetailedOOC(a.serverName, a.logSession, line) // detailed transcript (opt-in), this tab's own file
 }
 
-func appendCapped(list []string, line string, cap int) []string {
+func appendCapped[T any](list []T, line T, cap int) []T {
 	list = append(list, line)
 	if len(list) > cap {
 		copy(list, list[len(list)-cap:])

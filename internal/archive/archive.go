@@ -61,11 +61,11 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 	return res, nil
 }
 
-// resolveRef probes candidates and alternate sprite spellings (EmoteAlts order). ResolveRawLayered checks
-// local packs but never teaches learned formats or writes pack bytes into server-keyed caches.
+// resolveRef probes candidates and alternate sprite spellings (EmoteAlts order). assets.Resolve checks local packs but
+// never teaches learned formats or writes pack bytes into server-keyed caches.
 func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef) (string, []byte, bool, bool) {
 	if ref.Exact {
-		if data, err := mgr.FetchRaw(ctx, ref.Base); err == nil && len(data) > 0 {
+		if data, err := assets.Raw(ctx, mgr.Media(), ref.Base); err == nil && len(data) > 0 {
 			return ref.Base, data, false, true
 		}
 		return "", nil, false, false
@@ -74,11 +74,12 @@ func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef
 		if base == "" {
 			continue
 		}
-		url, data, fromPack, ok := mgr.ResolveRawLayered(base, ref.Type)
+		found, ok := assets.Resolve(ctx, mgr.Media(), base, ref.Type, false)
 		if !ok {
 			continue
 		}
-		if fromPack {
+		url, data := found.URL, found.Data
+		if found.FromPack {
 			// A pack answers under a local:// URL, so return the server-side path; the transport URL would fail the
 			// caller's prefix test and silently drop every pack asset.
 			return base + path.Ext(url), data, true, true
@@ -126,12 +127,13 @@ func DiskPath(rel string) string {
 	return strings.Join(out, "/")
 }
 
-// SeedFormats teaches a replay resolver the archive's formats, so non-webp files resolve on the first probe.
-func SeedFormats(resolver *assets.Resolver, origin string, formats map[string]string) {
-	host := assets.HostOf(origin)
+// SeedFormats gives a replay's origin the archive's recorded formats, so non-webp files resolve on the first probe.
+func SeedFormats(mgr *assets.Manager, origin string, formats map[string]string) {
+	byType := make(map[assets.AssetType]string, len(formats))
 	for name, ext := range formats {
 		if t, ok := assets.TypeFromName(name); ok {
-			resolver.RecordSuccess(host, t, ext)
+			byType[t] = ext
 		}
 	}
+	mgr.AllowFormats(origin, byType)
 }

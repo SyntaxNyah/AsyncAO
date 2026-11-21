@@ -47,8 +47,7 @@ func TestLogHangingIndent(t *testing.T) {
 		t.Errorf("IC continuation indent = %d, want %d", got, logWrapIndentPx)
 	}
 
-	// OOC: a wrapping paragraph THEN an explicit newline — the wrap's rows are
-	// continuations, the newline's row starts a fresh unindented paragraph.
+	// OOC (#53): no row hangs, wrapped or not, as AO2's server log draws the text as the server wrote it.
 	a.oocLog = append(a.oocLog, "a long first paragraph that will wrap across rows\nsecond para")
 	a.oocSpeakers = append(a.oocSpeakers, "MOTD")
 	a.oocSeq++
@@ -56,23 +55,13 @@ func TestLogHangingIndent(t *testing.T) {
 	if len(lines) < 3 {
 		t.Fatalf("OOC fixture must wrap, got %d rows", len(lines))
 	}
-	if len(a.oocWrapCont) != len(lines) {
-		t.Fatalf("cont flags = %d, rows = %d — must stay parallel", len(a.oocWrapCont), len(lines))
-	}
 	if len(a.oocWrapSrc) != len(lines) {
 		t.Fatalf("src indices = %d, rows = %d — must stay parallel (both append sites)", len(a.oocWrapSrc), len(lines))
 	}
-	if a.oocWrapCont[0] {
-		t.Error("a paragraph's first row must not be a continuation")
-	}
-	if !a.oocWrapCont[1] {
-		t.Error("a wrapped row must be a continuation")
-	}
-	if last := len(lines) - 1; a.oocWrapCont[last] {
-		t.Error("a newline-started paragraph must not be a continuation")
-	}
-	if got := a.logRowIndent(logSelOOC, 1); got != logWrapIndentPx {
-		t.Errorf("OOC continuation indent = %d, want %d", got, logWrapIndentPx)
+	for li := range lines {
+		if got := a.logRowIndent(logSelOOC, li); got != 0 {
+			t.Errorf("OOC row %d indent = %d, want 0", li, got)
+		}
 	}
 }
 
@@ -83,7 +72,7 @@ func TestLogHangingIndent(t *testing.T) {
 // wrapped-across-rows case), row 5 holds two distinct links side by side.
 func TestOOCHoverSpan(t *testing.T) {
 	a := testTabApp(t)
-	a.oocWrapLink = []oocLinkSpan{
+	a.oocWrapLink = []linkSpan{
 		{row: 1, x0: 0, x1: 100, link: 0, url: "u1"},
 		{row: 2, x0: 0, x1: 100, link: 0, url: "u1"},
 		{row: 3, x0: 0, x1: 40, link: 0, url: "u1"},
@@ -255,10 +244,10 @@ func TestOOCWrapLongHelpNoLoss(t *testing.T) {
 	}
 	// Parallel slices stay in lockstep at the new budget (the link index carries
 	// one extra entry by construction — it holds each row's span START).
-	if len(a.oocWrapName) != len(rows) || len(a.oocWrapCont) != len(rows) ||
+	if len(a.oocWrapName) != len(rows) ||
 		len(a.oocWrapSrc) != len(rows) || len(a.oocWrapLinkAt) != len(rows)+1 {
-		t.Fatalf("parallel slices desynced: out=%d name=%d cont=%d src=%d linkAt=%d",
-			len(rows), len(a.oocWrapName), len(a.oocWrapCont), len(a.oocWrapSrc), len(a.oocWrapLinkAt))
+		t.Fatalf("parallel slices desynced: out=%d name=%d src=%d linkAt=%d",
+			len(rows), len(a.oocWrapName), len(a.oocWrapSrc), len(a.oocWrapLinkAt))
 	}
 	if got, want := stripSpaces(strings.Join(rows, "")), stripSpaces(help); got != want {
 		t.Fatalf("text lost in wrap: reassembled %d chars, original %d", len(got), len(want))
@@ -283,7 +272,7 @@ const oocWrapMaxLinesPerEntryOld = 24
 func TestPushOOCStoreCapIntact(t *testing.T) {
 	a := testTabApp(t)
 	huge := strings.Repeat("x", oocLineCap+500) // comfortably over the cap
-	a.pushOOC(huge, "")
+	a.pushOOC(huge, "", false)
 	if len(a.oocLog) != 1 {
 		t.Fatalf("expected one stored entry, got %d", len(a.oocLog))
 	}
@@ -297,7 +286,7 @@ func TestPushOOCStoreCapIntact(t *testing.T) {
 	// A legitimately long /help UNDER the cap is stored whole (not clipped).
 	a2 := testTabApp(t)
 	fits := strings.Repeat("y", oocLineCap-1)
-	a2.pushOOC(fits, "")
+	a2.pushOOC(fits, "", false)
 	if len(a2.oocLog) != 1 || a2.oocLog[0] != fits {
 		t.Fatal("an under-cap entry must be stored verbatim")
 	}
@@ -331,10 +320,10 @@ func TestOOCWrapPathologicalMarker(t *testing.T) {
 		t.Fatalf("row count %d exceeds budget+marker (%d)", len(rows), oocWrapMaxLinesPerEntry+1)
 	}
 	// Parallel slices include the marker row.
-	if len(a.oocWrapName) != len(rows) || len(a.oocWrapCont) != len(rows) ||
+	if len(a.oocWrapName) != len(rows) ||
 		len(a.oocWrapSrc) != len(rows) || len(a.oocWrapLinkAt) != len(rows)+1 {
-		t.Fatalf("marker desynced parallel slices: out=%d name=%d cont=%d src=%d linkAt=%d",
-			len(rows), len(a.oocWrapName), len(a.oocWrapCont), len(a.oocWrapSrc), len(a.oocWrapLinkAt))
+		t.Fatalf("marker desynced parallel slices: out=%d name=%d src=%d linkAt=%d",
+			len(rows), len(a.oocWrapName), len(a.oocWrapSrc), len(a.oocWrapLinkAt))
 	}
 	// A NORMAL width never trips the marker for the same content.
 	a.oocSeq++ // force a cache rebuild at the new width

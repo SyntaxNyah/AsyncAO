@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -32,6 +33,9 @@ const (
 
 	diskDirPerm    = 0o755
 	diskTmpPattern = "w-*.tmp"
+	// partialDir holds downloads still arriving, as .tmp files that prune and Relocate skip; opening the cache empties it.
+	partialDir     = "partial"
+	partialPattern = "*.tmp"
 	hashHexLen     = 16 // xxhash64 → 8 bytes → 16 hex chars
 
 	// diskPruneEvery is how many stored blobs pass between sweeps; the walk runs only on the writer goroutine.
@@ -48,10 +52,12 @@ func Key(url string) string {
 	return hex.EncodeToString(buf[:])
 }
 
-// diskWrite is one queued blob operation; del=true removes the blob, and the single FIFO writer preserves order.
+// diskWrite is one queued blob operation: store data, move a finished download from from, or with del remove the blob;
+// the single FIFO writer preserves order.
 type diskWrite struct {
 	path string
 	data []byte
+	from string
 	del  bool
 }
 
@@ -186,16 +192,17 @@ func moveBlobs(from, to string) error {
 
 // copyFile copies src to dst through a temp file, so a half-copied blob never looks finished.
 func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
+	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
+	defer in.Close()
 	tmp, err := os.CreateTemp(filepath.Dir(dst), diskTmpPattern)
 	if err != nil {
 		return err
 	}
 	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
+	if _, err := io.Copy(tmp, in); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
 		return err
@@ -212,6 +219,8 @@ func NewDiskCache(root string, initialBudget int64) (*DiskCache, error) {
 	if err := os.MkdirAll(root, diskDirPerm); err != nil {
 		return nil, fmt.Errorf("cache: creating disk cache root %s: %w", root, err)
 	}
+	// Here, not on the writer: once this returns a download may already be arriving in the folder.
+	_ = os.RemoveAll(filepath.Join(root, partialDir)) // downloads a previous session never finished
 	d := &DiskCache{
 		queue:    make(chan diskWrite, writeQueueCap),
 		pruneReq: make(chan struct{}, pruneReqCap),
@@ -260,6 +269,31 @@ func (d *DiskCache) Get(url string) ([]byte, bool) {
 	}
 	d.hits.Add(1)
 	return data, true
+}
+
+// Path is where url's copy is kept, whether or not it exists yet, for a reader that opens the file itself.
+func (d *DiskCache) Path(url string) string { return d.pathFor(url) }
+
+// PartialFile creates the file a download is written into while it arrives; Adopt hands it to the cache when complete.
+func (d *DiskCache) PartialFile() (*os.File, error) {
+	dir := filepath.Join(d.Root(), partialDir)
+	if err := os.MkdirAll(dir, diskDirPerm); err != nil {
+		return nil, fmt.Errorf("cache: creating %s: %w", dir, err)
+	}
+	return os.CreateTemp(dir, partialPattern)
+}
+
+// Adopt queues a finished download at path to become url's copy; a full queue or closed cache deletes it instead.
+func (d *DiskCache) Adopt(url, path string) {
+	if !d.stopped.Load() {
+		select {
+		case d.queue <- diskWrite{path: d.pathFor(url), from: path}:
+			return
+		default:
+		}
+	}
+	d.dropped.Add(1)
+	_ = os.Remove(path)
 }
 
 // Put queues data and takes ownership, as T2 shares the payload; a full queue or closed cache drops this copy.
@@ -358,6 +392,9 @@ func (d *DiskCache) write(w diskWrite) bool {
 		d.reportError(fmt.Errorf("cache: creating shard dir %s: %w", dir, err))
 		return false
 	}
+	if w.from != "" {
+		return d.adopt(w)
+	}
 	tmp, err := os.CreateTemp(dir, diskTmpPattern)
 	if err != nil {
 		d.reportError(fmt.Errorf("cache: creating temp blob in %s: %w", dir, err))
@@ -379,6 +416,19 @@ func (d *DiskCache) write(w diskWrite) bool {
 		os.Remove(tmpName)
 		d.reportError(fmt.Errorf("cache: publishing blob %s: %w", w.path, err))
 		return false
+	}
+	d.writes.Add(1)
+	return true
+}
+
+// adopt moves a finished download into place, copying when the cache moved to another drive while it arrived.
+func (d *DiskCache) adopt(w diskWrite) bool {
+	defer os.Remove(w.from)
+	if err := os.Rename(w.from, w.path); err != nil {
+		if err := copyFile(w.from, w.path); err != nil {
+			d.reportError(fmt.Errorf("cache: adopting download %s: %w", w.path, err))
+			return false
+		}
 	}
 	d.writes.Add(1)
 	return true

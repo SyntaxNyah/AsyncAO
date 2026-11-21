@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
 	"github.com/SyntaxNyah/AsyncAO/internal/netproxy"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
@@ -24,14 +25,13 @@ import (
 // buildPumpManager wires a minimal asset manager over the given source —
 // the same shape the app uses, enough to fetch + decode + emit on Decoded().
 // localMode true = a mount-folder source; false = a real network client.
-func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) (*assets.Manager, *assets.Resolver) {
+func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) *assets.Manager {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prefs.Close() })
-	resolver := assets.NewResolver(prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -41,17 +41,16 @@ func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) (*ass
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: source, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)
 	if lf, ok := source.(*assets.LocalFetcher); ok && localMode {
 		mgr.SetFolders(lf.Mounts(), nil)
 	}
-	return mgr, resolver
+	return mgr
 }
 
 func writeTestPNG(t *testing.T, path string) {
@@ -93,10 +92,10 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	rel, _ := strings.CutPrefix(base, origin)
 	writeTestPNG(t, filepath.Join(dir, filepath.FromSlash(rel+config.ExtPNG)))
 
-	mgr, resolver := buildPumpManager(t, local, true)
+	mgr := buildPumpManager(t, local, true)
 	// The default probe list is webp-only; this fixture is PNG, so seed the host's
 	// learned format (what a real extensions.json / a prior learned hit provides).
-	resolver.RecordSuccess(assets.HostOf(base), assets.AssetTypeCharSprite, config.ExtPNG)
+	mgr.AllowFormats(local.BaseURL(), map[assets.AssetType]string{assets.AssetTypeCharSprite: config.ExtPNG})
 
 	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
@@ -105,10 +104,10 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	defer store.Purge()
 	pump := NewPump(store, mgr, nil)
 
-	mgr.Prefetch(base, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (warm-gate prefetch)
+	mgr.Media().Get(assets.ChainKey(base, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (warm-gate prefetch)
 
 	// Pump every "frame" until the async decode lands in T1 — the same loop the
-	// export's warm phase runs (Pump.Frame() drains Manager.Decoded() each frame).
+	// export's warm phase runs (Pump.Frame() takes the waiting deliveries each frame).
 	deadline := time.Now().Add(3 * time.Second)
 	for !store.Contains(base) && time.Now().Before(deadline) {
 		pump.Frame()
@@ -139,7 +138,7 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	}))
 	defer srvCorrupt.Close()
 
-	mgr, _ := buildPumpManager(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
+	mgr := buildPumpManager(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
 	store, err := NewTextureStoreBudget(ren, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -148,16 +147,16 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	pump := NewPump(store, mgr, nil)
 
 	// Sick origin: the fetch (with its bounded retry) fails at the network
-	// stage → transient → counted, NOT pinned.
+	// stage → counted as a failed fetch, NOT pinned.
 	sick := srvSick.URL + "/characters/witch/(a)sick"
-	mgr.Prefetch(sick, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (test)
+	mgr.Media().Get(assets.ChainKey(sick, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (test)
 	deadline := time.Now().Add(5 * time.Second)
-	for pump.Stats().TransientErrs == 0 && time.Now().Before(deadline) {
+	for mgr.Stats().Failed == 0 && time.Now().Before(deadline) {
 		pump.Frame()
 		time.Sleep(5 * time.Millisecond)
 	}
-	if pump.Stats().TransientErrs == 0 {
-		t.Fatal("the network failure never reached the pump as transient")
+	if mgr.Stats().Failed == 0 {
+		t.Fatal("the network failure was never counted")
 	}
 	if store.FailedRecently(sick) {
 		t.Error("a transient network failure entered the decode negative cache — the asset would stay blank for decodeFailTTL after the origin recovers")
@@ -165,7 +164,7 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 
 	// Corrupt bytes: a genuine decode failure still pins (the cache's job).
 	corrupt := srvCorrupt.URL + "/characters/witch/(a)corrupt"
-	mgr.Prefetch(corrupt, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (test)
+	mgr.Media().Get(assets.ChainKey(corrupt, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (test)
 	deadline = time.Now().Add(5 * time.Second)
 	for !store.FailedRecently(corrupt) && time.Now().Before(deadline) {
 		pump.Frame()
@@ -174,4 +173,44 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	if !store.FailedRecently(corrupt) {
 		t.Error("corrupt bytes never entered the decode negative cache")
 	}
+}
+
+// TestPumpUndecodableReportsMissing: bytes that arrive but don't decode raise the missing-asset warning, so a message
+// waiting on the sprite starts and the stage draws the placeholder instead of waiting out its timeout.
+func TestPumpUndecodableReportsMissing(t *testing.T) {
+	const (
+		waitLimit = 5 * time.Second
+		pollEvery = 5 * time.Millisecond
+	)
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "these bytes are not an image")
+	}))
+	defer srv.Close()
+
+	mgr := buildPumpManager(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
+	store, err := NewTextureStoreBudget(ren, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	pump := NewPump(store, mgr, nil)
+
+	base := srv.URL + "/characters/patty/(a)embarrassed"
+	mgr.Media().Get(assets.ChainKey(base, assets.AssetTypeCharSprite), media.Now, 0) // AssetType: CharSprite (test)
+	deadline := time.Now().Add(waitLimit)
+	for time.Now().Before(deadline) {
+		pump.Frame()
+		select {
+		case w := <-mgr.Warnings():
+			if w.Base != base || w.Type != assets.AssetTypeCharSprite {
+				t.Fatalf("warning for %q (%v), want %q as a character sprite", w.Base, w.Type, base)
+			}
+			return
+		default:
+		}
+		time.Sleep(pollEvery)
+	}
+	t.Fatal("an undecodable sprite raised no missing-asset warning")
 }

@@ -26,6 +26,8 @@ const (
 	KindListing
 	KindRaw
 	KindFont
+	// KindStream is a file read as it arrives, such as a music track: the result is a Stream, never the bytes.
+	KindStream
 )
 
 // Class says which formats a file may have; ClassExact means its path already names one file.
@@ -75,6 +77,9 @@ const (
 	Quiet Flags = 1 << iota
 	// Sticky marks work the caller keeps when it withdraws the rest; one caller asking is enough.
 	Sticky
+	// Unlisted also asks the web for the formats the host's list leaves out, after the ones it names, for a caller that
+	// must find a file however the host lists it, such as an export. It holds for the request it starts.
+	Unlisted
 )
 
 // File is one exact location a source can answer for, such as a candidate URL.
@@ -124,7 +129,9 @@ type Hit struct {
 
 // Format turns bytes into a result on a Compute worker, and holds no shared state.
 type Format interface {
-	Decode(key Key, hit Hit, data []byte) (any, error)
+	// Decode returns the result; page hands the main thread an earlier part of it first, such as the opening frames of
+	// a long animation, for a format whose results need the main thread.
+	Decode(key Key, hit Hit, data []byte, page func(any)) (any, error)
 	// OnMainThread reports whether a result needs the main thread, such as a texture upload, before it is ready.
 	OnMainThread() bool
 }

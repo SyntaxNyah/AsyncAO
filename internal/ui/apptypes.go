@@ -161,12 +161,10 @@ type sessionState struct {
 	areaLogs     map[string][]icEntry
 	areaLogOrder []string
 	lastICSend   time.Time // chat_ratelimit window
-	// manifestFor: Settings writes "" to force fetchManifestAsync to re-fetch the session origin's extensions.json.
-	manifestFor string
 	// manifestSeeded holds origins whose extensions.json was already fetched and seeded this session, so each is
 	// seeded once. Bounded by the distinct asset origins visited.
 	manifestSeeded map[string]struct{}
-	// manifestStatus records per asset host how the extensions.json probe ended; Settings → Formats reads it.
+	// manifestStatus records per asset host how the extensions.json probe ended; Settings → Assets reads it.
 	// Render thread only, same bound as manifestSeeded.
 	manifestStatus map[string]seedStatus
 	// assetHosts are the connected server's extra asset hosts as last handed to the media system;
@@ -448,6 +446,7 @@ type sessionState struct {
 	oocSeq            uint64
 	oocLog            []string
 	oocSpeakers       []string // parallel to oocLog: speaker per line ("" = system line); for name colours
+	oocFromServer     []bool   // parallel to oocLog: CT's server flag, which colours the speaker as the server
 	oocScroll         int32
 	musicScroll       int32
 	// Music-list search: the query plus a memoized filter. musicFiltered holds matching indices into a.sess.Music.
@@ -702,6 +701,7 @@ type sessionState struct {
 	musicMenuAt           sdl.Point // preferred top-left (clamped at draw)
 	musicMenuTab          int       // tab the menu opened on — auto-close on switch
 	musicMenuThemed       bool      // the panel drew inside a theme canvas when it opened (gates the volume-view row)
+	musicMenuFrom         musicMenuSource
 	liveDetailsArea       string    // area of the last auto /getarea pull; re-pull on area change
 	suppressAreaEchoUntil time.Time // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
 	// Follow-a-player: followUID is the player we trail across areas ("" = off); we auto-jump to their area on each

@@ -11,7 +11,6 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -230,7 +229,6 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 	// on the SAME renderer as the capture target: the warm refs simply won't
 	// resolve, which is fine — this test asserts the PHASE transition and that the
 	// refs were QUEUED (not blasted at the pool), not that they load.
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -240,15 +238,13 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   assets.NewLocalFetcher([]string{t.TempDir()}),
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  assets.NewLocalFetcher([]string{t.TempDir()}),
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders([]string{t.TempDir()}, nil)
@@ -257,18 +253,6 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 	// the new pre-warm format-seed phase doesn't interpose (it's covered by
 	// TestExportSeedBeforeWarm). With autodetect off, startSceneExport skips seeding
 	// and the job enters warming directly, exactly as before this phase existed.
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	// A one-message scene (no StartBg → no audio touched during the transition):
 	// SceneAssets yields this speaker's bg/desk/sprite refs.
 	rec := &sceneRecording{
 		Version: recordingVersion,
@@ -345,7 +329,6 @@ func newWarmHarness(t *testing.T) (*App, *render.TextureStore) {
 	}
 	a.d.Store = store
 
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -355,15 +338,13 @@ func newWarmHarness(t *testing.T) (*App, *render.TextureStore) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   assets.NewLocalFetcher([]string{t.TempDir()}),
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  assets.NewLocalFetcher([]string{t.TempDir()}),
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders([]string{t.TempDir()}, nil)
@@ -373,15 +354,13 @@ func newWarmHarness(t *testing.T) (*App, *render.TextureStore) {
 	// residency it seeds itself; these deliveries are irrelevant to it.
 	go func() {
 		for {
+			releaseDeliveries(a)
 			select {
-			case d := <-a.d.Manager.Decoded():
-				if d.Asset != nil {
-					d.Asset.Release()
-				}
 			case <-a.d.Manager.Audio():
 			case <-a.d.Manager.Warnings():
 			case <-stopDrain:
 				return
+			case <-time.After(time.Millisecond):
 			}
 		}
 	}()

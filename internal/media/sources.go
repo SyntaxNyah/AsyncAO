@@ -15,10 +15,13 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
-// DiskSource answers from an index of the cache's file names, so a miss never touches the disk.
+// DiskSource answers from an index of the cache's file names, so once the index is scanned a miss never touches the
+// disk.
 type DiskSource struct {
 	disk  *cache.DiskCache
 	index map[string]struct{}
+	// scanned is set by the first Adopt; before it, a file outside the index may still be on disk.
+	scanned bool
 }
 
 // NewDiskSource starts with an empty index; Adopt fills it from ScanDiskIndex.
@@ -49,6 +52,7 @@ func (s *DiskSource) Adopt(keys []string) {
 	for _, k := range keys {
 		s.add(k)
 	}
+	s.scanned = true
 }
 
 // Keep queues bytes for the disk writer and indexes them; a dropped write heals through a failed read.
@@ -56,6 +60,9 @@ func (s *DiskSource) Keep(f File, data []byte) {
 	s.disk.Put(string(f), data)
 	s.add(cache.Key(string(f)))
 }
+
+// Index adds a file the cache got without Keep, such as an adopted download, on the Manager's goroutine.
+func (s *DiskSource) Index(f File) { s.add(cache.Key(string(f))) }
 
 // add indexes one entry; past diskIndexCap the index starts over, which only costs repeat requests.
 func (s *DiskSource) add(key string) {
@@ -65,10 +72,14 @@ func (s *DiskSource) add(key string) {
 	s.index[key] = struct{}{}
 }
 
-// Has answers from the index.
+// Has answers from the index; until the first scan lands, a file outside it is Unknown, so the disk is asked before
+// the web.
 func (s *DiskSource) Has(f File) Answer {
 	if _, ok := s.index[cache.Key(string(f))]; ok {
 		return Yes
+	}
+	if !s.scanned {
+		return Unknown
 	}
 	return No
 }
@@ -79,6 +90,18 @@ func (s *DiskSource) Data(f File) ([]byte, error) {
 		return d, nil
 	}
 	return nil, ErrAbsent
+}
+
+// Open opens the cached file in place on a Disk worker.
+func (s *DiskSource) Open(f File) (Stream, error) {
+	st, err := FileStream(s.disk.Path(string(f)))
+	if err != nil || st.Size() == 0 {
+		if st != nil {
+			st.Close()
+		}
+		return nil, ErrAbsent
+	}
+	return st, nil
 }
 
 // Observe drops an entry whose read failed, so a stale index heals itself.
@@ -116,15 +139,24 @@ type RemoteSource struct {
 	exists     map[File]struct{}
 	missing    map[File]time.Time
 	answered   map[string]bool
+	// listed, walks and refused are character mapping's (charmap.go): folders by decoded URL, character walks by
+	// decoded root, and hosts that answered a folder with no listing this session.
+	listed  map[string]*listedFolder
+	walks   map[string]*walk
+	refused map[string]bool
+	// slots bounds the downloads running at once, MaxDownloads.
+	slots chan struct{}
 }
 
 // NewRemoteSource asks through fetch.
 func NewRemoteSource(ctx context.Context, fetch Fetcher, missingTTL time.Duration, clock func() time.Time) *RemoteSource {
 	return &RemoteSource{fetch: fetch, ctx: ctx, clock: clock, missingTTL: missingTTL,
-		exists: map[File]struct{}{}, missing: map[File]time.Time{}, answered: map[string]bool{}}
+		exists: map[File]struct{}{}, missing: map[File]time.Time{}, answered: map[string]bool{},
+		listed: map[string]*listedFolder{}, walks: map[string]*walk{}, refused: map[string]bool{},
+		slots: make(chan struct{}, MaxDownloads)}
 }
 
-// Has answers from the tables; a file never asked about is Unknown, and only that costs a request.
+// Has answers from the tables and the character maps; a file neither proves is Unknown, and only that costs a request.
 func (s *RemoteSource) Has(f File) Answer {
 	if _, ok := s.exists[f]; ok {
 		return Yes
@@ -134,6 +166,9 @@ func (s *RemoteSource) Has(f File) Answer {
 			return No
 		}
 		delete(s.missing, f)
+	}
+	if s.mapAbsent(f) {
+		return No
 	}
 	return Unknown
 }
@@ -145,6 +180,14 @@ func (s *RemoteSource) Data(f File) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %w", ErrAbsent, err)
 	}
 	return data, err
+}
+
+// Open downloads the file as it arrives when the fetcher can, and reads it whole otherwise.
+func (s *RemoteSource) Open(f File) (Stream, error) {
+	if d, ok := s.fetch.(Downloader); ok {
+		return s.openDownload(d, f)
+	}
+	return wholeStream(s.Data(f))
 }
 
 // Observe records the answer in the tables and what it says about the host.
@@ -173,8 +216,9 @@ func (s *RemoteSource) Observe(f File, _ []byte, err error) {
 	}
 }
 
-// ForgetMissing drops known-missing answers for files under prefix, so they are asked about again.
+// ForgetMissing drops known-missing answers and the character maps under prefix, so they are asked about again.
 func (s *RemoteSource) ForgetMissing(prefix string) {
+	s.forgetMaps(folderKey(prefix))
 	for f := range s.missing {
 		if strings.HasPrefix(string(f), prefix) {
 			delete(s.missing, f)

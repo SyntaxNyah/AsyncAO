@@ -395,7 +395,7 @@ const (
 	chatboxChatConfigIni = "chat_config.ini"
 )
 
-// ChatboxChatConfigIni returns the spellings of chat_config.ini; fetch with FetchRaw, never format-probe.
+// ChatboxChatConfigIni returns the spellings of chat_config.ini; fetch with assets.Raw, never format-probe.
 func (u URLBuilder) ChatboxChatConfigIni(misc string) []string {
 	return u.chatboxIniCandidates(misc, chatboxChatConfigIni, "")
 }

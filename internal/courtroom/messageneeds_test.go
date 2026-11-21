@@ -117,7 +117,7 @@ func (s *recordingSource) askedFor(base string) bool {
 	return found
 }
 
-func recordingRoom(t *testing.T) (*Courtroom, *recordingSource) {
+func recordingRoom(t *testing.T) (*Courtroom, *recordingSource, *assets.Manager) {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
@@ -133,23 +133,22 @@ func recordingRoom(t *testing.T) (*Courtroom, *recordingSource) {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(1)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	src := &recordingSource{}
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(prefs), Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: src, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)
 	sess := NewSession((&sentRecorder{}).send, "test-hdid")
-	return NewCourtroom(NewURLBuilder("https://h.example/"), mgr, sess, &audioRecorder{}), src
+	return NewCourtroom(NewURLBuilder("https://h.example/"), mgr.Media(), mgr, sess, &audioRecorder{}), src, mgr
 }
 
 // TestWaitGateRequestsANeedThatJoinsLater: the chat skin is known only once char.ini lands, often after the gate armed,
 // and nothing else asks for it until the message plays, so the gate must ask or it holds for the whole limit.
 func TestWaitGateRequestsANeedThatJoinsLater(t *testing.T) {
 	const tick = 16 * time.Millisecond
-	room, src := recordingRoom(t)
+	room, src, _ := recordingRoom(t)
 	room.SequentialWait = true
 	ready := map[string]bool{}
 	room.Assets = assetFake{sprite: func(base string) bool { return ready[base] }}
@@ -208,5 +207,44 @@ func TestHeldNeedCoversTheHeldMessageOnly(t *testing.T) {
 	}
 	if room.HeldNeed(idle) {
 		t.Error("a released message still counts as held")
+	}
+}
+
+// TestWaitGateAsksAgainWhileItHolds: a missing warning that never reaches the gate (a full hand-off drops it) leaves the
+// blocker unsettled, so the hold asks again, which re-sends the warning, instead of waiting out the limit.
+func TestWaitGateAsksAgainWhileItHolds(t *testing.T) {
+	const (
+		tick = 16 * time.Millisecond
+		wait = 5 * time.Second
+	)
+	room, _, mgr := recordingRoom(t)
+	room.SequentialWait = true
+	room.Assets = assetFake{sprite: func(string) bool { return false }}
+	idle := room.urls.Emote("Phoenix", "normal", EmoteIdle)
+	warnedFor := func() bool {
+		deadline := time.After(wait)
+		for {
+			select {
+			case w := <-mgr.Warnings():
+				if w.Base == idle {
+					return true
+				}
+			case <-deadline:
+				return false
+			}
+		}
+	}
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
+	room.Update(tick)
+	if !warnedFor() {
+		t.Fatal("the first ask never reported the sprite missing")
+	}
+	room.Update(waitReaskInterval) // the warning was lost: nothing settled the sprite
+	if room.QueueLen() != 1 {
+		t.Fatal("the message stopped waiting before the limit")
+	}
+	if !warnedFor() {
+		t.Fatal("the hold never asked again, so the lost warning was never sent again")
 	}
 }

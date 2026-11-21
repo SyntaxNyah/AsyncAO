@@ -5,9 +5,9 @@ package ui
 // found/missing/unreachable per category) and "Package this RP" (write every found asset into a bundle folder in
 // the archive format, with the report as MISSING-CONTENT.txt).
 // One contentJob runs at a time (enumerate, probe, report ready, optionally package). Probing runs off the render
-// thread because Manager.ResolveRaw / FetchRaw block; a bounded set of workers feeds a bounded result channel that
+// thread because assets.Resolve and assets.Raw block; a bounded set of workers feeds a bounded result channel that
 // tickContentJob polls once per frame, and contentProbeHardCap ends the phase for a dead origin.
-// ResolveRaw/FetchRaw go through T2, T3, then source, so nothing here re-probes.
+// Both go through memory, the disk cache, the folders, then the web, so nothing here re-probes.
 // Packaging runs in one generation-checked goroutine with a 1-buffered delivery and writes to disk off the render
 // thread. Cancel is safe at every phase: the job is replaced by generation and every goroutine finishes.
 
@@ -512,13 +512,10 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 	a.content = j
 	a.contentBusy = true
 
-	// Seed first when the origin is a network host and auto-detect is on: fetch <origin>/extensions.json and seed
-	// this
-	// host's learned formats before probing, as the live connect path does. A .demo's recorded origin is never the
-	// session origin, so otherwise the probe would try one format against a server that ships .gif/.png. Other
-	// origins
-	// skip to probing; probeRef's full-chain fallback still finds assets. Deduped per origin via the shared marker.
-	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(report.Origin) {
+	// A network origin's extensions.json is read before probing, as the live connect path does: a .demo's recorded
+	// origin is never the session origin. Other origins skip to probing; probeRef's full walk still finds assets.
+	// Deduped per origin via the shared marker.
+	if strings.HasPrefix(report.Origin, "http") && !a.originSeeded(report.Origin) {
 		a.markOriginSeeded(report.Origin)
 		a.startContentSeed(j)
 		a.warnLine = "Checking the server's format manifest…"
@@ -582,9 +579,9 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	a.content = j
 	a.contentBusy = true
 
-	// Seed first for a network origin with auto-detect on that isn't already seeded; an in-app recording's origin is
-	// usually the live session origin, seeded on connect. Same condition as StartContentReport.
-	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.Load().AutoDetectFormats && !a.originSeeded(report.Origin) {
+	// Read a network origin's extensions.json first unless it already was; an in-app recording's origin is usually the
+	// live session origin, read on connect. Same condition as StartContentReport.
+	if strings.HasPrefix(report.Origin, "http") && !a.originSeeded(report.Origin) {
 		a.markOriginSeeded(report.Origin)
 		a.startContentSeed(j)
 		return
@@ -592,7 +589,7 @@ func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
 	a.startProbePhase(j)
 }
 
-// startContentSeed spawns the one seed goroutine: it fetches <origin>/extensions.json and seeds the learned table,
+// startContentSeed spawns the one seed goroutine: it reads <origin>/extensions.json into the media system,
 // delivering on the 1-buffered seedDone channel drained by tickContentSeed. A Cancel nils a.content so the send
 // lands in an unpolled buffer and the goroutine ends. Render thread only.
 func (a *App) startContentSeed(j *contentJob) {
@@ -600,12 +597,11 @@ func (a *App) startContentSeed(j *contentJob) {
 	j.seedDone = make(chan seedResult, contentSeedBuf)
 	done := j.seedDone
 	mgr := j.seedMgr
-	prefs := a.d.Prefs
 	origin := j.report.Origin
 	j.probeLive.Add(1)
 	go func() {
 		defer j.probeLive.Add(-1)
-		done <- seedOriginFormats(mgr, prefs, origin) // 1-buffered: always accepts
+		done <- seedOriginFormats(mgr, origin) // 1-buffered: always accepts
 	}()
 }
 
@@ -675,8 +671,8 @@ func contentProbeWorker(mgr *assets.Manager, workCh <-chan contentProbeItem, res
 }
 
 // probeRef resolves one enumerated ref to a status and, if found, its URL. Exact refs (music) are a direct
-// FetchRaw; bases probe via ResolveRawFull over the alt spellings (bare X / "(a)/X" for sprites, authored case for
-// blips). ResolveRawFull tries a learned host's format first and full-chain-walks a host with no learned entry or
+// assets.Raw; bases probe via assets.Resolve with unlisted formats over the alt spellings (bare X / "(a)/X" for sprites, authored case for
+// blips). It tries a learned host's format first and full-chain-walks a host with no learned entry or
 // whose learned format missed. That walk keeps a no-manifest host with mixed per-asset formats honest: workers run
 // concurrently, so one sprite's RecordSuccess must not lock a sibling of another format out. The live path
 // deliberately won't do this. Still one probe per candidate (404-TTL and singleflight dedupe), and the winner is
@@ -694,7 +690,7 @@ func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus,
 		// other error is a transport fault, Unreachable. Empty without error is Missing.
 		ctx, cancel := context.WithTimeout(context.Background(), exactFetchTimeout)
 		defer cancel()
-		data, err := mgr.FetchRaw(ctx, ref.Base)
+		data, err := assets.Raw(ctx, mgr.Media(), ref.Base)
 		if err != nil {
 			if fromPack {
 				return ref.Base, StatusFound, true // your folders have it even though the server does not
@@ -712,15 +708,15 @@ func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus,
 		}
 		return ref.Base, StatusFound, fromPack
 	}
-	if url, _, ok := mgr.ResolveRawFull(ref.Base, ref.Type); ok {
-		return url, StatusFound, fromPack
+	if f, ok := assets.Resolve(context.Background(), mgr.Media(), ref.Base, ref.Type, true); ok {
+		return f.URL, StatusFound, fromPack
 	}
 	for _, alt := range ref.Alts {
 		if alt == "" {
 			continue
 		}
-		if url, _, ok := mgr.ResolveRawFull(alt, ref.Type); ok {
-			return url, StatusFound, fromPack
+		if f, ok := assets.Resolve(context.Background(), mgr.Media(), alt, ref.Type, true); ok {
+			return f.URL, StatusFound, fromPack
 		}
 	}
 	if fromPack {
@@ -729,13 +725,13 @@ func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus,
 		// report implying a recipient would see it.
 		return ref.Base, StatusFound, true
 	}
-	// ResolveRawFull returns ok=false for both an all-format 404 and a swallowed transport failure, so an unresolved
+	// assets.Resolve returns ok=false for both an all-format 404 and a transport failure, so an unresolved
 	// base is reported Missing. A wholly dead origin surfaces via the hard cap, which marks the unprobed tail
 	// Unreachable.
 	return ref.Base, StatusMissing, false
 }
 
-// assetLikelyMissing reports whether a FetchRaw error is a clean 404 (network.ErrAssetNotFound) rather than a
+// assetLikelyMissing reports whether an assets.Raw error is a clean 404 (network.ErrAssetNotFound) rather than a
 // transport problem, which is reported Unreachable.
 func assetLikelyMissing(err error) bool {
 	return errors.Is(err, network.ErrAssetNotFound)
@@ -774,17 +770,12 @@ func (a *App) tickContentJob() {
 	}
 }
 
-// tickContentSeed polls the seed goroutine without blocking; on delivery it republishes the resolver table, notes
-// the outcome on the report and starts the probe phase. A Cancel nils a.content, so a stale generation never
+// tickContentSeed polls the seed goroutine without blocking; on delivery it notes the outcome on the report and
+// starts the probe phase. A Cancel nils a.content, so a stale generation never
 // reaches here. Render thread only.
 func (a *App) tickContentSeed(j *contentJob) {
 	select {
 	case res := <-j.seedDone:
-		// WarmFromPrefs on the render thread: SeedLearned wrote prefs off-thread, and this publishes them into the
-		// resolver's atomic table before any candidate is built.
-		if res.status == seedApplied {
-			a.d.Resolver.WarmFromPrefs()
-		}
 		j.report.Seed = res.status
 		a.startProbePhase(j)
 	default:
@@ -1113,7 +1104,7 @@ func writeContentBundleCancel(mgr *assets.Manager, destDir, stem string, rec *sc
 	return contentPackageResult{dir: destDir, msg: msg}
 }
 
-// fetchBundleBytes re-drains one found asset's bytes. The URL is the resolved one the probe fetched, so FetchRaw
+// fetchBundleBytes re-drains one found asset's bytes. The URL is the resolved one the probe fetched, so assets.Raw
 // hits T2 or T3 and touches the network only if both evicted, fetching the same URL with no format probing.
 // exactFetchTimeout bounds one exact-URL fetch, so a dead host cannot stall a content worker.
 const exactFetchTimeout = 30 * time.Second
@@ -1125,7 +1116,7 @@ func fetchBundleBytes(mgr *assets.Manager, url string) ([]byte, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), exactFetchTimeout)
 	defer cancel()
-	return mgr.FetchRaw(ctx, url)
+	return assets.Raw(ctx, mgr.Media(), url)
 }
 
 // assetTypeFromBundlePath infers the AssetType from the origin-relative directory so the Formats manifest can seed

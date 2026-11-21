@@ -11,7 +11,6 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -31,7 +30,6 @@ func wireLocalManager(t *testing.T, a *App, dir string) (*assets.LocalFetcher, f
 	}
 	a.d.Store = store
 
-	resolver := assets.NewResolver(a.d.Prefs)
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		cleanup()
@@ -43,17 +41,15 @@ func wireLocalManager(t *testing.T, a *App, dir string) (*assets.LocalFetcher, f
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 
 	local := assets.NewLocalFetcher([]string{dir})
 	a.d.Manager = assets.NewManager(assets.ManagerDeps{
-		Resolver: resolver,
-		Prefs:    a.d.Prefs,
-		T2:       t2,
-		Disk:     disk,
-		Source:   local,
-		Decoder:  decoder,
+		Prefs:   a.d.Prefs,
+		T2:      t2,
+		Disk:    disk,
+		Source:  local,
+		Decoder: decoder,
 	})
 	t.Cleanup(a.d.Manager.CloseMedia)
 	a.d.Manager.SetFolders(local.Mounts(), nil)
@@ -119,7 +115,6 @@ func TestSceneWarmNoMissingnoForFolderOnlySprite(t *testing.T) {
 	// The live speaker's idle base is the GLUED spelling (the sprite's identity),
 	// which does not exist on disk — only its folder-form twin does.
 	glued := local.BaseURL() + "characters/hobo/(a)normal"
-	seedPNGFormat(t, a)
 
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker.Visible = true
@@ -132,14 +127,10 @@ func TestSceneWarmNoMissingnoForFolderOnlySprite(t *testing.T) {
 	settleDeadline := time.Now().Add(5 * time.Second)
 	gotDecode := false
 	for !gotDecode && time.Now().Before(settleDeadline) {
+		if deliveredBase(a, glued) {
+			gotDecode = true
+		}
 		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Err == nil && d.Base == glued {
-				gotDecode = true
-			}
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
 		case w := <-a.d.Manager.Warnings():
 			t.Fatalf("a folder-only sprite must NOT report missing (no-blip guarantee); got Warning for %q", w.Base)
 		default:
@@ -167,7 +158,6 @@ func TestHealSpriteLayerFolderOnlySprite(t *testing.T) {
 	defer cleanup()
 
 	glued := local.BaseURL() + "characters/hobo/(a)normal"
-	seedPNGFormat(t, a)
 
 	layer := &courtroom.SpriteLayer{Visible: true, Active: glued}
 	var askBase string
@@ -177,14 +167,10 @@ func TestHealSpriteLayerFolderOnlySprite(t *testing.T) {
 	settleDeadline := time.Now().Add(5 * time.Second)
 	gotDecode := false
 	for !gotDecode && time.Now().Before(settleDeadline) {
+		if deliveredBase(a, glued) {
+			gotDecode = true
+		}
 		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Err == nil && d.Base == glued {
-				gotDecode = true
-			}
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
 		case w := <-a.d.Manager.Warnings():
 			t.Fatalf("a folder-only sprite must NOT report missing via healSpriteLayer; got Warning for %q", w.Base)
 		default:
@@ -222,8 +208,7 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	prefixed := local.BaseURL() + "characters/hobo/(a)normal"
 	// Seed the format learn to .png for this host so the folder resolves the bare
 	// PNG (the default probe list is webp-only; a real server would have learned or
-	// the manifest seeded it — see TestResolveRawFromLocalArchive).
-	seedPNGFormat(t, a)
+	// the manifest seeded it — see TestResolveFromLocalArchive).
 
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker.Visible = true
@@ -239,14 +224,10 @@ func TestSceneWarmNoMissingnoForBareOnlySprite(t *testing.T) {
 	settleDeadline := time.Now().Add(5 * time.Second)
 	gotDecode := false
 	for !gotDecode && time.Now().Before(settleDeadline) {
+		if deliveredBase(a, prefixed) {
+			gotDecode = true
+		}
 		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Err == nil && d.Base == prefixed {
-				gotDecode = true
-			}
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
 		case w := <-a.d.Manager.Warnings():
 			t.Fatalf("a bare-only sprite must NOT report missing (no-blip guarantee); got Warning for %q", w.Base)
 		default:
@@ -277,7 +258,6 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 	defer cleanup()
 
 	prefixed := local.BaseURL() + "characters/ghost/(a)normal"
-	seedPNGFormat(t, a)
 
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker.Visible = true
@@ -298,21 +278,7 @@ func TestSceneWarmMarksTrulyMissingSprite(t *testing.T) {
 			break
 		}
 		// Drain any transient decode results so the pipeline keeps moving.
-		select {
-		case d := <-a.d.Manager.Decoded():
-			if d.Asset != nil {
-				d.Asset.Release()
-			}
-		default:
-			time.Sleep(2 * time.Millisecond)
-		}
+		releaseDeliveries(a)
+		time.Sleep(2 * time.Millisecond)
 	}
-}
-
-// seedPNGFormat forces the char-sprite probe list to .png so the
-// resolver finds the on-disk PNG fixtures (the default candidate list is
-// webp-only). Mirrors what a real server learns / the archive manifest seeds.
-func seedPNGFormat(t *testing.T, a *App) {
-	t.Helper()
-	a.d.Prefs.SetFormatOrder(assets.AssetTypeCharSprite.Name(), []string{config.ExtPNG})
 }

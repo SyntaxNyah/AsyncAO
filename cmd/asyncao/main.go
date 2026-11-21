@@ -115,8 +115,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	configQuarantine := prefs.Quarantine()
 	defer prefs.Close()
 
-	resolver := assets.NewResolver(prefs)
-
 	t2, err := cache.NewByteBudgetLRU[string, []byte](cache.DefaultMaxEntries, cache.DefaultT2BudgetBytes, nil)
 	if err != nil {
 		return err
@@ -143,8 +141,7 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	client := network.NewClientNotFoundTTL(time.Duration(prefs.Load().NotFoundTTLSecVal)*time.Second, sockets)
 	client.SetAssetOrigin(prefs.Load().AssetOrigin) // power-user Origin/CORS override for asset streaming
 	client.SetAdaptiveLatencyMultiple(prefs.Load().AdaptiveLatMultipleVal)
-	decoder := assets.NewDecoderPool(assets.DecodeWorkers())
-	defer decoder.Close()
+	decoder := assets.NewDecoder()
 	decoder.SetAnimatedBudgetMiB(prefs.Load().AnimatedBudgetMiB())
 	decoder.SetAnimatedDecodeConcurrency(prefs.Load().AnimDecodeConcurrency())
 
@@ -253,15 +250,19 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	// --- asset pipeline ---
 	// Packages beside the executable; the UI appends them after the manual mounts, so an explicit folder wins.
 	autoMounts := config.DiscoverPackages(config.ExecutableDir())
+	learnedPath, err := config.LearnedPath()
+	if err != nil {
+		log.Printf("learned formats won't be kept: %v", err)
+	}
 	manager := assets.NewManager(assets.ManagerDeps{
-		Resolver:   resolver,
-		Prefs:      prefs,
-		T2:         t2,
-		Disk:       disk,
-		Source:     client,
-		Decoder:    decoder,
-		T1Contains: store.ContainsAnimated,
-		T1Failed:   store.FailedRecently,
+		Prefs:       prefs,
+		T2:          t2,
+		Disk:        disk,
+		Source:      client,
+		Decoder:     decoder,
+		T1Contains:  store.ContainsAnimated,
+		T1Failed:    store.FailedRecently,
+		LearnedPath: learnedPath,
 	})
 	defer manager.CloseMedia()
 	// 0 = unlimited.
@@ -285,10 +286,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 		NetRequests: func() (int64, int64) {
 			s := client.Stats()
 			return s.Requests, s.Cached404s
-		},
-		LearnedHits: func() (int64, int64) {
-			s := resolver.Stats()
-			return s.LearnedHits, s.LearnedMisses
 		},
 	})
 	profiler.Start()
@@ -317,7 +314,6 @@ func run(rt *host.Runtime, serverURL, masterURL string, gpuOpts host.GraphicsOpt
 	app := ui.NewApp(uiCtx, ui.Deps{
 		Profiler:         profiler,
 		Prefs:            prefs,
-		Resolver:         resolver,
 		Manager:          manager,
 		Disk:             disk,
 		Client:           client,

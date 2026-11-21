@@ -140,21 +140,3 @@ func TestReserveFieldTailIsOneSlotAndSelfClearing(t *testing.T) {
 		t.Errorf("a degenerate reservation stuck (%d px)", got)
 	}
 }
-
-// TestToggleExtrasBoxLeavesTheaterFirst pins setTheater's invariant: theater is
-// stage-only, so summoning the box from there means "give me the UI back" rather
-// than floating chrome over a bare stage.
-func TestToggleExtrasBoxLeavesTheaterFirst(t *testing.T) {
-	a := &App{ctx: &Ctx{}, theaterOn: true}
-	a.toggleExtrasBox()
-	if a.theaterOn {
-		t.Error("summoning the Extras box from theater must exit theater")
-	}
-	if !a.showWidgets {
-		t.Error("…and must SHOW the box, never toggle it off")
-	}
-	a.toggleExtrasBox()
-	if a.showWidgets {
-		t.Error("a second press outside theater must hide it again")
-	}
-}

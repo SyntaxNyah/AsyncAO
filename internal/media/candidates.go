@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
+	"maps"
 	"slices"
 	"strings"
 
@@ -131,11 +133,16 @@ func defaultOrder(class Class) []string {
 
 // originOf is the key's own origin, or for a key holding a whole URL, the longest origin known to contain it, then its host.
 func (b *CandidateBuilder) originOf(key Key) string {
+	return originAmong(key, maps.Keys(b.origins))
+}
+
+// originAmong is originOf over a list of known origins.
+func originAmong(key Key, origins iter.Seq[string]) string {
 	if key.Origin != "" {
 		return key.Origin
 	}
 	best := ""
-	for origin := range b.origins {
+	for origin := range origins {
 		if len(origin) > len(best) && strings.HasPrefix(key.Path, origin) {
 			best = origin
 		}
@@ -189,6 +196,24 @@ func (b *CandidateBuilder) Learn(origin string, class Class, ext string) {
 	h.learned[class][ext]++
 }
 
+// ForgetLearned drops every learned format; the hosts' own lists stay.
+func (b *CandidateBuilder) ForgetLearned() {
+	for _, h := range b.origins {
+		clear(h.learned)
+	}
+}
+
+// LearnedOrigins counts the origins a format was learned for.
+func (b *CandidateBuilder) LearnedOrigins() int {
+	n := 0
+	for _, h := range b.origins {
+		if len(h.learned) > 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // Allow sets the formats and their order from a host's extensions.json.
 func (b *CandidateBuilder) Allow(origin string, allowed map[Class][]string) {
 	h := b.hints(origin)
@@ -228,8 +253,7 @@ func cleanExts(in []string) []string {
 		if strings.HasPrefix(e, config.ExtWebP+".") {
 			e = config.ExtWebP
 		}
-		known := slices.Contains(defaultImageOrder, e) || slices.Contains(defaultAudioOrder, e)
-		if known && !slices.Contains(out, e) && len(out) < manifestExtCap {
+		if knownExt(e) && !slices.Contains(out, e) && len(out) < manifestExtCap {
 			out = append(out, e)
 		}
 	}

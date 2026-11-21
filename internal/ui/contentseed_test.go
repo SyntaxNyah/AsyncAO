@@ -17,6 +17,10 @@ package ui
 //      through the mounts in the probe path (AO2-parity).
 
 import (
+	"context"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/media"
+
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -54,7 +58,7 @@ func TestContentSeedGifManifestResolves(t *testing.T) {
 	var gifHits atomic.Int32 // written in the server goroutine, read in the test → atomic
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/"+assets.ManifestFileName:
+		case r.URL.Path == "/"+media.ManifestFile:
 			_, _ = w.Write([]byte(manifest))
 		case r.URL.Path == "/characters/phoenix/(a)normal.gif":
 			gifHits.Add(1)
@@ -98,7 +102,7 @@ func TestContentSeedGifManifestResolves(t *testing.T) {
 // TestContentFullChainProbeFindsPNG pins part 2: an origin with NO manifest whose
 // sprite exists only as .png is FOUND via the full-chain walk (the seed comes
 // back absent, so the unlearned host is probed across the full configured chain,
-// which includes .png). RecordSuccess must learn .png, so a second ResolveRaw is
+// which includes .png). RecordSuccess must learn .png, so a second lookup is
 // a single probe. A genuinely absent asset stays missing after the whole walk.
 func TestContentFullChainProbeFindsPNG(t *testing.T) {
 	sprite := pngBytes()
@@ -155,9 +159,8 @@ func TestContentFullChainProbeFindsPNG(t *testing.T) {
 	}
 
 	// The winner must have been learned so a repeat resolve is single-probe.
-	host := hostOfURL(rec.Origin)
-	if ext, ok := a.d.Resolver.Learned(host, assets.AssetTypeCharSprite); !ok || ext != config.ExtPNG {
-		t.Errorf("Learned(CharSprite) = %q,%v, want %q,true (RecordSuccess should have learned the .png winner)", ext, ok, config.ExtPNG)
+	if n := a.d.Manager.LearnedHosts(); n == 0 {
+		t.Error("the .png winner taught no host a format")
 	}
 
 	// No NON-png candidate for phoenix's base may EVER have been probed on the
@@ -167,12 +170,12 @@ func TestContentFullChainProbeFindsPNG(t *testing.T) {
 	// diagnostic walk. What must NOT happen is a probe of a candidate AFTER .png or
 	// a re-walk. Assert instead on the learned-first repeat below.
 
-	// A second ResolveRaw (learned-first now) is exactly one probe of .png — served
+	// A second lookup (learned-first now) is exactly one probe of .png — served
 	// from T2 (already fetched) so the wire count does NOT grow.
 	base := rec.Origin + "characters/phoenix/(a)normal"
 	before := probeCount("/characters/phoenix/(a)normal.png")
-	if _, _, ok := a.d.Manager.ResolveRaw(base, assets.AssetTypeCharSprite); !ok {
-		t.Fatal("learned-first ResolveRaw should still find the .png sprite")
+	if _, ok := assets.Resolve(context.Background(), a.d.Manager.Media(), base, assets.AssetTypeCharSprite, false); !ok {
+		t.Fatal("learned-first lookup should still find the .png sprite")
 	}
 	if got := probeCount("/characters/phoenix/(a)normal.png"); got != before {
 		t.Errorf(".png probed %d times on the learned-first repeat, want %d (a learned hit re-drains from T2, no new probe)", got, before)
@@ -273,8 +276,13 @@ func TestContentSeedLocalMountResolves(t *testing.T) {
 // "seeded before the warm builds candidates").
 func TestExportSeedBeforeWarm(t *testing.T) {
 	manifest := `{"emote_extensions": [".gif"], "background_extensions": [".gif"]}`
+	var mu sync.Mutex
+	var asked []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/"+assets.ManifestFileName {
+		mu.Lock()
+		asked = append(asked, r.URL.Path)
+		mu.Unlock()
+		if r.URL.Path == "/"+media.ManifestFile {
 			_, _ = w.Write([]byte(manifest))
 			return
 		}
@@ -283,26 +291,7 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	a := headlessProbeApp(t, network.NewClientNotFoundTTL(0, netproxy.Direct()), false)
-	a.d.Prefs.Update(func(
-		sn *config.
-			Settings) {
-
-		sn.
-			AutoDetectFormats =
-
-			true
-
-	})
-
-	// the seed gate respects the same pref the session path does
 	origin := srv.URL + "/"
-	host := hostOfURL(origin)
-
-	// Pre-seed sanity: nothing learned yet, so the warm's first candidate WOULD be
-	// the zero-fallback .webp (the bug).
-	if ext, ok := a.d.Resolver.Learned(host, assets.AssetTypeCharSprite); ok {
-		t.Fatalf("CharSprite already learned (%q) before seeding — test can't prove the seed did it", ext)
-	}
 
 	// Build a seeding-phase export job and fire the seed, exactly as startSceneExport
 	// does after the load lands (no viewport / capture target needed — seeding runs
@@ -326,11 +315,15 @@ func TestExportSeedBeforeWarm(t *testing.T) {
 		t.Fatal("seeding phase never completed")
 	}
 
-	// The observable: the manifest's .gif is now the learned CharSprite format, so
-	// the warm's first PrefetchChain candidate is base+".gif" — the manifest-
-	// declared format, not the .webp default.
-	if ext, ok := a.d.Resolver.Learned(host, assets.AssetTypeCharSprite); !ok || ext != config.ExtGIF {
-		t.Errorf("Learned(CharSprite) = %q,%v after export seed, want %q,true (warm would probe the wrong format otherwise)", ext, ok, config.ExtGIF)
+	// The observable: the manifest's .gif is now the first format asked for a sprite, not the .webp default.
+	mu.Lock()
+	asked = nil
+	mu.Unlock()
+	assets.Resolve(context.Background(), a.d.Manager.Media(), origin+"characters/x/(a)y", assets.AssetTypeCharSprite, false)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(asked) == 0 || asked[0] != "/characters/x/(a)y"+config.ExtGIF {
+		t.Errorf("after the export seed the sprite was asked as %v, want .gif first", asked)
 	}
 }
 

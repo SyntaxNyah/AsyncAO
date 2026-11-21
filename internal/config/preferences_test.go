@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -36,63 +35,10 @@ func newTestPrefs(t *testing.T) (*AssetPreferences, string) {
 	return p, path
 }
 
-// TestSetFormatOrderCompletes is the deadlock regression test demanded by
-// spec §5: the drafts held the write lock while calling a Save that took
-// the read lock — a guaranteed self-deadlock on Go's non-reentrant RWMutex.
-// Mutators must never write disk; this must return almost immediately.
-func TestSetFormatOrderCompletes(t *testing.T) {
-	p, _ := newTestPrefs(t)
-
-	finished := make(chan struct{})
-	go func() {
-		p.SetFormatOrder(TypeCharSprite, []string{ExtAPNG, ExtWebP})
-		p.SetGlobalFallbacks(true)
-		p.SetTypeFallbacks(TypeSFX, true)
-		p.RecordLearned("example.com", TypeCharSprite, ExtWebP)
-		p.Update(func(
-			sn *Settings) {
-
-			sn.
-				MasterVol =
-
-				80
-
-		})
-
-		p.Update(func(
-			sn *Settings) {
-
-			sn.
-				MusicVolMode =
-
-				true
-
-		})
-
-		p.Update(func(
-			sn *Settings) {
-
-			sn.
-				PreferAnimated =
-
-				false
-
-		})
-
-		close(finished)
-	}()
-
-	select {
-	case <-finished:
-	case <-time.After(5 * time.Second):
-		t.Fatal("mutators did not complete: probable lock-ordering deadlock (mutator writing disk under lock?)")
-	}
-}
-
 func TestMutatorsDoNotWriteSynchronously(t *testing.T) {
 	p, path := newTestPrefs(t)
 
-	p.SetFormatOrder(TypeCharSprite, []string{ExtAPNG})
+	p.Update(func(sn *Settings) { sn.PreferAnimated = false })
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("preferences file exists immediately after mutation: mutators must never write disk (stat err: %v)", err)
 	}
@@ -142,137 +88,6 @@ func TestDebounceCoalescesBurst(t *testing.T) {
 	wantVol := (burst - 1) % 100
 	if loaded.Load().MasterVol != wantVol {
 		t.Errorf("MasterVolume on disk = %d, want %d (last write must win)", loaded.Load().MasterVol, wantVol)
-	}
-}
-
-func TestFormatListZeroFallbackIsExactConfiguredList(t *testing.T) {
-	p, _ := newTestPrefs(t)
-
-	got := p.Load().FormatList(TypeCharSprite)
-	want := []string{ExtWebP}
-	if !slices.Equal(got, want) {
-		t.Errorf("FormatList(CharSprite) fallbacks-off = %v, want %v (exactly one probe)", got, want)
-	}
-
-	if got := p.Load().FormatList(TypeCharIcon); !slices.Equal(got, []string{ExtPNG}) {
-		t.Errorf("FormatList(CharIcon) = %v, want [%s]", got, ExtPNG)
-	}
-}
-
-func TestFormatListGlobalFallbacksAppendLegacyChain(t *testing.T) {
-	p, _ := newTestPrefs(t)
-	p.SetGlobalFallbacks(true)
-
-	got := p.Load().FormatList(TypeCharSprite)
-	want := []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG}
-	if !slices.Equal(got, want) {
-		t.Errorf("FormatList(CharSprite) global fallbacks = %v, want %v", got, want)
-	}
-
-	got = p.Load().FormatList(TypeMusic)
-	want = []string{ExtOpus, ExtOgg, ExtMP3}
-	if !slices.Equal(got, want) {
-		t.Errorf("FormatList(Music) global fallbacks = %v, want %v", got, want)
-	}
-}
-
-func TestFormatListPerTypeFallbackOnlyAffectsThatType(t *testing.T) {
-	p, _ := newTestPrefs(t)
-	p.SetTypeFallbacks(TypeBackground, true)
-
-	if got, want := p.Load().FormatList(TypeBackground), []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG}; !slices.Equal(got, want) {
-		t.Errorf("FormatList(Background) per-type fallback = %v, want %v", got, want)
-	}
-	if got, want := p.Load().FormatList(TypeCharSprite), []string{ExtWebP}; !slices.Equal(got, want) {
-		t.Errorf("FormatList(CharSprite) must stay zero-fallback, got %v want %v", got, want)
-	}
-}
-
-func TestFormatListDeduplicatesPreservingOrder(t *testing.T) {
-	p, _ := newTestPrefs(t)
-	// User order already contains a legacy-chain member and a duplicate.
-	p.SetFormatOrder(TypeCharSprite, []string{ExtPNG, ExtWebP, ExtPNG})
-	p.SetTypeFallbacks(TypeCharSprite, true)
-
-	got := p.Load().FormatList(TypeCharSprite)
-	want := []string{ExtPNG, ExtWebP, ExtAPNG, ExtGIF}
-	if !slices.Equal(got, want) {
-		t.Errorf("FormatList dedup = %v, want %v", got, want)
-	}
-}
-
-func TestFormatListUnknownTypeWithFallbacksIsEmpty(t *testing.T) {
-	p, _ := newTestPrefs(t)
-	if got := p.Load().FormatList("NoSuchType"); len(got) != 0 {
-		t.Errorf("FormatList(unknown) = %v, want empty", got)
-	}
-}
-
-func TestEveryTypeHasDefaultsAndLegacyChain(t *testing.T) {
-	for _, name := range TypeNames {
-		if len(DefaultFormatOrder(name)) == 0 {
-			t.Errorf("type %s has no default format order", name)
-		}
-		if len(LegacyFallbackChain(name)) == 0 {
-			t.Errorf("type %s has no legacy fallback chain", name)
-		}
-	}
-	if len(defaultFormatOrders) != len(TypeNames) {
-		t.Errorf("defaultFormatOrders has %d entries, want %d", len(defaultFormatOrders), len(TypeNames))
-	}
-	if len(legacyFallbackChains) != len(TypeNames) {
-		t.Errorf("legacyFallbackChains has %d entries, want %d", len(legacyFallbackChains), len(TypeNames))
-	}
-}
-
-// TestMiscFormatDefaultMigration pins the one-shot webp→png default flip for
-// Misc (chatbox skins ship as png; the old webp default was the emote class
-// bleeding over): a stored order equal to the OLD default was never a user
-// choice and advances to the new default on load; any other stored order is
-// deliberate and survives byte-for-byte.
-func TestMiscFormatDefaultMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), PrefsFileName)
-	p, err := newWithDebounce(path, testDebounce)
-	if err != nil {
-		t.Fatalf("newWithDebounce: %v", err)
-	}
-	// Simulate a pre-flip prefs file: Misc stored as the old [.webp] default.
-	p.Update(func(sn *Settings) {
-		tp := sn.AssetTypes[TypeMisc]
-		tp.FormatOrder = []string{ExtWebP}
-		sn.AssetTypes[TypeMisc] = tp
-	})
-	if err := p.SaveNow(); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	_ = p.Close()
-
-	re, err := newWithDebounce(path, testDebounce)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	defer re.Close()
-	if got := re.Load().AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtPNG || got[1] != ExtWebP {
-		t.Errorf("old-default Misc order = %v after reload, want the new [%s %s]", got, ExtPNG, ExtWebP)
-	}
-
-	// A customized order (user picked gif-first) must NOT migrate.
-	re.Update(func(sn *Settings) {
-		tp := sn.AssetTypes[TypeMisc]
-		tp.FormatOrder = []string{ExtGIF, ExtWebP}
-		sn.AssetTypes[TypeMisc] = tp
-	})
-	if err := re.SaveNow(); err != nil {
-		t.Fatalf("save custom: %v", err)
-	}
-	_ = re.Close()
-	re2, err := newWithDebounce(path, testDebounce)
-	if err != nil {
-		t.Fatalf("reload custom: %v", err)
-	}
-	defer re2.Close()
-	if got := re2.Load().AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtGIF || got[1] != ExtWebP {
-		t.Errorf("customized Misc order = %v after reload, want [gif webp] untouched", got)
 	}
 }
 
@@ -460,7 +275,6 @@ func TestPersistenceRoundTrip(t *testing.T) {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
 
-	p.SetGlobalFallbacks(true)
 	p.Update(func(
 		sn *Settings) {
 
@@ -471,9 +285,6 @@ func TestPersistenceRoundTrip(t *testing.T) {
 
 	})
 
-	p.SetFormatOrder(TypeCharIcon, []string{ExtWebP, ExtPNG})
-	p.SetTypeFallbacks(TypeBlip, true)
-	p.RecordLearned("assets.example.com", TypeCharSprite, ExtWebP)
 	p.Update(func(
 		sn *Settings) {
 
@@ -513,21 +324,8 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.Load().GlobalFallbacksEnabled {
-		t.Error("GlobalFallbacksEnabled lost")
-	}
 	if q.Load().PreferAnimated {
 		t.Error("PreferAnimated=false lost (absent-field default must not clobber explicit false)")
-	}
-	if got, want := q.Load().FormatOrder(TypeCharIcon), []string{ExtWebP, ExtPNG}; !slices.Equal(got, want) {
-		t.Errorf("FormatOrder(CharIcon) = %v, want %v", got, want)
-	}
-	if !q.Load().TypeFallbacksEnabled(TypeBlip) {
-		t.Error("TypeFallbacks(Blip) lost")
-	}
-	learned := q.Load().LearnedSnapshot()
-	if got := learned[LearnedKey("assets.example.com", TypeCharSprite)]; !slices.Equal(got, []string{ExtWebP}) {
-		t.Errorf("learned format lost, snapshot=%v", learned)
 	}
 	if got := q.Load().MasterVol; got != 37 {
 		t.Errorf("MasterVolume = %d, want 37", got)
@@ -540,61 +338,6 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	}
 	if !q.Load().DebugOverlay {
 		t.Error("DebugOverlay lost")
-	}
-}
-
-// TestLearnedExportImport pins the warm-state portability path: export →
-// clear → import restores the table, and FormatAutoDetect defaults ON
-// with an explicit false surviving the round trip.
-func TestLearnedExportImport(t *testing.T) {
-	path := filepath.Join(t.TempDir(), PrefsFileName)
-	p, err := newWithDebounce(path, testDebounce)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !p.Load().AutoDetectFormats {
-		t.Error("FormatAutoDetect should default ON")
-	}
-	p.Update(func(
-		sn *Settings) {
-
-		sn.
-			AutoDetectFormats =
-
-			false
-
-	})
-
-	p.RecordLearned("miku.pizza", TypeCharSprite, ExtWebP)
-	p.RecordLearned("other.example", TypeCharIcon, ExtPNG)
-
-	data, err := p.ExportLearnedJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	p.ClearLearned()
-	if len(p.Load().LearnedSnapshot()) != 0 {
-		t.Fatal("clear did not clear")
-	}
-	n, err := p.ImportLearnedJSON(data)
-	if err != nil || n != 2 {
-		t.Fatalf("import = %d, %v", n, err)
-	}
-	if got := p.Load().LearnedSnapshot()[LearnedKey("miku.pizza", TypeCharSprite)]; len(got) != 1 || got[0] != ExtWebP {
-		t.Errorf("imported entry = %v", got)
-	}
-	if _, err := p.ImportLearnedJSON([]byte("junk")); err == nil {
-		t.Error("junk import accepted")
-	}
-	if err := p.Close(); err != nil {
-		t.Fatal(err)
-	}
-	q, err := load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if q.Load().AutoDetectFormats {
-		t.Error("explicit FormatAutoDetect=false lost on reload")
 	}
 }
 
@@ -823,19 +566,11 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load(absent) returned error: %v", err)
 	}
-	if p.Load().GlobalFallbacksEnabled {
-		t.Error("GlobalFallbacksEnabled default must be false (zero fallbacks by default)")
-	}
 	if !p.Load().PreferAnimated {
 		t.Error("PreferAnimated default must be true")
 	}
 	if p.Load().CatchUpOn {
 		t.Error("CatchUpOn default must be false (the OG-client queue)")
-	}
-	for _, name := range TypeNames {
-		if _, ok := p.Load().AssetTypes[name]; !ok {
-			t.Errorf("default AssetTypes missing %s", name)
-		}
 	}
 }
 
@@ -848,7 +583,7 @@ func TestLoadCorruptFileFallsBackToDefaults(t *testing.T) {
 	if err == nil {
 		t.Error("load(corrupt) must report the parse error")
 	}
-	if p == nil || !p.Load().PreferAnimated || len(p.Load().AssetTypes) != len(TypeNames) {
+	if p == nil || !p.Load().PreferAnimated {
 		t.Error("load(corrupt) must still return usable defaults")
 	}
 }
@@ -923,89 +658,6 @@ func TestCloseFlushesPendingChanges(t *testing.T) {
 	}
 }
 
-func TestLearnedInvalidation(t *testing.T) {
-	p, _ := newTestPrefs(t)
-	const host = "cdn.example.com"
-	otherKey := LearnedKey(host, TypeBackground)
-
-	seed := func() {
-		p.RecordLearned(host, TypeCharSprite, ExtWebP)
-		p.RecordLearned(host, TypeBackground, ExtWebP)
-	}
-
-	seed()
-	p.SetFormatOrder(TypeCharSprite, []string{ExtAPNG})
-	learned := p.Load().LearnedSnapshot()
-	if _, ok := learned[LearnedKey(host, TypeCharSprite)]; ok {
-		t.Error("SetFormatOrder must invalidate learned formats for that type")
-	}
-	if _, ok := learned[otherKey]; !ok {
-		t.Error("SetFormatOrder must not invalidate other types")
-	}
-
-	seed()
-	p.SetTypeFallbacks(TypeCharSprite, true)
-	learned = p.Load().LearnedSnapshot()
-	if _, ok := learned[LearnedKey(host, TypeCharSprite)]; ok {
-		t.Error("SetTypeFallbacks must invalidate learned formats for that type")
-	}
-
-	seed()
-	p.SetGlobalFallbacks(true)
-	if n := len(p.Load().LearnedSnapshot()); n != 0 {
-		t.Errorf("SetGlobalFallbacks must invalidate all learned formats, %d left", n)
-	}
-
-	seed()
-	p.ClearLearned()
-	if n := len(p.Load().LearnedSnapshot()); n != 0 {
-		t.Errorf("ClearLearned left %d entries", n)
-	}
-}
-
-// TestClearLearnedHostIsScoped pins the whole point of ClearLearnedHost: it is
-// the fix for ONE server, so every other server's warm state must survive it.
-// A wipe that took the rest with it would trade one server's missing art for a
-// cold re-probe of every server the player has ever visited.
-func TestClearLearnedHostIsScoped(t *testing.T) {
-	p, _ := newTestPrefs(t)
-	const bad, good = "repacked.example.com", "fine.example.com"
-	p.RecordLearned(bad, TypeCharSprite, ExtWebP)
-	p.RecordLearned(bad, TypeBackground, ExtWebP)
-	p.RecordLearned(good, TypeCharSprite, ExtPNG)
-
-	if n := p.ClearLearnedHost(bad); n != 2 {
-		t.Errorf("ClearLearnedHost dropped %d entries, want 2", n)
-	}
-	learned := p.Load().LearnedSnapshot()
-	if _, ok := learned[LearnedKey(bad, TypeCharSprite)]; ok {
-		t.Error("the target host's sprite entry survived")
-	}
-	if _, ok := learned[LearnedKey(bad, TypeBackground)]; ok {
-		t.Error("the target host's background entry survived")
-	}
-	if got, ok := learned[LearnedKey(good, TypeCharSprite)]; !ok || len(got) != 1 || got[0] != ExtPNG {
-		t.Errorf("another host's entry = %v (present %v), want [%s] — the wipe must be scoped", got, ok, ExtPNG)
-	}
-	if n := p.ClearLearnedHost(bad); n != 0 {
-		t.Errorf("second ClearLearnedHost dropped %d entries, want 0", n)
-	}
-	if n := p.ClearLearnedHost(""); n != 0 {
-		t.Errorf("ClearLearnedHost(\"\") dropped %d entries, want 0", n)
-	}
-
-	// A host is a PREFIX of the key, so a different host whose name merely
-	// starts with the target's must not be caught.
-	p.RecordLearned(bad, TypeCharSprite, ExtWebP)
-	p.RecordLearned(bad+".cdn.example.com", TypeCharSprite, ExtWebP)
-	if n := p.ClearLearnedHost(bad); n != 1 {
-		t.Errorf("ClearLearnedHost dropped %d entries, want 1 (a longer host name is a different host)", n)
-	}
-	if _, ok := p.Load().LearnedSnapshot()[LearnedKey(bad+".cdn.example.com", TypeCharSprite)]; !ok {
-		t.Error("a host whose name starts with the target's was wrongly cleared")
-	}
-}
-
 func TestMasterVolumeClamping(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	p.Update(func(
@@ -1044,6 +696,8 @@ func TestConcurrentAccess(t *testing.T) {
 	const (
 		goroutines = 8
 		iterations = 200
+		// concurrentCases is how many operations the goroutines rotate through.
+		concurrentCases = 2
 	)
 	var wg sync.WaitGroup
 	for g := 0; g < goroutines; g++ {
@@ -1051,16 +705,10 @@ func TestConcurrentAccess(t *testing.T) {
 		go func(seed int) {
 			defer wg.Done()
 			for i := 0; i < iterations; i++ {
-				switch (seed + i) % 6 {
+				switch (seed + i) % concurrentCases {
 				case 0:
-					p.SetFormatOrder(TypeCharSprite, []string{ExtWebP, ExtAPNG})
+					_ = p.Load().MasterVol
 				case 1:
-					p.RecordLearned("h.example.com", TypeNames[i%len(TypeNames)], ExtWebP)
-				case 2:
-					_ = p.Load().FormatList(TypeNames[i%len(TypeNames)])
-				case 3:
-					_ = p.Load().LearnedSnapshot()
-				case 4:
 					p.Update(func(
 						sn *Settings) {
 
@@ -1073,8 +721,6 @@ func TestConcurrentAccess(t *testing.T) {
 
 					})
 
-				case 5:
-					p.SetGlobalFallbacks(i%2 == 0)
 				}
 			}
 		}(g)

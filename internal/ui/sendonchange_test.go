@@ -30,16 +30,15 @@ func newRoomForTest(t testing.TB) *courtroom.Courtroom {
 		t.Fatal(err)
 	}
 	t.Cleanup(disk.Close)
-	decoder := assets.NewDecoderPool(2)
-	t.Cleanup(decoder.Close)
+	decoder := assets.NewDecoder()
 	local := assets.NewLocalFetcher([]string{t.TempDir()})
 	mgr := assets.NewManager(assets.ManagerDeps{
-		Resolver: assets.NewResolver(prefs), Prefs: prefs, T2: t2, Disk: disk,
+		Prefs: prefs, T2: t2, Disk: disk,
 		Source: local, Decoder: decoder,
 	})
 	t.Cleanup(mgr.CloseMedia)
 	mgr.SetFolders(local.Mounts(), nil)
-	return courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), mgr, nil, courtroom.NopAudio{})
+	return courtroom.NewCourtroom(courtroom.NewURLBuilder(local.BaseURL()), mgr.Media(), mgr, nil, courtroom.NopAudio{})
 }
 
 func msgFor(charID int, name, text string) *protocol.ChatMessage {

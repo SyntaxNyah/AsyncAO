@@ -53,7 +53,7 @@ func newSidecarAudio(t *testing.T, sidecars *blockingSidecars) *Audio {
 // deliverSong requests a looping song and delivers its bytes, the way Frame does.
 func deliverSong(a *Audio, url string) {
 	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL), loop: true}
-	a.onAudioBytes(assets.AudioAsset{Base: url, Data: testSong(loopSongSec), Type: assets.AssetTypeMusic})
+	a.onAudioBytes(assets.AudioAsset{Base: url, Stream: testSong(t, loopSongSec), Type: assets.AssetTypeMusic})
 }
 
 // collectFetches steps until every sidecar fetch has reported back.

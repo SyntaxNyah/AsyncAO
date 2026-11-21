@@ -78,7 +78,7 @@ func (a *App) drawNotesTab(r sdl.Rect) {
 	y := list.Y - a.noteScroll
 	removeIdx := -1
 	for i, line := range lines {
-		if y > list.Y+list.H-lineH {
+		if y >= list.Y+list.H {
 			break
 		}
 		if y >= list.Y-lineH {

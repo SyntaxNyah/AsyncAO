@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"sync/atomic"
@@ -27,6 +28,9 @@ var ErrMissing = errors.New("media: file not found in any source")
 // ErrRefused reports that the request table was full; ask again later.
 var ErrRefused = errors.New("media: too many requests")
 
+// ErrStopped reports that the media system stopped before the Asset finished.
+var ErrStopped = errors.New("media: the media system stopped")
+
 // ErrWithdrawn reports that the request was withdrawn before it finished.
 var ErrWithdrawn = errors.New("media: request withdrawn")
 
@@ -41,11 +45,15 @@ type Asset struct {
 	urgent   atomic.Bool
 	quiet    atomic.Bool
 	sticky   atomic.Bool
+	every    bool
+	hit      atomic.Pointer[Hit]
 	finished atomic.Int64 // unix nanoseconds, for expiring Missing
 	done     chan struct{}
+	// stopped is the Manager's, closed when it stops, after which an unfinished Asset never finishes.
+	stopped <-chan struct{}
 }
 
-func newAsset(key Key, u Urgency, f Flags, alts []string) *Asset {
+func newAsset(key Key, u Urgency, f Flags, alts []string, stopped <-chan struct{}) *Asset {
 	names := make([]string, 0, min(len(alts)+1, maxNames))
 	names = append(names, key.Path)
 	for _, alt := range alts {
@@ -53,7 +61,7 @@ func newAsset(key Key, u Urgency, f Flags, alts []string) *Asset {
 			names = append(names, alt)
 		}
 	}
-	a := &Asset{key: key, names: names, done: make(chan struct{})}
+	a := &Asset{key: key, names: names, done: make(chan struct{}), every: f&Unlisted != 0, stopped: stopped}
 	a.urgent.Store(u == Now)
 	a.quiet.Store(f&Quiet != 0)
 	a.sticky.Store(f&Sticky != 0)
@@ -104,6 +112,32 @@ func (a *Asset) Result() any {
 		return *r
 	}
 	return nil
+}
+
+// Wait blocks until the Asset is finished, ctx ends or the media system stops, for a caller off the main thread; it
+// returns ctx's error or ErrStopped then.
+func (a *Asset) Wait(ctx context.Context) error {
+	select {
+	case <-a.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-a.stopped:
+		select {
+		case <-a.done:
+			return nil
+		default:
+			return ErrStopped
+		}
+	}
+}
+
+// Hit is the file and source that answered a Ready Asset, or the zero Hit.
+func (a *Asset) Hit() Hit {
+	if h := a.hit.Load(); h != nil {
+		return *h
+	}
+	return Hit{}
 }
 
 // Err returns why the Asset can't be ready, or nil.

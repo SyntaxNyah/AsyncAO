@@ -754,6 +754,11 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	return y
 }
 
+const (
+	themeFitPreviewHint  = "Drag to pan · scroll to zoom"
+	themeFitNoDesignText = "This theme has no courtroom_design.ini — the fit modes don't apply to it."
+)
+
 // drawThemeFitPreview draws the Custom theme fit preview; drag pans, scroll zooms, both write prefs and re-fit live.
 func (a *App) drawThemeFitPreview(box sdl.Rect) {
 	c := a.ctx
@@ -782,10 +787,13 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 		}
 		c.popClip(clipPrev, clipHad)
 	} else {
-		c.LabelClipped(box.X+8, box.Y+8, box.W-16, "This theme has no courtroom_design.ini — the fit modes don't apply to it.", ColTextDim)
+		c.LabelClipped(box.X+8, box.Y+8, box.W-16, themeFitNoDesignText, ColTextDim)
 	}
 	c.Border(box, ColAccent)
-	c.Label(box.X+6, box.Y+4, "Drag to pan · scroll to zoom", ColTextDim)
+	// Without a design there is nothing to pan, and the hint would sit on the line above.
+	if ok {
+		c.Label(box.X+6, box.Y+4, themeFitPreviewHint, ColTextDim)
+	}
 
 	// Wheel zooms and drag pans via the setters, then invalidate the geometry cache.
 	if c.hovering(box) && c.wheelY != 0 {
@@ -890,7 +898,7 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 	if wipeAll {
 		a.d.Prefs.ResetAll()
 		_ = a.d.Manager.ClearDisk()
-		a.d.Resolver.InvalidateAll()
+		a.d.Manager.ForgetLearned()
 		if a.juke != nil {
 			a.juke.Clear() // the jukebox library lives in its own file — wipe it too
 		}

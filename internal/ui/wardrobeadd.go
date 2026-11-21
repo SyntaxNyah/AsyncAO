@@ -62,12 +62,12 @@ func (a *App) wardrobeAddNames() []string {
 func (a *App) drawWardrobeAdd(panel sdl.Rect) {
 	c := a.ctx
 	ward := &a.ward
-	c.FillRound(panel, wardRadPanel, wcOverlay)
+	c.FillRound(panel, a.wardRad(wardRadPanel), wcOverlay)
 	h := min(wardAddH, panel.H-2*pad)
 	dw := min(wardAddW, panel.W-2*pad) // the dialog narrows with a small window
 	d := sdl.Rect{X: panel.X + (panel.W-dw)/2, Y: panel.Y + (panel.H-h)/2, W: dw, H: h}
-	c.RoundRect(d, wardRadDlg, 1, wcPanel, wcLineHi)
-	head := sdl.Rect{X: d.X + 2*wardPanelPad, Y: d.Y + 2*wardPanelPad, W: d.W - 4*wardPanelPad, H: wardSegH + 2*wardOutline + wardRadSeg}
+	c.RoundRect(d, a.wardRad(wardRadDlg), 1, wcPanel, wcLineHi)
+	head := sdl.Rect{X: d.X + 2*wardPanelPad, Y: d.Y + 2*wardPanelPad, W: d.W - 4*wardPanelPad, H: wardSegH + 2*wardOutline + a.wardRad(wardRadSeg)}
 	c.LabelClippedFontWeight(c.chromeFace(), head.X, head.Y+(head.H-a.wardLineH())/2, head.W/2, "Add characters", wcText, true)
 	// Close.
 	closeR := sdl.Rect{X: head.X + head.W - wardBtnH + wardPanelPad/2, Y: head.Y + (head.H-wardBtnH+wardPanelPad)/2, W: wardBtnH - wardPanelPad/2, H: wardBtnH - wardPanelPad/2}
@@ -152,7 +152,7 @@ func (a *App) drawWardrobeAddRows(r sdl.Rect, names []string, ticks bool) {
 	if len(names) == 0 {
 		return
 	}
-	c.RoundRect(r, wardRadRow, 1, wcInset, wcLine)
+	c.RoundRect(r, a.wardRad(wardRadRow), 1, wcInset, wcLine)
 	in := sdl.Rect{X: r.X + wardPanelPad/2, Y: r.Y + wardPanelPad/2, W: r.W - wardPanelPad, H: r.H - wardPanelPad}
 	ward.addScroll -= c.WheelIn(in) * scrollStepPx
 	track := sdl.Rect{X: in.X + in.W - scrollBarW, Y: in.Y, W: scrollBarW, H: in.H}
@@ -165,7 +165,7 @@ func (a *App) drawWardrobeAddRows(r sdl.Rect, names []string, ticks bool) {
 		}
 		saved := ward.store.Has(n)
 		if c.hovering(row) && !saved {
-			c.FillRound(row, wardRadSeg, wcHover)
+			c.FillRound(row, a.wardRad(wardRadSeg), wcHover)
 		}
 		x := row.X + wardPanelPad
 		if ticks {
@@ -194,7 +194,7 @@ func (a *App) drawWardrobeAddRows(r sdl.Rect, names []string, ticks bool) {
 // drawWardrobeAddIcon is a small initials box with the iniswap tag; the Add list shows names before any icon loads.
 func (a *App) drawWardrobeAddIcon(name string, r sdl.Rect) {
 	c := a.ctx
-	c.FillRound(r, wardRadBadge, wcCard)
+	c.FillRound(r, a.wardRad(wardRadBadge), wcCard)
 	initials := name
 	if len(initials) > 2 {
 		initials = initials[:2]

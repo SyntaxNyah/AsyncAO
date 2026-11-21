@@ -81,7 +81,7 @@ func TestAManualRosterFetchStillWorksAndShowsItsReply(t *testing.T) {
 
 	// The reply burst it asked for is parsed but suppressed (areaEchoSuppressWindow).
 	before := len(a.oocLog)
-	a.pushOOC("Server: [0] Phoenix Wright (1001) [Def]", "Server") // a real roster row (looksLikeAreaList)
+	a.pushOOC("Server: [0] Phoenix Wright (1001) [Def]", "Server", false) // a real roster row (looksLikeAreaList)
 	if len(a.oocLog) != before {
 		t.Error("the roster body we asked for must stay out of the OOC log")
 	}
@@ -89,7 +89,7 @@ func TestAManualRosterFetchStillWorksAndShowsItsReply(t *testing.T) {
 	// A refusal is NOT suppressed any more: it is the answer to a press, it can only
 	// appear once per press, and hiding it makes the control look broken.
 	before = len(a.oocLog)
-	a.pushOOC("Server: You cannot see players in all areas in this hub!", "Server")
+	a.pushOOC("Server: You cannot see players in all areas in this hub!", "Server", false)
 	if len(a.oocLog) == before {
 		t.Error("a server's refusal must reach the OOC log now that nothing sends the command on its own")
 	}

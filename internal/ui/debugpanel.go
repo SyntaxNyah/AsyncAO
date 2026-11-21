@@ -242,7 +242,7 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 		if ps.UploadErrs > 0 {
 			col = ColTierYellow
 		}
-		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Pump: %d upload errors · %d transient (network) errors", ps.UploadErrs, ps.TransientErrs), col)
+		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Pump: %d upload errors · %d failed fetches", ps.UploadErrs, a.d.Manager.Stats().Failed), col)
 		y += debugLineH
 	}
 
@@ -336,11 +336,8 @@ func (a *App) drawDebugCache(r sdl.Rect) {
 		line(fmt.Sprintf("T3 disk cache — hit %d · miss %d · writes %d · dropped %d · errors %d",
 			d.Hits, d.Misses, d.Writes, d.Dropped, d.WriteErrors), ColText)
 	}
-	// Resolver — learned per-host formats (the zero-fallback streaming premise).
-	if a.d.Resolver != nil {
-		rs := a.d.Resolver.Stats()
-		line(fmt.Sprintf("Learned formats — hit %d · miss %d (%s)",
-			rs.LearnedHits, rs.LearnedMisses, hitRatePct(rs.LearnedHits, rs.LearnedMisses)), ColTextDim)
+	if a.d.Manager != nil {
+		line(fmt.Sprintf("Learned formats — %d hosts", a.d.Manager.LearnedHosts()), ColTextDim)
 	}
 	// Network client — total probes + cached 404s (never re-probed inside TTL).
 	if a.d.Client != nil {
@@ -364,8 +361,8 @@ func (a *App) drawDebugWorkers(r sdl.Rect) {
 		y += debugLineH
 	}
 	s := a.d.Manager.WorkStats()
-	line(fmt.Sprintf("Decode: %d/%d busy · queue %d/%d", len(s.Decoding), s.DecodeWorkers, s.DecodeQueued, s.DecodeCap), ColText)
-	line(fmt.Sprintf("Waiting for the frame loop: images %d/%d · audio %d/%d", s.DecodedQueued, s.DecodedCap, s.AudioQueued, s.AudioCap), ColText)
+	line(fmt.Sprintf("Decode: %d/%d busy", len(s.Decoding), s.DecodeWorkers), ColText)
+	line(fmt.Sprintf("Waiting for the frame loop: audio %d/%d", s.AudioQueued, s.AudioCap), ColText)
 	col := ColText
 	if s.Refused > 0 {
 		col = ColDanger
