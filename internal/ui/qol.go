@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -1313,6 +1314,8 @@ type icWrapLine struct {
 	// Both are 0 unless the entry has inline-colour runs.
 	headRunes int
 	bodyOff   int
+	// styles is the entry's runs over its whitespace-folded body, the text the rows were cut from.
+	styles []courtroom.StyleRun
 }
 
 // logWrapIndentPx is the hanging indent of wrapped rows; drawers wrap against width-logWrapIndentPx.
@@ -1369,6 +1372,15 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 			text = prefix + text
 			stampRunes = utf8.RuneCountInString(prefix)
 		}
+		// The wrap folds whitespace, so a styled entry is folded first and its offsets count what the rows hold.
+		styled := len(entry.styles) > 0
+		var styles []courtroom.StyleRun
+		var src []rune
+		bodyStart := 0
+		if styled {
+			text, bodyStart, styles = collapseStyled(text, stampRunes+entry.bodyRuneStart, entry.styles)
+			src = []rune(text)
+		}
 		// Wrap against the drawn width; emoji entries use the rune-granular wrap, as the word-wrap sizes them as tofu.
 		// Trigger the font load off the whole entry first: per-candidate picks see only rows within the cap.
 		a.ctx.noteScript(text)
@@ -1379,12 +1391,15 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 			wrapped = wrapToWidthMeasured(measure, text, width, icWrapMaxLinesPerEntry)
 		}
 		// For inline-colour entries, track each row's rune offset and fold the head into a leading default-colour span.
-		styled := len(entry.styles) > 0
-		bodyStart := stampRunes + entry.bodyRuneStart
 		off := 0
 		for _, ln := range wrapped {
-			row := icWrapLine{text: ln, entry: i}
+			row := icWrapLine{text: ln, entry: i, styles: styles}
 			if styled {
+				// A row break drops the space it broke at.
+				first, _ := utf8.DecodeRuneInString(ln)
+				for off < len(src) && src[off] != first && unicode.IsSpace(src[off]) {
+					off++
+				}
 				n := utf8.RuneCountInString(ln)
 				if head := bodyStart - off; head > 0 {
 					row.headRunes = head

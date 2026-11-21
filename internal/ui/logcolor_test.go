@@ -89,3 +89,46 @@ func TestICLogEntryBodyOffset(t *testing.T) {
 		t.Errorf("styles = %v, want one green run of 3", styles)
 	}
 }
+
+// TestICLogColorsLandOnTheirLetters: the coloured letters of an IC log entry are the ones the sender coloured, with
+// timestamps on, across wrapped rows, and with whitespace the wrap folds away.
+func TestICLogColorsLandOnTheirLetters(t *testing.T) {
+	const (
+		wide   = 2000
+		narrow = 120 // the headless 8 px/char measure: 15 characters a row
+	)
+	def := sdl.Color{A: 255}
+	for _, tc := range []struct {
+		name, msg, want string
+		stamps          bool
+		width           int32
+	}{
+		{"plain", "ab~cd~ef", "cd", false, wide},
+		{"timestamp", "ab~cd~ef", "cd", true, wide},
+		{"wrapped", "aaaa bbbb cccc dddd ~eeee~ ffff", "eeee", false, narrow},
+		{"double space", "ab  ~cd~ ef", "cd", false, wide},
+		{"newline", `ab\n~cd~ef`, "cd", false, wide},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := testTabApp(t)
+			a.logPct = DefaultScalePct
+			line, speaker, start, styles := icLogEntry(&protocol.ChatMessage{CharName: "Nya", Message: tc.msg}, true, "", nil)
+			a.icLog = append(a.icLog, icEntry{text: line, speaker: speaker, styles: styles, bodyRuneStart: start, stamp: "[12:00]"})
+			a.icLogSeq++
+			colored := ""
+			for _, row := range a.icWrapped(tc.width, tc.stamps) {
+				rs := []rune(row.text)
+				pos := 0
+				for _, s := range inlineSpanAt(row.styles, row.headRunes, row.bodyOff, len(rs)-row.headRunes, def) {
+					if s.Color != def {
+						colored += string(rs[pos:min(pos+s.Len, len(rs))])
+					}
+					pos += s.Len
+				}
+			}
+			if colored != tc.want {
+				t.Errorf("coloured letters %q, want %q", colored, tc.want)
+			}
+		})
+	}
+}

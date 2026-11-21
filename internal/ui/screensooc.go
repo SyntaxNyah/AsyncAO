@@ -233,9 +233,9 @@ func (a *App) drawICLogList(list sdl.Rect, canvasInk bool) {
 			indent := a.logRowIndent(logSelIC, ri) // continuation rows hang right of their first row
 			// Inline-colour body: a styled entry draws in its authored colours; ghosted or link-hovered rows use the
 			// single-colour path.
-			if styles := a.icLog[row.entry].styles; len(styles) > 0 && row.entry != hoverLinkEntry && !ghostedRow {
+			if len(row.styles) > 0 && row.entry != hoverLinkEntry && !ghostedRow {
 				bodyLen := utf8.RuneCountInString(row.text) - row.headRunes
-				spans := inlineSpanAt(styles, row.headRunes, row.bodyOff, bodyLen, col)
+				spans := inlineSpanAt(row.styles, row.headRunes, row.bodyOff, bodyLen, col)
 				a.drawColoredLogRow(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, spans)
 			} else {
 				a.drawLogLineNamed(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameInk, boldNames)
