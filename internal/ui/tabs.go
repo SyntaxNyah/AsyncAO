@@ -426,12 +426,14 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			// One name for both the entry's speaker and capLogLine's head marker, so the two can't drift.
 			speaker := icSpeakerName(ev.Message, force, nil)
 			line, _, bodyRuneStart, styles := icLogEntry(ev.Message, force, "", nil)
-			s.icLog = append(s.icLog, icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, pos: icPos(ev.Message), stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
-			if cap := a.icLogCapFor(); cap > 0 && len(s.icLog) > cap {
-				copy(s.icLog, s.icLog[len(s.icLog)-cap:])
-				s.icLog = s.icLog[:cap]
+			entry := icEntry{text: capLogLine(line, speaker), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: speaker, pos: icPos(ev.Message), stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart}
+			if appendICEntry(&s.icLog, entry) {
+				if cap := a.icLogCapFor(); cap > 0 && len(s.icLog) > cap {
+					copy(s.icLog, s.icLog[len(s.icLog)-cap:])
+					s.icLog = s.icLog[:cap]
+				}
+				s.icLogSeq++
 			}
-			s.icLogSeq++
 			t.unread++
 			if fr {
 				a.signalFriend(s.serverName, ev.Message) // alert even from a backgrounded server

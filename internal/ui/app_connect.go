@@ -734,24 +734,25 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				force := a.d.Prefs.Load().ForceCharNames
 				// The log's name resolves through the same char.ini rung as the plate (remoteIniShownameFor).
 				line, speaker, bodyRuneStart, styles := icLogEntry(ev.Message, force, a.friendNick(ev.Message), a.remoteIniShownameFor)
-				a.pushICStyled(line, ev.Message.TextColor, fr, fc, speaker, styles, bodyRuneStart)
-				// Store the speaker's position (wire Side) per entry for the advanced pos filter.
-				a.icLog[len(a.icLog)-1].pos = icPos(ev.Message)
-				// This line has a message in the play queue behind it: the log is written on arrival, the courtroom
-				// speaks it later, and ghost text (ghosttext.go) pairs the two by counting. Stamped only here because
-				// the EventMessage branch is the only push that enqueues.
-				a.icLog[len(a.icLog)-1].speech = true
-				// Reactions: stamp the entry with its content-stable ref, computed from the raw wire fields (CharName +
-				// marker-free text), not the display line, which bakes in client-local showname, nick and timestamp and
-				// wouldn't match a peer's ref. A speaker line becomes a reaction target and the "last message"; float
-				// any reaction this message carries.
-				if speaker != "" {
-					ref := courtroom.MakeReactionRef(ev.Message.CharName, courtroom.StripSpriteStyle(ev.Message.Message))
-					a.icLog[len(a.icLog)-1].ref = ref
-					a.lastReactRef, a.lastReactName = ref, speaker
-				}
-				if r, ok := courtroom.DecodeReactionMarker(ev.Message.Message); ok {
-					a.onIncomingReaction(r)
+				if a.pushICStyled(line, ev.Message.TextColor, fr, fc, speaker, styles, bodyRuneStart) {
+					// Store the speaker's position (wire Side) per entry for the advanced pos filter.
+					a.icLog[len(a.icLog)-1].pos = icPos(ev.Message)
+					// This line has a message in the play queue behind it: the log is written on arrival, the courtroom
+					// speaks it later, and ghost text (ghosttext.go) pairs the two by counting. Stamped only here because
+					// the EventMessage branch is the only push that enqueues.
+					a.icLog[len(a.icLog)-1].speech = true
+					// Reactions: stamp the entry with its content-stable ref, computed from the raw wire fields (CharName +
+					// marker-free text), not the display line, which bakes in client-local showname, nick and timestamp and
+					// wouldn't match a peer's ref. A speaker line becomes a reaction target and the "last message"; float
+					// any reaction this message carries.
+					if speaker != "" {
+						ref := courtroom.MakeReactionRef(ev.Message.CharName, courtroom.StripSpriteStyle(ev.Message.Message))
+						a.icLog[len(a.icLog)-1].ref = ref
+						a.lastReactRef, a.lastReactName = ref, speaker
+					}
+					if r, ok := courtroom.DecodeReactionMarker(ev.Message.Message); ok {
+						a.onIncomingReaction(r)
+					}
 				}
 				a.noteShowname(ev.Message.CharName, ev.Message.Showname) // live-roster name cache
 				a.notePairPartner(ev.Message)                            // #20: track each player's current pair

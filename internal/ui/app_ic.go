@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -837,6 +838,9 @@ type icEntry struct {
 	ref         uint32 // content-stable reaction ref (#2): MakeReactionRef(CharName, clean text); 0 = system line
 	// speech marks a line from an IC message, which has a counterpart in the play queue (see ghosttext.go).
 	speech bool
+	// speechExtra counts additional queued messages folded into this entry's repeated blankposts, so ghost
+	// text still pairs one log row with every message the log collapsed.
+	speechExtra int
 	// styles holds inline-colour runs over the body; bodyRuneStart is the rune offset of the body within text.
 	styles        []courtroom.StyleRun
 	bodyRuneStart int
@@ -1064,8 +1068,39 @@ func (a *App) pushIC(line string, color int, friend bool, friendColor int32, spe
 	a.pushICStyled(line, color, friend, friendColor, speaker, nil, 0)
 }
 
+// icBodyBlank reports whether the body at bodyRuneStart has no visible text. The head before it is the
+// speaker prefix; a blank body is a blankpost.
+func icBodyBlank(line string, bodyRuneStart int) bool {
+	if bodyRuneStart <= 0 {
+		return false
+	}
+	n := 0
+	for _, r := range line {
+		if n >= bodyRuneStart && !unicode.IsSpace(r) {
+			return false
+		}
+		n++
+	}
+	return n >= bodyRuneStart
+}
+
+// appendICEntry appends e, folding a repeated blankpost from the same speaker into the previous entry.
+// It returns false when folded; the previous entry then represents one more queued message.
+func appendICEntry(log *[]icEntry, e icEntry) bool {
+	if n := len(*log); n > 0 {
+		last := &(*log)[n-1]
+		if e.speaker == last.speaker && icBodyBlank(e.text, e.bodyRuneStart) && icBodyBlank(last.text, last.bodyRuneStart) {
+			last.speechExtra++
+			return false
+		}
+	}
+	*log = append(*log, e)
+	return true
+}
+
 // pushICStyled is pushIC plus the inline-colour runs and the body's rune offset within the line.
-func (a *App) pushICStyled(line string, color int, friend bool, friendColor int32, speaker string, styles []courtroom.StyleRun, bodyRuneStart int) {
+// It returns false when a repeated blankpost was folded into the previous entry.
+func (a *App) pushICStyled(line string, color int, friend bool, friendColor int32, speaker string, styles []courtroom.StyleRun, bodyRuneStart int) bool {
 	// Cap first: everything else describes the stored text. extractURLs splits on Fields and no codec rune is
 	// whitespace,
 	// so a trailing marker would fuse onto a link,
@@ -1075,12 +1110,15 @@ func (a *App) pushICStyled(line string, color int, friend bool, friendColor int3
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart})
+	if !appendICEntry(&a.icLog, icEntry{text: line, color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp(), styles: styles, bodyRuneStart: bodyRuneStart}) {
+		return false
+	}
 	if cap := a.icLogCapFor(); cap > 0 && len(a.icLog) > cap {
 		copy(a.icLog, a.icLog[len(a.icLog)-cap:])
 		a.icLog = a.icLog[:cap]
 	}
 	a.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
+	return true
 }
 
 // icLogCapFor returns the live IC scrollback cap, 0 for no cap;

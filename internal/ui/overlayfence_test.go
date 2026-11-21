@@ -435,14 +435,11 @@ func TestCourtroomModalUpMatchesDraw(t *testing.T) {
 		}
 	}
 	// blockingCourtPopup is a DIFFERENT question and must not be mistaken for this
-	// one: it omits the SFX browser and adds classicEdit. Pinned so a future "just
-	// reuse it" refactor has to confront that.
+	// one: it adds classicEdit. Pinned so a future "just reuse it" refactor has to
+	// confront that.
 	a.showSfxBrowser = true
 	if !a.courtroomModalUp() {
 		t.Error("the SFX browser IS in the return-to-top modal set (drawCourtroomModals draws it)")
-	}
-	if a.blockingCourtPopup() {
-		t.Error("blockingCourtPopup deliberately does NOT list the SFX browser — do not reuse it as the modal predicate")
 	}
 	a.showSfxBrowser = false
 	a.classicEdit = true

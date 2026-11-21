@@ -659,6 +659,8 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		defer p.animGate.release()
 	}
 
+	// established is whether frame 0 went out as a stream's first chunk; the stream appends only frames after it.
+	established := false
 	if animated {
 		if first, err := DecodeImage(req.Data, false); err == nil {
 			// GIF/APNG can sniff "maybe" but decode static, and a static would upload the same texture twice.
@@ -673,6 +675,7 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 				if streamable {
 					// Streaming pages grow frame by frame; frame 0 is the first chunk.
 					first.Stream = true
+					established = true
 				}
 				req.OnDone(req.URL, first, nil)
 			} else {
@@ -681,8 +684,9 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		}
 	}
 
-	// The definitely-animated CGO formats stream: frames land one at a time and the page plays what has arrived.
-	if streamable {
+	// The definitely-animated CGO formats stream: frames land one at a time and the page plays what has arrived. A file
+	// with the animation flag and one frame decodes as a still, as no stream ever sends its frame 0.
+	if streamable && established {
 		p.streamAnimated(req)
 		return
 	}

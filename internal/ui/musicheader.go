@@ -204,20 +204,40 @@ var musicMenuRows = append([]musicMenuRow{
 	{musicMenuFollow, "Follow players"},
 }, areaMenuRows[:]...)
 
-// musicMenuRowLive reports whether a row is offered this frame. The volume view isn't offered in a theme's canvas,
-// whose slider rects win. Roster rows are live everywhere; area rows only from the Areas view (areamenu.go).
+// musicMenuSource is the list view whose ⋮ or right-click opened the shared menu.
+type musicMenuSource uint8
+
+const (
+	musicMenuFromMusic musicMenuSource = iota
+	musicMenuFromAreas
+	musicMenuFromRoster
+)
+
+// isRosterMenuKind reports whether k belongs to the roster block.
+func isRosterMenuKind(k musicMenuKind) bool {
+	return k >= musicMenuRosterRefresh && k <= musicMenuFollow
+}
+
+// musicMenuRowLive reports whether a row is offered this frame: each view's menu holds only its own block (#85). The
+// volume view isn't offered in a theme's canvas, whose slider rects win.
 func (a *App) musicMenuRowLive(k musicMenuKind, themed bool) bool {
-	if isAreaMenuKind(k) {
-		return a.areaMenuRowLive(k) // areamenu.go owns the AREA block
-	}
-	if k == musicMenuVolumeView {
+	switch {
+	case k == musicMenuSeparator:
+		return true
+	case isAreaMenuKind(k):
+		return a.musicMenuFrom == musicMenuFromAreas && a.areaMenuRowLive(k) // areamenu.go owns the AREA block
+	case isRosterMenuKind(k):
+		return a.musicMenuFrom == musicMenuFromRoster
+	case a.musicMenuFrom != musicMenuFromMusic:
+		return false
+	case k == musicMenuVolumeView:
 		return !themed
 	}
 	return true
 }
 
-// musicMenuRowDrawn reports whether row i paints: it is live and, if a separator, some live item follows. A separator
-// has no kind of its own, so this takes a block's divider down with the block.
+// musicMenuRowDrawn reports whether row i paints: it is live and, if a separator, live items lie on both sides of it.
+// A separator has no kind of its own, so this takes a block's divider down with the block.
 func (a *App) musicMenuRowDrawn(i int, themed bool) bool {
 	row := musicMenuRows[i]
 	if !a.musicMenuRowLive(row.kind, themed) {
@@ -225,6 +245,16 @@ func (a *App) musicMenuRowDrawn(i int, themed bool) bool {
 	}
 	if row.kind != musicMenuSeparator {
 		return true
+	}
+	itemAbove := false
+	for _, prev := range musicMenuRows[:i] {
+		if prev.kind != musicMenuSeparator && a.musicMenuRowLive(prev.kind, themed) {
+			itemAbove = true
+			break
+		}
+	}
+	if !itemAbove {
+		return false // a divider never opens the menu
 	}
 	for _, next := range musicMenuRows[i+1:] {
 		if next.kind == musicMenuSeparator {
@@ -301,19 +331,20 @@ func (a *App) musicEffectsSupported() bool {
 	return a.sess != nil && a.sess.Features.Has(protocol.FeatureEffects)
 }
 
-// openMusicMenu opens the menu at `at` (the draw clamps it). The tab is stored so a popup can't survive a tab switch,
-// and themed because the menu paints after the panel has returned.
-func (a *App) openMusicMenu(at sdl.Point, themed bool) {
+// openMusicMenu opens from's menu at `at` (the draw clamps it). The tab is stored so a popup can't survive a tab
+// switch, and themed because the menu paints after the panel has returned.
+func (a *App) openMusicMenu(at sdl.Point, themed bool, from musicMenuSource) {
 	a.musicMenuAt = at
 	a.musicMenuTab = a.activeTab
 	a.musicMenuThemed = themed
+	a.musicMenuFrom = from
 	a.musicMenuOpen = true
 }
 
 // openMusicMenuFromButton opens the menu and consumes the press: musicIconButton never clears c.clicked, and the panel
 // anchors below the button, so drawMusicMenu's click-away would close it the frame it opened.
-func (a *App) openMusicMenuFromButton(at sdl.Point, themed bool) {
-	a.openMusicMenu(at, themed)
+func (a *App) openMusicMenuFromButton(at sdl.Point, themed bool, from musicMenuSource) {
+	a.openMusicMenu(at, themed, from)
 	a.ctx.clicked = false // the opening click is the menu's, not the click-away's
 }
 

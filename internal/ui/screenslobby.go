@@ -12,6 +12,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/helper/value"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 )
 
@@ -931,6 +932,7 @@ func (a *App) drawSpritePreview(w, h int32, name string) {
 			if zh < 1 {
 				zh = 1
 			}
+			a.applyPreviewScaleMode(page, zh, dst.H)
 			relX := float64(c.mouseX-dst.X) / float64(dst.W)
 			relY := float64(c.mouseY-dst.Y) / float64(dst.H)
 			relX = value.Clamp(relX, 0, 1)
@@ -938,6 +940,7 @@ func (a *App) drawSpritePreview(w, h int32, name string) {
 			src := sdl.Rect{X: value.Clamp(int32(relX*float64(page.W))-zw/2, 0, page.W-zw), Y: value.Clamp(int32(relY*float64(page.H))-zh/2, 0, page.H-zh), W: zw, H: zh}
 			c.copy(tex, &src, &dst)
 		} else {
+			a.applyPreviewScaleMode(page, page.H, dst.H)
 			c.copy(tex, nil, &dst)
 		}
 		a.drawPreviewZoom(frame, page.W, page.H, dst.H)
@@ -978,6 +981,36 @@ func (a *App) drawSpritePreview(w, h int32, name string) {
 	c.Fill(closeB, ColPanelHi)
 	c.Label(closeB.X+5, closeB.Y+1, "x", ColText)
 	c.Tooltip(closeB, "Close the preview")
+}
+
+// previewScaling is the char.ini filter of the character behind one preview base; settled once its char.ini answered.
+type previewScaling struct {
+	base, char string
+	mode       courtroom.ScalingMode
+	settled    bool
+}
+
+// notePreviewChar records whose sprite the preview now shows; idempotent, as the portrait preview is set every frame.
+func (a *App) notePreviewChar(char string) {
+	if a.previewScaling.base == a.previewBase && a.previewScaling.char == char {
+		return
+	}
+	a.previewScaling = previewScaling{base: a.previewBase, char: char}
+}
+
+// applyPreviewScaleMode gives a character preview the courtroom's filter, which the page otherwise only gets once the
+// sprite is on stage (#88). Other previews keep the filter they have.
+func (a *App) applyPreviewScaleMode(page *render.TexturePage, nativeH, targetH int32) {
+	ps := &a.previewScaling
+	if ps.base != a.previewBase {
+		return
+	}
+	if !ps.settled {
+		m := a.charMetaFor(ps.char)
+		ps.mode, ps.settled = m.scaling, m.done
+	}
+	user := courtroom.ScalingMode(a.d.Prefs.SpriteScalingMode())
+	page.ApplyScaleMode(a.ctx.Ren, render.SpriteScaleMode(user, ps.mode, nativeH, targetH))
 }
 
 // previewGripRect is the resize grip's hit rect, shared by the draw and the input handler.

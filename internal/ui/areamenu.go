@@ -162,6 +162,6 @@ func splitAreaHeaderRow(row sdl.Rect) areaHeaderLayout {
 // click-away closes it on the frame it opened (musicheader.go).
 func (a *App) drawAreaMenuButton(btn sdl.Rect, themed bool) {
 	if a.musicIconButton(btn, iconKebab, "Area options — background, refresh the list, per-area chat log, CM controls") {
-		a.openMusicMenuFromButton(sdl.Point{X: btn.X, Y: btn.Y + btn.H}, themed)
+		a.openMusicMenuFromButton(sdl.Point{X: btn.X, Y: btn.Y + btn.H}, themed, musicMenuFromAreas)
 	}
 }

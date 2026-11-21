@@ -8,7 +8,7 @@ import (
 )
 
 // TestSpriteNativeHLatchesToTheIdle pins that one character keeps ONE native
-// height while its bases swap under it. spriteScaleMode decides the filter from
+// height while its bases swap under it. SpriteScaleMode decides the filter from
 // this height, and re-reading it from whichever page was drawing let a
 // talk/preanim page that decoded at a different size flip the filter
 // mid-animation — the reported "swaps to smooth scaling for animations".
@@ -89,9 +89,7 @@ func TestSpriteScaleModeFollowsAO2(t *testing.T) {
 		{"unknown native height", courtroom.ScalingAuto, courtroom.ScalingAuto, 0, sdl.ScaleModeLinear},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			v := &Viewport{fx: SpriteFX{UserScaling: tc.user}}
-			layer := &courtroom.SpriteLayer{Scaling: tc.char}
-			if got := v.spriteScaleMode(layer, tc.nativeH, stageH); got != tc.want {
+			if got := SpriteScaleMode(tc.user, tc.char, tc.nativeH, stageH); got != tc.want {
 				t.Errorf("got %d, want %d", got, tc.want)
 			}
 		})
@@ -101,7 +99,7 @@ func TestSpriteScaleModeFollowsAO2(t *testing.T) {
 // TestApplyScaleModeIsMemoised guards the cost, not the correctness. The apply
 // runs on the render loop for every sprite of every frame, and each real change
 // forces a renderer flush (mandatory under HINT_RENDER_BATCHING — see
-// applyScaleMode). Without the memo a stable stage would flush twice per frame
+// ApplyScaleMode). Without the memo a stable stage would flush twice per frame
 // forever, quietly undoing the batching the client turns on at startup.
 func TestApplyScaleModeIsMemoised(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
@@ -122,7 +120,7 @@ func TestApplyScaleModeIsMemoised(t *testing.T) {
 	if page.scaleModeSet {
 		t.Error("a fresh page must start unlatched — otherwise the first apply is skipped")
 	}
-	page.applyScaleMode(ren, sdl.ScaleModeNearest)
+	page.ApplyScaleMode(ren, sdl.ScaleModeNearest)
 	if !page.scaleModeSet || page.scaleMode != sdl.ScaleModeNearest {
 		t.Fatalf("first apply did not latch: set=%v mode=%d", page.scaleModeSet, page.scaleMode)
 	}
@@ -142,14 +140,14 @@ func TestApplyScaleModeIsMemoised(t *testing.T) {
 	// memo's back, then ask for the memoised mode. If the memo works nothing runs
 	// and the sabotage survives; if it were removed the loop would overwrite it.
 	setTextureScaleMode(page.Frames[0], sdl.ScaleModeLinear)
-	page.applyScaleMode(ren, sdl.ScaleModeNearest)
+	page.ApplyScaleMode(ren, sdl.ScaleModeNearest)
 	if got, _ := textureScaleMode(page.Frames[0]); got != sdl.ScaleModeLinear {
 		t.Error("re-applying the memoised mode did real work (cgo + a mandatory renderer flush) " +
 			"— that runs per sprite per frame and defeats HINT_RENDER_BATCHING")
 	}
 
 	// A genuine change still takes.
-	page.applyScaleMode(ren, sdl.ScaleModeLinear)
+	page.ApplyScaleMode(ren, sdl.ScaleModeLinear)
 	if page.scaleMode != sdl.ScaleModeLinear {
 		t.Errorf("a changed mode must re-apply, got %d", page.scaleMode)
 	}
@@ -163,11 +161,9 @@ func TestApplyScaleModeIsMemoised(t *testing.T) {
 // TestSpriteScaleModeZeroAlloc keeps the resolver honest against the
 // zero-allocation render loop (CLAUDE.md hard rule). It runs per sprite per frame.
 func TestSpriteScaleModeZeroAlloc(t *testing.T) {
-	v := &Viewport{}
-	layer := &courtroom.SpriteLayer{Scaling: courtroom.ScalingAuto}
 	if n := testing.AllocsPerRun(200, func() {
-		_ = v.spriteScaleMode(layer, 256, 1080)
+		_ = SpriteScaleMode(courtroom.ScalingAuto, courtroom.ScalingAuto, 256, 1080)
 	}); n != 0 {
-		t.Errorf("spriteScaleMode allocates %v/op, want 0", n)
+		t.Errorf("SpriteScaleMode allocates %v/op, want 0", n)
 	}
 }

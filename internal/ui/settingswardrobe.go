@@ -87,6 +87,7 @@ func (a *App) drawWardrobeSettings(y, w int32) int32 {
 		"Character icons are 40 × 40; the larger sizes double or triple them. The List view keeps them at 40.")
 	y += btnH + wardSetRowGap
 	y = a.drawWardrobeNamePlacement(y)
+	y = a.drawWardrobeClick(y)
 	return a.drawWardrobeAccentPicker(y)
 }
 
@@ -114,6 +115,33 @@ func (a *App) drawWardrobeNamePlacement(y int32) int32 {
 	}
 	c.Tooltip(sdl.Rect{X: pad + panelFontLabelW, Y: y, W: x - pad - panelFontLabelW, H: btnH},
 		"Where a card's name sits in the Grid view; the List view always shows it beside the icon.")
+	return y + btnH + wardSetRowGap
+}
+
+// drawWardrobeClick picks whether one click on a character selects it or wears it.
+func (a *App) drawWardrobeClick(y int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	c.Label(pad, y+wardSetLabelY, "Click", ColText)
+	single := a.d.Prefs.Load().WardrobeSingleClick
+	x := pad + panelFontLabelW
+	for _, ch := range [...]struct {
+		single bool
+		label  string
+	}{{false, "Selects"}, {true, "Wears"}} {
+		r := sdl.Rect{X: x, Y: y, W: wardSetChoiceW, H: btnH}
+		bg, fg := ColPanel, ColText
+		if ch.single == single {
+			bg, fg = ColAccent, ColBackground
+		}
+		if c.ButtonCol(r, ch.label, bg, ColPanelHi, ColAccent, fg) && ch.single != single {
+			next := ch.single
+			a.d.Prefs.Update(func(sn *config.Settings) { sn.WardrobeSingleClick = next })
+		}
+		x += wardSetChoiceW + wardSetGap
+	}
+	c.Tooltip(sdl.Rect{X: pad + panelFontLabelW, Y: y, W: x - pad - panelFontLabelW, H: btnH},
+		"What one click on a character does. Wears: it switches to the character, or wears it as an iniswap when its slot is taken, as double-click does.")
 	return y + btnH + wardSetRowGap
 }
 
