@@ -270,10 +270,13 @@ func (a *App) shapePage(kind, role string, tier int) (*render.TexturePage, bool)
 	return a.d.Store.Get(shapeTexKey(kind, role, tier))
 }
 
+// sharp reports whether the chrome shape is Sharp, which is also the default.
+func (c *Ctx) sharp() bool { return c.activeShape == shapeSharp || c.activeShape == "" }
+
 // FillShaped fills r with col in the active chrome shape, or exactly c.Fill on sharp or before masks are resident.
 // Panel bodies under a flat title bar stay on Fill: the sharp bar would poke square nubs past rounded corners.
 func (c *Ctx) FillShaped(r sdl.Rect, col sdl.Color) {
-	if c.activeShape == shapeSharp || c.activeShape == "" || !c.shapeMaskReady || c.shapeFillTex == nil {
+	if c.sharp() || !c.shapeMaskReady || c.shapeFillTex == nil {
 		c.Fill(r, col)
 		return
 	}
@@ -282,7 +285,7 @@ func (c *Ctx) FillShaped(r sdl.Rect, col sdl.Color) {
 
 // borderShaped outlines r in col in the active chrome shape, or exactly c.Border on sharp or before masks are resident.
 func (c *Ctx) borderShaped(r sdl.Rect, col sdl.Color) {
-	if c.activeShape == shapeSharp || c.activeShape == "" || !c.shapeMaskReady || c.shapeStrokeTex == nil {
+	if c.sharp() || !c.shapeMaskReady || c.shapeStrokeTex == nil {
 		c.Border(r, col)
 		return
 	}

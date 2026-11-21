@@ -286,3 +286,20 @@ func TestWardrobeClickOnlySelectsByDefault(t *testing.T) {
 		t.Fatalf("a click switched to slot %d or didn't select (sel %q)", a.sess.MyCharID, a.ward.sel)
 	}
 }
+
+// TestWardrobeCornersFollowSharp: under the Sharp chrome shape the Wardrobe's panels and controls are square; other
+// shapes keep its rounded corners.
+func TestWardrobeCornersFollowSharp(t *testing.T) {
+	a := wardrobeTestApp(t)
+	for _, shape := range []string{shapeSharp, shapeRounded, shapePillKey} {
+		a.d.Prefs.SetChromeShape(shape)
+		a.refreshShapeMasks()
+		want := wardRadRow
+		if shape == shapeSharp {
+			want = 0
+		}
+		if got := a.wardRad(wardRadRow); got != want {
+			t.Errorf("shape %q: row radius %d, want %d", shape, got, want)
+		}
+	}
+}
