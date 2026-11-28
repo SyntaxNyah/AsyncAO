@@ -125,82 +125,72 @@ func TestAreaMenuButtonTakesRoomFromItsOwnRow(t *testing.T) {
 	}
 }
 
-// TestMusicViewMenuCarriesNoAreaRow is the gate the shared pane demands back in
-// exchange for hosting the block. Three triggers open ONE popup — the Music
-// header's ⋮, the roster toolbar's ⋮ and now the Areas view's — so a block that
-// forgets to gate itself is not a dead row, it is five rows appearing in a menu
-// about a list the user is not looking at. That is exactly how the first cut of
-// this kit shipped.
-//
-// It drives musicMenuRowDrawn (the pane's own row filter) rather than re-deciding
-// liveness, and asserts BOTH directions: nothing of the block on the Music view,
-// all of it — divider included — on the Areas view. The divider matters on its own,
-// because it carries the shared musicMenuSeparator kind and so is invisible to
-// every per-kind predicate: gate the four rows and forget the fifth and the music
-// menu ends in a rule under its last row with nothing beneath it.
-func TestMusicViewMenuCarriesNoAreaRow(t *testing.T) {
+// TestEachListMenuHoldsOnlyItsOwnRows: the Music, Areas and player-list views open one shared popup, and each sees only
+// its own block (#85), with no divider at either end.
+func TestEachListMenuHoldsOnlyItsOwnRows(t *testing.T) {
 	const themed = false // the classic panel; the volume row's answer is not what's under test
 
-	drawn := func(a *App) (areaRows int, height int32) {
-		for i, row := range musicMenuRows {
-			if !a.musicMenuRowDrawn(i, themed) {
-				continue
-			}
-			if isAreaMenuKind(row.kind) {
-				areaRows++
-			}
+	blockOf := func(k musicMenuKind) musicMenuSource {
+		switch {
+		case isAreaMenuKind(k):
+			return musicMenuFromAreas
+		case isRosterMenuKind(k):
+			return musicMenuFromRoster
 		}
-		return areaRows, a.musicMenuHeight(themed)
+		return musicMenuFromMusic
+	}
+	for _, tc := range []struct {
+		name string
+		tab  int
+		from musicMenuSource
+		torn bool
+	}{
+		{"music", logTabMusic, musicMenuFromMusic, false},
+		{"areas", logTabAreas, musicMenuFromAreas, false},
+		{"roster", logTabPlayers, musicMenuFromRoster, false},
+		// A torn Areas panel draws whatever logTab says and carries its own ⋮ (torntabs.go).
+		{"torn areas", logTabMusic, musicMenuFromAreas, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &App{}
+			a.logTab = tc.tab
+			if tc.torn {
+				a.classicOv = map[string][4]float64{tornKeyFor(logTabAreas): {}}
+			}
+			a.musicMenuFrom = tc.from
+			first, last := -1, -1
+			for i, row := range musicMenuRows {
+				drawn := a.musicMenuRowDrawn(i, themed)
+				if drawn {
+					if first < 0 {
+						first = i
+					}
+					last = i
+				}
+				if row.kind == musicMenuSeparator {
+					continue
+				}
+				if own := blockOf(row.kind) == tc.from; drawn != own {
+					t.Errorf("%q drawn = %v, want %v", row.label, drawn, own)
+				}
+			}
+			if first < 0 {
+				t.Fatal("the menu is empty")
+			}
+			if musicMenuRows[first].kind == musicMenuSeparator || musicMenuRows[last].kind == musicMenuSeparator {
+				t.Error("the menu starts or ends with a divider")
+			}
+		})
 	}
 
-	// logTab lives on the EMBEDDED sessionState (app.go), so it cannot be set by name
-	// in an App literal — onView builds the whole view state one way for all five
-	// cases below.
-	onView := func(tab int) *App {
-		a := &App{}
-		a.logTab = tab
-		return a
-	}
-
-	music := onView(logTabMusic)
-	if n, _ := drawn(music); n != 0 {
-		t.Errorf("the Music view's ⋮ offers %d area row(s) — they act on a list it is not showing", n)
-	}
-	if n, _ := drawn(onView(logTabPlayers)); n != 0 {
-		t.Errorf("the roster toolbar's ⋮ offers %d area row(s)", n)
-	}
-
-	areas := onView(logTabAreas)
-	wantRows := 0
-	for _, row := range areaMenuRows {
-		if isAreaMenuKind(row.kind) {
-			wantRows++
-		}
-	}
-	gotRows, areasH := drawn(areas)
-	if gotRows != wantRows {
-		t.Fatalf("the Areas view's own ⋮ offers %d of its %d rows — the gate is too tight to be useful", gotRows, wantRows)
-	}
-	// The block's divider must go dark WITH the block: the height difference is the
-	// four rows AND one separator, never the rows alone.
-	_, musicH := drawn(music)
-	if want := int32(wantRows)*musicMenuItemH + musicMenuSepH; areasH-musicH != want {
-		t.Errorf("the AREA block costs %d px on the Areas view and 0 on the Music view, want %d px "+
-			"(%d rows + its divider) — a divider left behind draws a rule under the last roster row",
-			areasH-musicH, want, wantRows)
-	}
-
-	// A TORN Areas panel draws whatever logTab says and carries its own ⋮
-	// (torntabs.go), so the rows have to be live there too or that button is inert.
-	torn := onView(logTabMusic)
-	torn.classicOv = map[string][4]float64{tornKeyFor(logTabAreas): {}}
-	if n, _ := drawn(torn); n != wantRows {
-		t.Errorf("a torn-off Areas panel offers %d of its %d rows — its ⋮ opens a menu with nothing in it", n, wantRows)
-	}
-	// …and a fully hidden Areas tab draws in none of the three places, torn or not.
-	hidden := onView(logTabAreas)
+	// A fully hidden Areas tab draws in none of the three places, torn or not.
+	hidden := &App{}
+	hidden.logTab = logTabAreas
+	hidden.musicMenuFrom = musicMenuFromAreas
 	hidden.hidden = map[string]bool{panelTabAreas: true}
-	if n, _ := drawn(hidden); n != 0 {
-		t.Errorf("a hidden Areas tab still offers %d area row(s)", n)
+	for i := range musicMenuRows {
+		if hidden.musicMenuRowDrawn(i, themed) {
+			t.Errorf("a hidden Areas tab still draws %q", musicMenuRows[i].label)
+		}
 	}
 }

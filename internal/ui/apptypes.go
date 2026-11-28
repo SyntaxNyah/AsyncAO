@@ -702,6 +702,7 @@ type sessionState struct {
 	musicMenuAt           sdl.Point // preferred top-left (clamped at draw)
 	musicMenuTab          int       // tab the menu opened on — auto-close on switch
 	musicMenuThemed       bool      // the panel drew inside a theme canvas when it opened (gates the volume-view row)
+	musicMenuFrom         musicMenuSource
 	liveDetailsArea       string    // area of the last auto /getarea pull; re-pull on area change
 	suppressAreaEchoUntil time.Time // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
 	// Follow-a-player: followUID is the player we trail across areas ("" = off); we auto-jump to their area on each

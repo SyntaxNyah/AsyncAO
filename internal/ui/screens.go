@@ -473,8 +473,7 @@ func (a *App) modalReturnSkippedWhileEditing() bool { return a.layoutEditorArmed
 
 // courtroomModalUp reports whether drawCourtroomModals will take the screen, for decisions made before the pass reaches
 // it.
-// Not blockingCourtPopup (floatbox.go): that set omits showSfxBrowser and adds classicEdit, so it would answer wrongly
-// here.
+// Not blockingCourtPopup (floatbox.go): that set adds classicEdit, so it would answer wrongly here.
 func (a *App) courtroomModalUp() bool {
 	for i := range courtroomModals {
 		if courtroomModals[i].open(a) {

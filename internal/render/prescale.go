@@ -115,7 +115,7 @@ func scaledPixels(n int32, s float32) int32 {
 
 // drawScaled copies frame of page to dst through sf, a pre-scaled copy, and reports whether it drew; false leaves the
 // draw to the caller (not SDL's software renderer, or too big to keep). src carries the colour mod to bake in, and
-// page's applyScaleMode must have run, as its remembered filter is the one baked in. alpha fades the copy.
+// page's ApplyScaleMode must have run, as its remembered filter is the one baked in. alpha fades the copy.
 func (v *Viewport) drawScaled(ren *sdl.Renderer, sf *scaledFrame, page *TexturePage, frame int, src *sdl.Texture,
 	dst sdl.Rect, flip sdl.RendererFlip, modR, modG, modB, alpha uint8) bool {
 	if !v.prescale {

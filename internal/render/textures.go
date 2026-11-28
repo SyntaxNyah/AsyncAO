@@ -713,7 +713,7 @@ func (s *TextureStore) AppendStream(base string, d *assets.Decoded) error {
 		if err != nil {
 			return err
 		}
-		// applyScaleMode skips a page already set, so appended frames must inherit its filter or stay bilinear.
+		// ApplyScaleMode skips a page already set, so appended frames must inherit its filter or stay bilinear.
 		// No Flush is needed: new textures have no queued copies.
 		if page.scaleModeSet {
 			for _, t := range frames {

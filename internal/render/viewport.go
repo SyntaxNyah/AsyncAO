@@ -986,7 +986,7 @@ func (v *Viewport) drawOverlay(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl
 	}
 	tex := page.Frames[clampFrame(v.overlayAnim.frame, len(page.Frames))]
 	dst := overlayDstRect(o, vp, page.W, page.H)
-	page.applyScaleMode(ren, v.overlayScaleMode(o, page.H, dst.H))
+	page.ApplyScaleMode(ren, v.overlayScaleMode(o, page.H, dst.H))
 	v.ovRect = dst
 	if o.Flip {
 		_ = v.copies.CopyFlip(ren, tex, nil, &v.ovRect, sdl.FLIP_HORIZONTAL)
@@ -1148,7 +1148,7 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, scene *courtroom.Scene, 
 	}
 	tex := page.Frames[frame]
 	dst := sceneryRect(vp, page.W, page.H, scene.SceneryStretch, v.panorama, v.origin)
-	page.applyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, dst.H))
+	page.ApplyScaleMode(ren, sceneryScaleMode(v.fx.UserScaling, scene.SceneryScaling, scene.SceneryStretch, page.H, dst.H))
 	r := vp.H / dofBlurDivisor
 	if r < dofBlurMin {
 		r = dofBlurMin
@@ -1306,7 +1306,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	// AO2 filters per sprite, from frame height against the widget height (calculateFrameGeometry, courtroom.cpp:778).
 	// Must be vp.H, not v.dstRect.H: dstRect grows with a transmitted scale or zoom, changing the filter.
-	drawPage.applyScaleMode(ren, v.spriteScaleMode(layer, anim.spriteNativeH(layer, page), vp.H))
+	drawPage.ApplyScaleMode(ren, SpriteScaleMode(v.fx.UserScaling, layer.Scaling, anim.spriteNativeH(layer, page), vp.H))
 
 	// A transmitted style takes precedence over the viewer's local wash for this layer.
 	var (

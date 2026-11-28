@@ -1494,6 +1494,7 @@ func (a *App) previewPortraitAnim(name string) string {
 func (a *App) setCharPortraitPreview(name string) {
 	anim := a.previewPortraitAnim(name)
 	a.previewBase = a.urls.Emote(name, anim, courtroom.EmoteIdle)
+	a.notePreviewChar(name)
 	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(name, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 }
 

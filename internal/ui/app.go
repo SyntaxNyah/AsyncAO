@@ -260,6 +260,8 @@ type App struct {
 	// previewBase, so every other previewBase setter invalidates the caption automatically.
 	previewName    string
 	previewNameFor string
+	// previewScaling is the char.ini filter of the character the preview shows, so it draws as the courtroom would.
+	previewScaling previewScaling
 	previewFor     string    // base the preview clock was started for
 	previewAt      time.Time // loop anchor — animated previews play, not freeze
 	previewZoom    int       // magnifier factor (1 = fit; >1 shows a cursor-panned window)

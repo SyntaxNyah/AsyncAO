@@ -261,6 +261,8 @@ type Settings struct {
 	WardrobeIconPxVal int  `json:"wardrobeIconPx,omitempty"`
 	// WardrobeNameAbove puts a grid card's name above its icon instead of below.
 	WardrobeNameAbove bool `json:"wardrobeNameAbove,omitempty"`
+	// WardrobeSingleClick makes one click on a character wear it, as double-click does.
+	WardrobeSingleClick bool `json:"wardrobeSingleClick,omitempty"`
 	// WardrobeAccentVal is the Wardrobe's highlight colour, packed 0xRRGGBB; 0 is the default blue.
 	WardrobeAccentVal            int                       `json:"wardrobeAccent,omitempty"`
 	CustomChromeHex              [7]string                 `json:"customChrome"`

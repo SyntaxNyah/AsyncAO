@@ -13,6 +13,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/sdl"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -522,8 +523,9 @@ func (a *App) overlayIconDraw(i int, tr sdl.Rect) {
 		a.overlayDemandTheme(path, base)
 	}
 	if page, ok := a.cachedPage(&a.overlayIconPages, &a.overlayIconGen, n, i, base); ok && len(page.Frames) > 0 {
-		// Through the shared cgo scratch, never &tr: a parameter's address heap-escapes on every cgo call.
-		c.cgoRect = tr
+		// Kept to its aspect like AO2's QIcon. Through the shared cgo scratch, never &tr: a parameter's address
+		// heap-escapes on every cgo call.
+		c.cgoRect = render.FitRect(tr, page.W, page.H)
 		c.copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
 		c.Fill(tr, overlayIconChipColor)

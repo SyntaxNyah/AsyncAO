@@ -259,7 +259,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	if br, ok := plan.rect(musicItemMenu); ok {
 		if a.musicIconButton(br, iconKebab, "More: playback options, volume sliders (right-click the list opens this too)") {
 			// FromButton: the press must be consumed or drawMusicMenu's click-away closes the menu the frame it opened.
-			a.openMusicMenuFromButton(sdl.Point{X: br.X, Y: br.Y + br.H}, themed)
+			a.openMusicMenuFromButton(sdl.Point{X: br.X, Y: br.Y + br.H}, themed, musicMenuFromMusic)
 		}
 	}
 	// "music_name" is AO2's id for this line (courtroom.cpp:1201). elemLabelFont keeps the chrome face when the theme
@@ -370,7 +370,7 @@ func (a *App) drawMusicList(r sdl.Rect, themed, searchExternal, nowPlayingExtern
 	// Right-click opens the same menu as the ⋮ button; AO2's entry point is on_music_list_context_menu_requested
 	// (courtroom.cpp:5821).
 	if c.rightClicked && c.hovering(r) {
-		a.openMusicMenu(sdl.Point{X: c.mouseX, Y: c.mouseY}, themed)
+		a.openMusicMenu(sdl.Point{X: c.mouseX, Y: c.mouseY}, themed, musicMenuFromMusic)
 		c.rightClicked = false
 	}
 }

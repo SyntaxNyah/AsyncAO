@@ -210,3 +210,42 @@ func TestHeldNeedCoversTheHeldMessageOnly(t *testing.T) {
 		t.Error("a released message still counts as held")
 	}
 }
+
+// TestWaitGateAsksAgainWhileItHolds: a missing warning that never reaches the gate (a full hand-off drops it) leaves the
+// blocker unsettled, so the hold asks again, which re-sends the warning, instead of waiting out the limit.
+func TestWaitGateAsksAgainWhileItHolds(t *testing.T) {
+	const (
+		tick = 16 * time.Millisecond
+		wait = 5 * time.Second
+	)
+	room, _ := recordingRoom(t)
+	room.SequentialWait = true
+	room.Assets = assetFake{sprite: func(string) bool { return false }}
+	idle := room.urls.Emote("Phoenix", "normal", EmoteIdle)
+	warnedFor := func() bool {
+		deadline := time.After(wait)
+		for {
+			select {
+			case w := <-room.mgr.Warnings():
+				if w.Base == idle {
+					return true
+				}
+			case <-deadline:
+				return false
+			}
+		}
+	}
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})
+	room.Update(tick)
+	if !warnedFor() {
+		t.Fatal("the first ask never reported the sprite missing")
+	}
+	room.Update(waitReaskInterval) // the warning was lost: nothing settled the sprite
+	if room.QueueLen() != 1 {
+		t.Fatal("the message stopped waiting before the limit")
+	}
+	if !warnedFor() {
+		t.Fatal("the hold never asked again, so the lost warning was never sent again")
+	}
+}

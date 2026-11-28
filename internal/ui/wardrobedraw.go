@@ -1150,7 +1150,7 @@ func (a *App) drawWardrobeItem(idx int, it wardrobe.Item, r sdl.Rect) {
 	a.wardrobeItemInput(it, r)
 }
 
-// wardrobeItemInput selects on click, uses on double-click, and arms a drag on press.
+// wardrobeItemInput selects on click, uses on double-click (or on click with single click on), and arms a drag on press.
 func (a *App) wardrobeItemInput(it wardrobe.Item, r sdl.Rect) {
 	c := a.ctx
 	ward := &a.ward
@@ -1173,14 +1173,20 @@ func (a *App) wardrobeItemInput(it wardrobe.Item, r sdl.Rect) {
 	if c.mouseDown && !c.prevMouseDown && ward.source == wardrobe.SourceUser {
 		a.startWardrobeDrag(wardDragChar, it.Char)
 	}
+	single := a.d.Prefs.Load().WardrobeSingleClick
 	switch {
-	case c.dblClick:
+	case c.dblClick && !single:
 		c.dblClick = false
 		a.wardrobeUse(it.Char)
 	case c.ClickedIn(r):
 		if ward.sel != it.Char {
 			ward.sel, ward.confirmRemove, ward.nickOpen, ward.moveMenu = it.Char, false, false, false
 		}
+		// Only a streak's first click wears: the second click of a double-click would wear it again, or as an iniswap.
+		if single && c.clickStreak == 1 {
+			a.wardrobeUse(it.Char)
+		}
+		c.dblClick = false
 	}
 }
 
@@ -1309,7 +1315,11 @@ func (a *App) drawWardrobeBar(r sdl.Rect) {
 	right := r.X + r.W - 2*wardPanelPad
 	ward.moreN = 0
 	if !ok {
-		c.LabelClipped(x, r.Y+(r.H-lh)/2, r.W-4*wardPanelPad, "Select a character to see what you can do with it. Double-click wears it.", wcDim)
+		hint := "Select a character to see what you can do with it. Double-click wears it."
+		if a.d.Prefs.Load().WardrobeSingleClick {
+			hint = "Click a character to wear it; what else you can do with it shows here."
+		}
+		c.LabelClipped(x, r.Y+(r.H-lh)/2, r.W-4*wardPanelPad, hint, wcDim)
 		return
 	}
 	switch {

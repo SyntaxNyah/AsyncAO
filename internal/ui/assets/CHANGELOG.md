@@ -4,6 +4,29 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v2.1.1 - 2026-11-28
+
+A bug-fix release for v2.1.0.
+
+- A sprite saved as an animated WebP with a single frame shows again. Before,
+  it never appeared, and with strict sequencing every message using it waited
+  10 seconds.
+- A message waiting on a missing file no longer sits out the whole 10 seconds
+  when the missing-file notice gets lost; it asks again every second.
+- Repeated blankposts from the same speaker show once in the IC log, as in AO2.
+- The sprite preview uses the character's own scaling from the first frame, so
+  pixel-art characters no longer preview blurry until they speak.
+- Effect icons in the effects dropdown keep their shape instead of stretching.
+- The SFX Browser opens in front of the Extras box instead of behind it.
+- Each list's ⋮ menu shows only its own options: the player list no longer
+  offers music fade and loop, and the music list no longer offers roster
+  options.
+- A theme without `courtroom_design.ini` no longer draws the drag hint over
+  its notice in the theme fit preview.
+- Fixed a crash when several servers sent their first packets at once.
+- New Wardrobe setting in Settings ▸ General: **Click: Selects / Wears**. With
+  Wears, one click wears a character. Off by default.
+
 ## v2.1.0 - 2026-11-14
 
 AsyncAO moves from SDL2 to SDL3. It draws with Direct3D 11 on Windows and
