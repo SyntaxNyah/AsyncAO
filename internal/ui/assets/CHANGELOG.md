@@ -4,10 +4,9 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v2.1.1-rc.1 - 2026-11-18
+## v2.1.1 - 2026-11-28
 
-A test build of a bug-fix release for v2.1.0. Only players with
-**Include pre-releases** switched on get this update.
+A bug-fix release for v2.1.0.
 
 - A sprite saved as an animated WebP with a single frame shows again. Before,
   it never appeared, and with strict sequencing every message using it waited

@@ -82,7 +82,7 @@ func TestParseMarkdownBlocks(t *testing.T) {
 // TestShippedChangelog pins what the What's New screen shows: the newest release is the first entry, and no heading
 // keeps markdown markup.
 func TestShippedChangelog(t *testing.T) {
-	const newest = "v2.1.1-rc.1 "
+	const newest = "v2.1.1 "
 	blocks := parseMarkdownBlocks(changelogMD)
 	first := ""
 	for _, b := range blocks {
